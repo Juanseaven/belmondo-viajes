@@ -1,7 +1,27 @@
 # Panel espejo de WhatsApp multi-instancia — Diseño
 
 Fecha: 2026-08-01
-Estado: aprobado
+Estado: implementado en parte; **premisas de producto revocadas**
+
+> **Leer con esta advertencia.** Este documento se conserva sin editar como
+> registro de por qué el módulo `mirror` está construido como está. Sus
+> decisiones técnicas siguen vigentes —el particionado por conversación, la
+> idempotencia por `dedupe_key`, el rendezvous en Redis, el pipeline de media—
+> pero **dos premisas de producto se levantaron** el 2026-08-04
+> ([spec de arquitectura modular](2026-08-04-arquitectura-modular-design.md)):
+>
+> 1. **"Los vendedores no son usuarios."** Ahora sí lo son. `users` es el
+>    directorio del personal de la agencia.
+> 2. **"Panel exclusivo del administrador, secreto para los vendedores."** Ahora
+>    es una bandeja compartida: todo el personal entra, ve todas las líneas y
+>    puede escribir por cualquiera.
+>
+> La distinción `origin = 'panel' | 'device'` sobrevive intacta, pero cambia de
+> significado: ya no responde "¿fue la dirección o el vendedor?" sino "¿se
+> escribió desde la app o desde el teléfono?".
+>
+> Este espejo tampoco es ya el sistema entero: es el primer módulo de
+> **viajes_crm**.
 
 ## Problema
 

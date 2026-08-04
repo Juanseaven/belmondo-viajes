@@ -357,6 +357,24 @@ que apunte a este documento para las premisas que quedaron revocadas.
 1. **No hay datos en producción.** El esquema se reparte en dos migraciones
    iniciales en vez de migrarse. Si es falso, hay que sustituir el reparto por
    una migración de `ALTER` y sembrar `schema_migrations` con lo ya aplicado.
-2. **El repositorio no está bajo git todavía** (verificado al escribir este
-   spec). El refactor es grande y mecánico: conviene inicializarlo antes de
-   empezar, para poder revertir.
+
+## Apéndice — desviaciones de la implementación
+
+Dos piezas que no estaban en el diseño y aparecieron al construirlo:
+
+- **`kernel/httpx`.** El middleware de auth y los handlers de los módulos
+  necesitaban la misma forma de respuesta y de error, y `httpapi` no podía
+  dárselas sin un ciclo de imports (`auth` → `httpapi` → `auth`). Es un paquete
+  hoja con `JSON`, `Error` y los códigos del kernel. Fija la forma
+  `{error: {code, message}}` para todo el sistema.
+
+- **`modules.Registry`.** El diseño ponía el ciclo de vida en `main.go`, donde el
+  orden inverso de apagado no se puede testear. `Registry` lo saca a un tipo con
+  `Start` y `Shutdown`, y con eso el test del contrato pasa a ser real. También
+  añade algo que el diseño no contemplaba: si un módulo falla al arrancar, se
+  apagan los que ya arrancaron en vez de dejarlos con goroutines vivas.
+
+- **Semilla del primer administrador** (`SEED_ADMIN_EMAIL` /
+  `SEED_ADMIN_PASSWORD`). El diseño describía el CRUD de usuarios pero no cómo
+  entra el primero: no hay registro público y crear usuarios exige ser admin.
+  Solo actúa si `users` está vacía.
