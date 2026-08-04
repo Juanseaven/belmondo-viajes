@@ -1,8 +1,11 @@
-// Command api es el backend del panel espejo.
+// Command api es el backend de viajes_crm.
 //
-// Orden de arranque y apagado deliberado: los recursos se cierran en orden
-// inverso al de apertura, y el pool de workers se drena ANTES de cerrar la base.
-// Al revés, un despliegue perdería los eventos que quedasen en las colas.
+// El arranque tiene una forma deliberada: se construye la infraestructura
+// compartida (el Kernel), se declara la lista de módulos, y a partir de ahí todo
+// —migraciones, rutas, procesos de fondo, apagado— se deriva recorriéndola.
+//
+// Agregar un módulo al sistema es escribir su paquete y añadir una línea en
+// `mods`.
 package main
 
 import (
@@ -19,16 +22,16 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/juanseaven/whatsapp-mirror/server/internal/config"
-	"github.com/juanseaven/whatsapp-mirror/server/internal/evolution"
-	"github.com/juanseaven/whatsapp-mirror/server/internal/httpapi"
-	"github.com/juanseaven/whatsapp-mirror/server/internal/ingest"
-	"github.com/juanseaven/whatsapp-mirror/server/internal/media"
-	"github.com/juanseaven/whatsapp-mirror/server/internal/store/postgres"
-	"github.com/juanseaven/whatsapp-mirror/server/internal/store/rediscache"
-	"github.com/juanseaven/whatsapp-mirror/server/internal/webhook"
-	"github.com/juanseaven/whatsapp-mirror/server/internal/worker"
-	"github.com/juanseaven/whatsapp-mirror/server/internal/ws"
+	"github.com/juanseaven/viajes-crm/server/internal/kernel"
+	"github.com/juanseaven/viajes-crm/server/internal/kernel/auth"
+	"github.com/juanseaven/viajes-crm/server/internal/kernel/blobs"
+	"github.com/juanseaven/viajes-crm/server/internal/kernel/config"
+	"github.com/juanseaven/viajes-crm/server/internal/kernel/db"
+	"github.com/juanseaven/viajes-crm/server/internal/kernel/httpapi"
+	"github.com/juanseaven/viajes-crm/server/internal/kernel/migrations"
+	"github.com/juanseaven/viajes-crm/server/internal/kernel/ws"
+	"github.com/juanseaven/viajes-crm/server/internal/modules"
+	"github.com/juanseaven/viajes-crm/server/internal/modules/mirror"
 )
 
 func main() {
@@ -57,15 +60,16 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// --- Infraestructura ------------------------------------------------------
-	startCtx, cancelStart := context.WithTimeout(ctx, 30*time.Second)
+	// Holgado porque aquí dentro corren las migraciones, no solo las conexiones.
+	startCtx, cancelStart := context.WithTimeout(ctx, 60*time.Second)
 	defer cancelStart()
 
-	db, err := postgres.Connect(startCtx, cfg.DatabaseURL, cfg.DatabaseMaxConns)
+	// --- Kernel ---------------------------------------------------------------
+	pool, err := db.Connect(startCtx, cfg.DatabaseURL, cfg.DatabaseMaxConns)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer pool.Close()
 	log.Info("postgres conectado", "max_conns", cfg.DatabaseMaxConns)
 
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, DB: cfg.RedisDB})
@@ -75,48 +79,59 @@ func run() error {
 	}
 	log.Info("redis conectado", "db", cfg.RedisDB)
 
-	r2, err := media.NewR2(startCtx, cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretKey, cfg.R2Bucket)
+	r2, err := blobs.NewR2(startCtx, cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretKey, cfg.R2Bucket)
 	if err != nil {
 		return err
 	}
 
-	// --- Repositorios ---------------------------------------------------------
-	events := postgres.NewEvents(db)
-	messages := postgres.NewMessages(db)
-	instances := postgres.NewInstances(db)
-	mediaStore := postgres.NewMedia(db)
-	panelSends := rediscache.NewPanelSends(rdb)
+	k := &kernel.Kernel{
+		Cfg: cfg, DB: pool, Redis: rdb, Blobs: r2,
+		Hub: ws.NewHub(log), Log: log,
+	}
 
-	// --- Servicios ------------------------------------------------------------
-	evo := evolution.New(cfg.EvolutionBaseURL, cfg.EvolutionAPIKey)
-	hub := ws.NewHub(log)
+	// --- Módulos --------------------------------------------------------------
+	// Esta lista ES el sistema: migraciones, rutas y ciclo de vida se derivan de
+	// recorrerla. Para sumar un módulo, se añade aquí.
+	registry := modules.NewRegistry(log,
+		mirror.New(k),
+	)
 
-	mediaSvc := media.NewService(evo, r2, mediaStore, cfg.WorkerQueueSize, log)
-	mediaSvc.Start(ctx, cfg.MediaWorkers)
+	// --- Esquema --------------------------------------------------------------
+	// El kernel va primero: los módulos tienen claves foráneas contra `users`.
+	if err := db.Migrate(startCtx, pool, "kernel", migrations.FS(), log); err != nil {
+		return err
+	}
+	for _, m := range registry.All() {
+		if err := db.Migrate(startCtx, pool, m.Name(), m.Migrations(), log); err != nil {
+			return err
+		}
+	}
 
-	processor := ingest.NewProcessor(events, messages, instances, panelSends, mediaSvc, hub, log)
-	pool := worker.New(cfg.WorkerShards, cfg.WorkerQueueSize, processor, log)
-	pool.Start(ctx)
+	// --- Autenticación --------------------------------------------------------
+	tokens, err := auth.NewTokens(cfg.JWTSecret, cfg.JWTTTL)
+	if err != nil {
+		return err
+	}
+	authSvc := auth.NewService(auth.NewPostgresStore(pool), tokens, log)
+	if err := authSvc.EnsureSeedAdmin(startCtx, cfg.SeedAdminEmail, cfg.SeedAdminPassword); err != nil {
+		return err
+	}
 
-	// Recupera los adjuntos que quedaron a medias en el reinicio anterior.
-	if err := mediaSvc.Requeue(startCtx, 200); err != nil {
-		log.Warn("no se pudo reencolar el media pendiente", "error", err)
+	// --- Arranque de los módulos ----------------------------------------------
+	if err := registry.Start(ctx); err != nil {
+		return err
 	}
 
 	// --- HTTP -----------------------------------------------------------------
-	router := httpapi.NewRouter(httpapi.Deps{
-		Webhook:        webhook.NewHandler(events, pool, cfg.WebhookAPIKey, log),
-		Hub:            hub,
-		Media:          mediaStore,
-		Signer:         r2,
-		SignedURLTTL:   cfg.R2SignedURLTTL,
-		AllowedOrigins: cfg.AllowedOrigins,
-		Log:            log,
-	})
-
 	srv := &http.Server{
-		Addr:    cfg.HTTPAddr,
-		Handler: router,
+		Addr: cfg.HTTPAddr,
+		Handler: httpapi.NewRouter(httpapi.Deps{
+			Auth:           authSvc,
+			Modules:        registry.All(),
+			Hub:            k.Hub,
+			AllowedOrigins: cfg.AllowedOrigins,
+			Log:            log,
+		}),
 		// Sin WriteTimeout: cortaría los websockets, que son conexiones de larga
 		// duración por definición. La protección está en los deadlines por
 		// escritura de ws.Client.
@@ -139,30 +154,22 @@ func run() error {
 		log.Info("señal de apagado recibida, drenando")
 	}
 
-	return shutdown(srv, pool, mediaSvc, log)
+	return shutdown(srv, registry, log)
 }
 
 // shutdown drena en el orden que evita perder eventos:
-//  1. el servidor HTTP deja de aceptar webhooks nuevos;
-//  2. el pool termina lo que ya tiene encolado;
-//  3. el pipeline de media acaba las subidas en curso.
+//  1. el servidor HTTP deja de aceptar peticiones nuevas;
+//  2. cada módulo termina lo que ya tiene encolado (en orden inverso al arranque).
 //
-// Solo después el defer de main cierra la base y Redis.
-func shutdown(srv *http.Server, pool *worker.Pool, mediaSvc *media.Service, log *slog.Logger) error {
+// Solo después el defer de run cierra la base y Redis.
+func shutdown(srv *http.Server, registry *modules.Registry, log *slog.Logger) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Error("apagado del servidor http con errores", "error", err)
 	}
-	if err := pool.Shutdown(ctx); err != nil {
-		// Los eventos siguen en webhook_events con status='pending': el
-		// reprocesador los recuperará al arrancar. No se pierde nada.
-		log.Error("pool no drenado a tiempo", "error", err)
-	}
-	if err := mediaSvc.Shutdown(ctx); err != nil {
-		log.Error("pipeline de media no drenado a tiempo", "error", err)
-	}
+	registry.Shutdown(ctx)
 
 	log.Info("apagado limpio")
 	return nil
