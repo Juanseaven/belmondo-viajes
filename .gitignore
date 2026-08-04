@@ -1,0 +1,17 @@
+# Secretos. EVOLUTION_API_KEY equivale a la contraseña de todas las líneas
+# de WhatsApp de la agencia.
+.env
+.env.*
+!.env.example
+
+# Go
+/server/bin/
+*.exe
+
+# Next.js
+/web/node_modules/
+/web/.next/
+/web/out/
+
+# Volúmenes locales
+/data/
