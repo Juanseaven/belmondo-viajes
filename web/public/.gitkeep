@@ -1,0 +1,4 @@
+Estáticos servidos tal cual por Next.js (favicon, logos).
+
+Vacío por ahora, pero el directorio tiene que existir: el Dockerfile lo copia a
+la imagen final y sin él el build falla.

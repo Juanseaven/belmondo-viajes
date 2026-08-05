@@ -20,8 +20,14 @@ FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata \
  && adduser -D -u 10001 app
 WORKDIR /app
+# Solo el binario: las migraciones van embebidas con go:embed dentro de cada
+# módulo, así que el esquema y el código que lo asume no se pueden desincronizar
+# al desplegar.
 COPY --from=build /out/api /app/api
-COPY --from=build /src/migrations /app/migrations
+
+# El almacenamiento local escribe acá cuando no hay R2. Se crea con el dueño
+# correcto en el build: el proceso corre sin privilegios y no podría crearlo.
+RUN mkdir -p /data/blobs && chown -R app /data/blobs
 
 USER app
 EXPOSE 8080
