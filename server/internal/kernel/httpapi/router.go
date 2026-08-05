@@ -13,15 +13,21 @@ import (
 	"time"
 
 	"github.com/juanseaven/viajes-crm/server/internal/kernel/auth"
+	"github.com/juanseaven/viajes-crm/server/internal/kernel/blobs"
 	"github.com/juanseaven/viajes-crm/server/internal/kernel/httpx"
 	"github.com/juanseaven/viajes-crm/server/internal/kernel/ws"
 	"github.com/juanseaven/viajes-crm/server/internal/modules"
 )
 
 type Deps struct {
-	Auth           *auth.Service
-	Modules        []modules.Module
-	Hub            *ws.Hub
+	Auth    *auth.Service
+	Modules []modules.Module
+	Hub     *ws.Hub
+
+	// LocalBlobs se pasa solo cuando el almacenamiento es en disco: monta la ruta
+	// que sirve esos archivos. Con R2 va nil y esa ruta no existe.
+	LocalBlobs *blobs.Local
+
 	AllowedOrigins []string
 	Log            *slog.Logger
 }
@@ -52,6 +58,12 @@ func NewRouter(d Deps) *Router {
 	handlers.MountAuthed(authed)
 	authed.Handle("GET /api/ws", wsHandler(d))
 	mux.Handle("/api/", d.Auth.Require(authed))
+
+	// Sin sesión a propósito: la firma de la URL es la autorización, y Evolution
+	// tiene que poder descargar de acá sin ser un usuario del panel.
+	if d.LocalBlobs != nil {
+		mux.Handle("GET /files/", filesHandler(d.LocalBlobs))
+	}
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.JSON(w, http.StatusOK, map[string]any{

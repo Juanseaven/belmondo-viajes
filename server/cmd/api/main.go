@@ -79,13 +79,13 @@ func run() error {
 	}
 	log.Info("redis conectado", "db", cfg.RedisDB)
 
-	r2, err := blobs.NewR2(startCtx, cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretKey, cfg.R2Bucket)
+	store, localBlobs, err := openBlobs(startCtx, cfg, log)
 	if err != nil {
 		return err
 	}
 
 	k := &kernel.Kernel{
-		Cfg: cfg, DB: pool, Redis: rdb, Blobs: r2,
+		Cfg: cfg, DB: pool, Redis: rdb, Blobs: store,
 		Hub: ws.NewHub(log), Log: log,
 	}
 
@@ -129,6 +129,7 @@ func run() error {
 			Auth:           authSvc,
 			Modules:        registry.All(),
 			Hub:            k.Hub,
+			LocalBlobs:     localBlobs,
 			AllowedOrigins: cfg.AllowedOrigins,
 			Log:            log,
 		}),
@@ -173,6 +174,34 @@ func shutdown(srv *http.Server, registry *modules.Registry, log *slog.Logger) er
 
 	log.Info("apagado limpio")
 	return nil
+}
+
+// openBlobs elige dónde se guardan los archivos.
+//
+// Los adjuntos de WhatsApp no viajan en el webhook: hay que pedírselos a
+// Evolution y guardarlos en algún sitio para poder mostrarlos después. R2 es ese
+// sitio en producción; sin sus credenciales se usa el disco, que alcanza para
+// desarrollo y para un despliegue de una sola máquina.
+//
+// El segundo valor de retorno solo va poblado en el caso local: es lo que hace
+// que el router monte la ruta que sirve esos archivos.
+func openBlobs(ctx context.Context, cfg *config.Config, log *slog.Logger) (blobs.Store, *blobs.Local, error) {
+	if cfg.UseR2() {
+		r2, err := blobs.NewR2(ctx, cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretKey, cfg.R2Bucket)
+		if err != nil {
+			return nil, nil, err
+		}
+		log.Info("almacenamiento en R2", "bucket", cfg.R2Bucket)
+		return r2, nil, nil
+	}
+
+	local, err := blobs.NewLocal(cfg.BlobsDir, cfg.PublicBaseURL, cfg.JWTSecret)
+	if err != nil {
+		return nil, nil, err
+	}
+	log.Warn("almacenamiento en disco local: los archivos viven en este contenedor",
+		"dir", cfg.BlobsDir, "base_url", cfg.PublicBaseURL)
+	return local, local, nil
 }
 
 func runHealthcheck() int {

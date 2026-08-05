@@ -226,11 +226,22 @@ services:
       WORKER_QUEUE_SIZE: ${WORKER_QUEUE_SIZE:-512}
       MEDIA_WORKERS: ${MEDIA_WORKERS:-4}
 
-      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID}
-      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
-      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
-      R2_BUCKET: ${R2_BUCKET}
+      # Almacenamiento de archivos. Con las cuatro variables de R2 se usa R2; sin
+      # ellas, el disco del contenedor (volumen `blobs`). O las cuatro o ninguna:
+      # el backend rechaza una configuración a medias.
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_BUCKET: ${R2_BUCKET:-}
       R2_SIGNED_URL_TTL: ${R2_SIGNED_URL_TTL:-15m}
+
+      BLOBS_DIR: /data/blobs
+      # Raíz por la que se alcanza este backend. La usan las URLs firmadas del
+      # almacenamiento local, y tiene que servir para DOS consumidores: el
+      # navegador y Evolution, que descarga los adjuntos que enviamos.
+      PUBLIC_BASE_URL: ${PUBLIC_API_URL:-http://localhost:8090}
+
+      EVENT_RETENTION_DAYS: ${EVENT_RETENTION_DAYS:-30}
 
       JWT_SECRET: ${JWT_SECRET}
       JWT_TTL: ${JWT_TTL:-12h}
@@ -239,6 +250,8 @@ services:
       # Solo se usan si `users` está vacía. Ver .env.example.
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+    volumes:
+      - blobs:/data/blobs
     networks:
       - backbone
     healthcheck:
@@ -282,3 +295,7 @@ volumes:
   postgres_data:
   redis_data:
   evolution_instances:
+  # Adjuntos cuando no hay R2. Es un volumen y no una carpeta efímera porque
+  # borrarlo pierde los archivos: las filas de media_assets quedarían apuntando a
+  # claves que ya no existen.
+  blobs:

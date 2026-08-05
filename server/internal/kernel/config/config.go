@@ -34,11 +34,24 @@ type Config struct {
 	// millones de filas al mes: sin purga, el síntoma es el disco lleno.
 	EventRetentionDays int
 
+	// Almacenamiento de archivos. Si las credenciales de R2 están completas se
+	// usa R2; si no, disco local. Los adjuntos de WhatsApp no viajan en el
+	// webhook, así que sin almacenamiento no habría dónde guardarlos.
 	R2AccountID    string
 	R2AccessKeyID  string
 	R2SecretKey    string
 	R2Bucket       string
 	R2SignedURLTTL time.Duration
+
+	// BlobsDir es el directorio del almacenamiento local. Se ignora con R2.
+	BlobsDir string
+
+	// PublicBaseURL es la raíz por la que se alcanza este backend. Solo se usa
+	// con almacenamiento local, para construir las URLs firmadas de los archivos.
+	//
+	// Tiene que ser alcanzable desde DOS sitios: el navegador que muestra el
+	// archivo y Evolution, que lo descarga al enviar un adjunto.
+	PublicBaseURL string
 
 	JWTSecret      string
 	JWTTTL         time.Duration
@@ -79,6 +92,9 @@ func Load() (*Config, error) {
 		R2Bucket:       os.Getenv("R2_BUCKET"),
 		R2SignedURLTTL: envDuration("R2_SIGNED_URL_TTL", 15*time.Minute),
 
+		BlobsDir:      env("BLOBS_DIR", "/data/blobs"),
+		PublicBaseURL: env("PUBLIC_BASE_URL", "http://localhost:8080"),
+
 		JWTSecret:      os.Getenv("JWT_SECRET"),
 		JWTTTL:         envDuration("JWT_TTL", 12*time.Hour),
 		AllowedOrigins: splitCSV(env("CORS_ALLOWED_ORIGINS", "http://localhost:3000")),
@@ -98,14 +114,12 @@ func Load() (*Config, error) {
 
 func (c *Config) validate() error {
 	var missing []string
+	// R2 NO está aquí: sin sus credenciales el sistema usa disco local, que es
+	// suficiente para desarrollo y para un despliegue de una sola máquina.
 	required := map[string]string{
-		"DATABASE_URL":         c.DatabaseURL,
-		"EVOLUTION_API_KEY":    c.EvolutionAPIKey,
-		"JWT_SECRET":           c.JWTSecret,
-		"R2_ACCOUNT_ID":        c.R2AccountID,
-		"R2_ACCESS_KEY_ID":     c.R2AccessKeyID,
-		"R2_SECRET_ACCESS_KEY": c.R2SecretKey,
-		"R2_BUCKET":            c.R2Bucket,
+		"DATABASE_URL":      c.DatabaseURL,
+		"EVOLUTION_API_KEY": c.EvolutionAPIKey,
+		"JWT_SECRET":        c.JWTSecret,
 	}
 	for name, value := range required {
 		if strings.TrimSpace(value) == "" {
@@ -121,7 +135,27 @@ func (c *Config) validate() error {
 	if c.WorkerShards < 1 {
 		return fmt.Errorf("WORKER_SHARDS debe ser >= 1")
 	}
+	// O están las cuatro credenciales de R2, o ninguna. Tres de cuatro es un
+	// despliegue a medio configurar que arrancaría en local sin que nadie se dé
+	// cuenta hasta que alguien busque un archivo que creía en la nube.
+	if n := c.r2VarsSet(); n != 0 && n != 4 {
+		return fmt.Errorf(
+			"configuración de R2 incompleta (%d de 4 variables): definí las cuatro o ninguna", n)
+	}
 	return nil
+}
+
+// UseR2 indica si hay que usar Cloudflare R2 en vez del disco local.
+func (c *Config) UseR2() bool { return c.r2VarsSet() == 4 }
+
+func (c *Config) r2VarsSet() int {
+	n := 0
+	for _, v := range []string{c.R2AccountID, c.R2AccessKeyID, c.R2SecretKey, c.R2Bucket} {
+		if strings.TrimSpace(v) != "" {
+			n++
+		}
+	}
+	return n
 }
 
 func env(key, fallback string) string {
