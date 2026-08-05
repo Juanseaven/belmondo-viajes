@@ -42,7 +42,14 @@ type Module struct {
 	mediaSvc *media.Service
 	webhook  http.Handler
 	mediaDB  store.MediaStore
+	read     store.ReadStore
+	upkeep   store.Maintenance
 	log      *slog.Logger
+
+	// Cancela las tareas de fondo propias del módulo (hoy, la purga). Se guarda
+	// para que Shutdown pueda pararlas sin depender del contexto de Start.
+	stopUpkeep context.CancelFunc
+	upkeepDone chan struct{}
 }
 
 // New cablea el módulo. Construye sus propias dependencias (el cliente de
@@ -69,6 +76,8 @@ func New(k *kernel.Kernel) *Module {
 		mediaSvc: mediaSvc,
 		webhook:  webhook.NewHandler(events, pool, cfg.WebhookAPIKey, log),
 		mediaDB:  mediaDB,
+		read:     postgres.NewRead(k.DB),
+		upkeep:   postgres.NewMaintenance(k.DB),
 		log:      log,
 	}
 }
@@ -93,6 +102,12 @@ func (m *Module) Mount(r modules.Router) {
 	// la apikey del payload, que valida el propio handler.
 	r.Public("POST /webhooks/evolution", m.webhook)
 
+	r.Authed("GET /lines", http.HandlerFunc(m.listLines))
+	r.Authed("GET /conversations", http.HandlerFunc(m.listConversations))
+	r.Authed("GET /conversations/{id}", http.HandlerFunc(m.getConversation))
+	r.Authed("GET /conversations/{id}/messages", http.HandlerFunc(m.listMessages))
+	r.Authed("POST /conversations/{id}/read", http.HandlerFunc(m.markRead))
+	r.Authed("GET /search", http.HandlerFunc(m.searchMessages))
 	r.Authed("GET /media/{id}", http.HandlerFunc(m.serveMedia))
 }
 
@@ -104,12 +119,29 @@ func (m *Module) Start(ctx context.Context) error {
 	if err := m.mediaSvc.Requeue(ctx, 200); err != nil {
 		m.log.Warn("no se pudo reencolar el media pendiente", "error", err)
 	}
+
+	upkeepCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	m.stopUpkeep = cancel
+	m.upkeepDone = make(chan struct{})
+	go m.runPurge(upkeepCtx)
+
 	return nil
 }
 
 // Shutdown drena en el orden que evita perder trabajo: primero el pool de eventos
 // (que produce trabajo de media) y después el pipeline de media.
 func (m *Module) Shutdown(ctx context.Context) error {
+	// La purga es trabajo de fondo prescindible: se corta primero para que no
+	// compita por conexiones con lo que sí hay que drenar.
+	if m.stopUpkeep != nil {
+		m.stopUpkeep()
+		select {
+		case <-m.upkeepDone:
+		case <-ctx.Done():
+			m.log.Warn("la purga no terminó a tiempo; se abandona")
+		}
+	}
+
 	if err := m.pool.Shutdown(ctx); err != nil {
 		// Los eventos siguen en webhook_events con status='pending': el
 		// reprocesador los recuperará al arrancar. No se pierde nada.

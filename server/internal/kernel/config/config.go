@@ -29,6 +29,11 @@ type Config struct {
 	WorkerQueueSize int
 	MediaWorkers    int
 
+	// Días que se conservan los webhooks ya procesados. 0 desactiva la purga.
+	// La tabla guarda el payload completo de cada evento y crece del orden de
+	// millones de filas al mes: sin purga, el síntoma es el disco lleno.
+	EventRetentionDays int
+
 	R2AccountID    string
 	R2AccessKeyID  string
 	R2SecretKey    string
@@ -65,6 +70,8 @@ func Load() (*Config, error) {
 		WorkerShards:    envInt("WORKER_SHARDS", 8),
 		WorkerQueueSize: envInt("WORKER_QUEUE_SIZE", 512),
 		MediaWorkers:    envInt("MEDIA_WORKERS", 4),
+
+		EventRetentionDays: envInt("EVENT_RETENTION_DAYS", 30),
 
 		R2AccountID:    os.Getenv("R2_ACCOUNT_ID"),
 		R2AccessKeyID:  os.Getenv("R2_ACCESS_KEY_ID"),

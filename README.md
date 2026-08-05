@@ -17,8 +17,29 @@ desde el panel.
 |---|---|
 | Kernel | Auth (login, JWT, usuarios), migraciones por módulo, websockets, R2 |
 | mirror — ingesta | Funciona: webhook → worker particionado → Postgres → R2 → websocket |
-| mirror — API | **No construida.** Listar bandeja, abrir un hilo, enviar y dar de alta una línea con QR son el alcance del próximo spec |
-| Frontend | Login, shell con menú por módulos, pantalla del espejo en modo diagnóstico |
+| mirror — lectura | Funciona: bandeja unificada o por línea, hilo paginado, búsqueda dentro de los mensajes, marcar revisado |
+| mirror — escritura | **No construida.** Enviar mensajes y dar de alta una línea con QR desde el panel son el alcance del próximo spec |
+| Frontend | Login, shell con menú por módulos, bandeja del espejo completa en modo lectura |
+
+Dar de alta una línea todavía se hace a mano (ver más abajo).
+
+### API del módulo mirror
+
+Todo bajo `/api/mirror`, con sesión. Los listados paginan por keyset: la
+respuesta trae `nextCursor` y se devuelve tal cual en la petición siguiente.
+
+```
+GET  /lines                          líneas + sin-revisar de cada una
+GET  /conversations                  ?instance= ?q= ?cursor= ?limit=
+GET  /conversations/{id}
+GET  /conversations/{id}/messages    ?before= | ?around=<messageId>
+POST /conversations/{id}/read
+GET  /search                         ?q= ?instance=   (mínimo 3 caracteres)
+GET  /media/{id}                     URL firmada de vida corta
+```
+
+`around` centra la ventana en un mensaje concreto: es lo que permite que un
+resultado de búsqueda abra el hilo **en** ese mensaje y no al final del chat.
 
 ## Estructura
 
@@ -124,7 +145,14 @@ Que esto siga siendo manual es justamente lo que resuelve el próximo spec.
   total sobre todas las líneas conectadas.
 - El bucket de R2 es privado. El frontend pide `GET /api/mirror/media/{id}` y
   recibe una URL firmada de vida corta. Por ahí viajan pasaportes.
-- `webhook_events` crece rápido. Purgar pasados 30-90 días.
+- `webhook_events` se purga solo: el módulo espejo borra a diario, por lotes, los
+  eventos ya procesados que superan `EVENT_RETENTION_DAYS` (30 por defecto). Es la
+  tabla que más crece con diferencia, porque guarda el payload completo de cada
+  evento incluidos los ACK de entrega y lectura. Con la purga desactivada (`0`) el
+  problema no es que consulte lento: es que llena el disco.
+- La búsqueda dentro de los mensajes tiene un `statement_timeout` de 3 s propio.
+  Un término muy común devuelve `SEARCH_TOO_BROAD` en vez de monopolizar una
+  conexión. Es el único endpoint que no escala solo con el volumen de mensajes.
 - Si Redis se pierde, los mensajes enviados desde el panel durante esa ventana se
   clasifican como `device` (escritos desde el teléfono). Se degrada la
   atribución, nunca se pierde el mensaje. `outbound_messages` permite reconciliar
