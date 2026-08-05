@@ -165,14 +165,21 @@ cd server
 go build ./... && go vet ./... && go test ./...
 ```
 
-Los tests de integración del runner de migraciones se saltan salvo que haya una
-base a mano:
+Los tests de integración (runner de migraciones y consultas del espejo) se saltan
+salvo que haya una base a mano. Aplican las migraciones **reales** sobre un
+esquema limpio, así que verifican el esquema y el SQL juntos:
 
 ```bash
-docker run --rm -e POSTGRES_PASSWORD=test -p 5433:5432 postgres:16
-TEST_DATABASE_URL=postgres://postgres:test@localhost:5433/postgres \
-  go test ./internal/kernel/db/
+createdb viajes_crm_test
+TEST_DATABASE_URL='postgres://postgres:clave@127.0.0.1:5432/viajes_crm_test?sslmode=disable' \
+  go test ./...
 ```
+
+La URL apunta a una base cualquiera donde se pueda crear y borrar: cada paquete
+de test se crea la suya (`viajes_crm_test_kernel_db`, `viajes_crm_test_mirror_postgres`)
+y la borra al terminar. Eso es lo que permite que `go test ./...` corra los
+paquetes en paralelo, que es su comportamiento por defecto — compartiendo una
+sola base se pisan al limpiar el esquema y fallan de forma intermitente.
 
 ```bash
 cd web

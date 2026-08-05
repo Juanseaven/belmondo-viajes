@@ -9,6 +9,8 @@ import (
 	"testing/fstest"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/juanseaven/viajes-crm/server/internal/kernel/db/dbtest"
 )
 
 func quietLogger() *slog.Logger {
@@ -60,29 +62,22 @@ func assertVersions(t *testing.T, got, want []string) {
 //
 // Requiere un Postgres de usar y tirar:
 //
-//	docker run --rm -e POSTGRES_PASSWORD=test -p 5433:5432 postgres:16
-//	TEST_DATABASE_URL=postgres://postgres:test@localhost:5433/postgres go test ./internal/kernel/db/
+//	createdb viajes_crm_test
+//	TEST_DATABASE_URL='postgres://postgres:clave@127.0.0.1:5432/viajes_crm_test?sslmode=disable' go test ./...
 //
 // Sin la variable se salta: `go test ./...` no puede exigir una base levantada.
 
+// TestMain le da a este paquete su propia base. Sin eso, `go test ./...` corre
+// este paquete en paralelo con el del espejo, los dos limpian el esquema de la
+// misma base y ambos fallan de forma intermitente.
+func TestMain(m *testing.M) {
+	os.Exit(dbtest.Main(m, "kernel_db"))
+}
+
+// testPool devuelve una base limpia: el runner se prueba desde cero.
 func testPool(t *testing.T) (context.Context, *pgxpool.Pool) {
 	t.Helper()
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_DATABASE_URL sin definir: se salta la integración con Postgres")
-	}
-	ctx := context.Background()
-	p, err := Connect(ctx, url, 4)
-	if err != nil {
-		t.Fatalf("Connect: %v", err)
-	}
-	t.Cleanup(p.Close)
-
-	// Cada test parte de cero: el runner se prueba contra una base limpia.
-	if _, err := p.Exec(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public`); err != nil {
-		t.Fatalf("limpiando el esquema: %v", err)
-	}
-	return ctx, p
+	return dbtest.Pool(t)
 }
 
 func countMigrations(t *testing.T, ctx context.Context, p *pgxpool.Pool, module string) int {

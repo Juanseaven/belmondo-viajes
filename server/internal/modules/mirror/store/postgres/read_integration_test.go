@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/juanseaven/viajes-crm/server/internal/kernel/db"
+	"github.com/juanseaven/viajes-crm/server/internal/kernel/db/dbtest"
 	kernelmigrations "github.com/juanseaven/viajes-crm/server/internal/kernel/migrations"
 	"github.com/juanseaven/viajes-crm/server/internal/modules/mirror/domain"
 	"github.com/juanseaven/viajes-crm/server/internal/modules/mirror/store"
@@ -34,26 +35,20 @@ func quietLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
+// TestMain le da a este paquete su propia base: `go test ./...` corre los
+// paquetes en paralelo y compartir base con otro hace que ambos se pisen al
+// limpiar el esquema.
+func TestMain(m *testing.M) {
+	os.Exit(dbtest.Main(m, "mirror_postgres"))
+}
+
 // testDB deja la base con el esquema REAL aplicado: las mismas migraciones que
 // corren en producción, no un esquema de mentira escrito para el test. Si una
 // migración y una consulta se desincronizan, se ve acá.
 func testDB(t *testing.T) (context.Context, *pgxpool.Pool) {
 	t.Helper()
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_DATABASE_URL sin definir: se salta la integración con Postgres")
-	}
+	ctx, pool := dbtest.Pool(t)
 
-	ctx := context.Background()
-	pool, err := db.Connect(ctx, url, 4)
-	if err != nil {
-		t.Fatalf("Connect: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	if _, err := pool.Exec(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public`); err != nil {
-		t.Fatalf("limpiando el esquema: %v", err)
-	}
 	if err := db.Migrate(ctx, pool, "kernel", kernelmigrations.FS(), quietLogger()); err != nil {
 		t.Fatalf("migraciones del kernel: %v", err)
 	}
