@@ -128,6 +128,21 @@ func (c *Client) CreateInstance(ctx context.Context, name string) error {
 	return c.do(ctx, http.MethodPost, "/instance/create", body, nil)
 }
 
+// Logout desvincula el teléfono sin borrar la instancia en Evolution.
+func (c *Client) Logout(ctx context.Context, instance string) error {
+	return c.do(ctx, http.MethodDelete, "/instance/logout/"+url.PathEscape(instance), nil, nil)
+}
+
+// DeleteInstance elimina la instancia en Evolution.
+//
+// La fila de `instances` NO se borra al llamar a esto: las conversaciones y
+// mensajes cuelgan de ella con ON DELETE CASCADE, así que borrarla se llevaría
+// puesto el historial, que es justamente lo que el panel existe para conservar.
+// El módulo la marca inactiva.
+func (c *Client) DeleteInstance(ctx context.Context, instance string) error {
+	return c.do(ctx, http.MethodDelete, "/instance/delete/"+url.PathEscape(instance), nil, nil)
+}
+
 // ConnectionState consulta si una línea sigue vinculada.
 func (c *Client) ConnectionState(ctx context.Context, instance string) (string, error) {
 	var out struct {

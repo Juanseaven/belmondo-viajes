@@ -47,6 +47,51 @@ func (i *Instances) Touch(ctx context.Context, evolutionName string, at time.Tim
 	return err
 }
 
+// Create registra una línea antes de que exista en Evolution.
+//
+// El estado inicial es 'created': todavía no hay teléfono vinculado, y así el
+// panel la muestra como pendiente de escanear.
+func (i *Instances) Create(ctx context.Context, evolutionName, ownerLabel, displayName string) (string, error) {
+	var id string
+	err := i.db.QueryRow(ctx,
+		`INSERT INTO instances (evolution_name, owner_label, display_name, status)
+		 VALUES ($1, $2, $3, 'created') RETURNING id`,
+		evolutionName, ownerLabel, nullIfEmpty(displayName)).Scan(&id)
+	if isUniqueViolation(err) {
+		return "", store.ErrDuplicate
+	}
+	return id, err
+}
+
+func (i *Instances) NameByID(ctx context.Context, id string) (string, error) {
+	if !isUUID(id) {
+		return "", store.ErrNotFound
+	}
+	var name string
+	err := i.db.QueryRow(ctx,
+		`SELECT evolution_name FROM instances WHERE id = $1`, id).Scan(&name)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", store.ErrNotFound
+	}
+	return name, err
+}
+
+// Deactivate desvincula la línea sin tocar su historial.
+func (i *Instances) Deactivate(ctx context.Context, id string) error {
+	if !isUUID(id) {
+		return store.ErrNotFound
+	}
+	tag, err := i.db.Exec(ctx,
+		`UPDATE instances SET is_active = false, status = 'close' WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
 // normalizeState mapea los estados de Baileys al enum instance_status. Cualquier
 // valor desconocido cae en 'connecting' en vez de romper el INSERT: un estado
 // nuevo de WhatsApp no debe tumbar la ingesta.

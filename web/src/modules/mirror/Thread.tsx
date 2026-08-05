@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { Conversation } from "./api";
+import { Composer } from "./Composer";
 import { MessageBubble } from "./MessageBubble";
 import { useThread } from "./useThread";
 
@@ -12,14 +13,20 @@ import { useThread } from "./useThread";
 export function Thread({
   conversation,
   focusId,
+  lineStatus,
+  threadRef,
 }: {
   conversation: Conversation | null;
   focusId?: string;
+  /** Estado de vinculación de la línea: si no está abierta, no se puede enviar. */
+  lineStatus?: string;
+  /** Deja el hilo accesible desde arriba, para que el websocket pueda inyectar. */
+  threadRef?: (thread: ReturnType<typeof useThread>) => void;
 }) {
-  const { messages, loading, error, hasOlder, loadOlder } = useThread(
-    conversation?.id ?? null,
-    focusId,
-  );
+  const thread = useThread(conversation?.id ?? null, focusId);
+  const { messages, loading, error, hasOlder, loadOlder } = thread;
+
+  threadRef?.(thread);
 
   const scroller = useRef<HTMLDivElement>(null);
   const topSentinel = useRef<HTMLDivElement>(null);
@@ -99,6 +106,14 @@ export function Thread({
           </div>
         ))}
       </div>
+
+      <Composer
+        conversationId={conversation.id}
+        disabled={lineStatus !== undefined && lineStatus !== "open"}
+        disabledReason="La línea está desconectada. Hay que volver a vincularla para poder escribir."
+        onOptimistic={thread.addOptimistic}
+        onSettled={thread.settleOptimistic}
+      />
     </div>
   );
 }

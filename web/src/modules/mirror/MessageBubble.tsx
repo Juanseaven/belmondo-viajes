@@ -14,12 +14,24 @@ import { mirrorApi, type Message, type MessageMedia } from "./api";
 export function MessageBubble({ message }: { message: Message }) {
   const mine = message.direction === "outbound";
 
+  // Provisional: pintado al enviar, todavía sin confirmar por WhatsApp.
+  const provisional = Boolean(message.pending && !message.pending.error);
+  const fallido = Boolean(message.pending?.error);
+
+  const clases = ["bubble", mine ? "out" : "in"];
+  if (provisional) clases.push("provisional");
+  if (fallido) clases.push("fallido");
+
   return (
-    <article className={`bubble ${mine ? "out" : "in"}`}>
+    <article className={clases.join(" ")}>
       {message.origin === "panel" && message.sentByName && (
         <span className="author">{message.sentByName}</span>
       )}
       {message.origin === "device" && <span className="author muted">desde el teléfono</span>}
+
+      {message.pending?.fileName && (
+        <span className="attachment-name">📎 {message.pending.fileName}</span>
+      )}
 
       {message.media && <MediaBlock media={message.media} />}
 
@@ -39,6 +51,8 @@ export function MessageBubble({ message }: { message: Message }) {
           })}
         </time>
         {message.editedAt && <span className="edited">editado</span>}
+        {provisional && <span className="estado">enviando…</span>}
+        {fallido && <span className="estado error">{message.pending?.error}</span>}
       </footer>
     </article>
   );

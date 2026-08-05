@@ -31,6 +31,18 @@ type Broadcaster interface {
 	Broadcast(ev ws.Event)
 }
 
+// QRStore guarda el último código QR de una línea en vinculación.
+type QRStore interface {
+	Set(ctx context.Context, instanceName, code string) error
+	Clear(ctx context.Context, instanceName string)
+}
+
+// OutboundLookup es la red de seguridad de la atribución: recupera de la base el
+// autor de un envío cuya marca en Redis se perdió.
+type OutboundLookup interface {
+	UserByWAMessageID(ctx context.Context, instanceID, waMessageID string) (string, bool)
+}
+
 // Processor implementa worker.Handler. Traduce el payload, resuelve el origen
 // real del mensaje, persiste y notifica.
 type Processor struct {
@@ -38,6 +50,8 @@ type Processor struct {
 	messages  store.MessageStore
 	instances store.InstanceStore
 	panel     store.PanelSendTracker
+	outbound  OutboundLookup
+	qr        QRStore
 	media     MediaEnqueuer
 	hub       Broadcaster
 	log       *slog.Logger
@@ -48,13 +62,16 @@ func NewProcessor(
 	messages store.MessageStore,
 	instances store.InstanceStore,
 	panel store.PanelSendTracker,
+	outbound OutboundLookup,
+	qr QRStore,
 	media MediaEnqueuer,
 	hub Broadcaster,
 	log *slog.Logger,
 ) *Processor {
 	return &Processor{
 		events: events, messages: messages, instances: instances,
-		panel: panel, media: media, hub: hub, log: log,
+		panel: panel, outbound: outbound, qr: qr,
+		media: media, hub: hub, log: log,
 	}
 }
 
@@ -69,6 +86,8 @@ func (p *Processor) Handle(ctx context.Context, job worker.Job) error {
 		err = p.handleDelete(ctx, job)
 	case webhook.EventConnectionUpdate:
 		err = p.handleConnection(ctx, job)
+	case webhook.EventQRCodeUpdated:
+		err = p.handleQRCode(ctx, job)
 	default:
 		// Evento suscrito pero sin tratamiento propio. Queda registrado en
 		// webhook_events, que es donde vive el valor forense.
@@ -92,14 +111,22 @@ func (p *Processor) handleMessage(ctx context.Context, job worker.Job) error {
 
 	// --- Resolución del origen real ------------------------------------------
 	// webhook.ParseMessage marca todo fromMe como OriginDevice porque desde el
-	// payload no hay más información. Aquí se corrige: si el id está marcado en
-	// Redis, el mensaje salió de este panel.
+	// payload no hay más información: WhatsApp entrega igual lo que se escribió
+	// desde el teléfono y lo que salió de esta app.
 	//
-	// Si Redis se hubiera perdido, el peor caso es clasificar un envío del panel
-	// como 'device'. Degradación silenciosa, nunca corrupción.
+	// Dos fuentes, en orden:
+	//   1. La marca en Redis, que el envío deja justo tras recibir el key.id.
+	//   2. outbound_messages, si esa marca no está.
+	//
+	// El segundo camino no es redundante: cubre que Redis se haya reiniciado o
+	// que el webhook le haya ganado la carrera al Mark. Sin él, esos mensajes se
+	// atribuirían al teléfono y la trazabilidad mentiría en silencio.
 	var sentBy string
 	if msg.Direction == domain.Outbound {
 		if userID, ok := p.panel.Claim(ctx, msg.WAMessageID); ok {
+			msg.Origin = domain.OriginPanel
+			sentBy = userID
+		} else if userID, ok := p.outboundAuthor(ctx, job.Instance, msg.WAMessageID); ok {
 			msg.Origin = domain.OriginPanel
 			sentBy = userID
 		}
@@ -131,14 +158,77 @@ func (p *Processor) handleMessage(ctx context.Context, job worker.Job) error {
 		"messageId":      saved.MessageID,
 		"conversationId": saved.ConversationID,
 		"instanceId":     saved.InstanceID,
-		"direction":      msg.Direction,
-		"origin":         msg.Origin,
-		"type":           msg.Type,
-		"body":           msg.Body,
-		"hasMedia":       saved.MediaAssetID != "",
-		"timestamp":      msg.Timestamp,
+		// El id de WhatsApp es la única clave con la que el panel puede emparejar
+		// el mensaje provisional que pintó al enviar con este, el confirmado.
+		"waMessageId": msg.WAMessageID,
+		"direction":   msg.Direction,
+		"origin":      msg.Origin,
+		"type":        msg.Type,
+		"body":        msg.Body,
+		"hasMedia":    saved.MediaAssetID != "",
+		"timestamp":   msg.Timestamp,
 	})
 	return nil
+}
+
+// outboundAuthor consulta la base cuando la marca de Redis no está.
+func (p *Processor) outboundAuthor(ctx context.Context, instanceName, waMessageID string) (string, bool) {
+	if p.outbound == nil {
+		return "", false
+	}
+	instanceID, err := p.instances.IDByName(ctx, instanceName)
+	if err != nil {
+		return "", false
+	}
+	return p.outbound.UserByWAMessageID(ctx, instanceID, waMessageID)
+}
+
+// handleQRCode recoge el código de vinculación y lo emite al panel.
+//
+// El QR rota cada ~30 s, así que esto se dispara varias veces por alta. Se guarda
+// el último en Redis con TTL para que abrir el modal muestre algo al instante en
+// vez de esperar al siguiente.
+func (p *Processor) handleQRCode(ctx context.Context, job worker.Job) error {
+	var d struct {
+		QRCode struct {
+			Base64 string `json:"base64"`
+			Code   string `json:"code"`
+		} `json:"qrcode"`
+		Base64 string `json:"base64"`
+		Code   string `json:"code"`
+	}
+	if err := json.Unmarshal(job.Payload, &d); err != nil {
+		return fmt.Errorf("parseando el qr: %w", err)
+	}
+
+	// Evolution ha movido este campo entre versiones: unas veces anidado bajo
+	// `qrcode`, otras en la raíz.
+	image := firstNonEmpty(d.QRCode.Base64, d.Base64)
+	if image == "" {
+		// Sin imagen no hay nada que mostrar, pero tampoco es un fallo: el evento
+		// queda registrado y el siguiente QR llega en segundos.
+		p.log.Warn("qrcode.updated sin imagen", "instance", job.Instance)
+		return nil
+	}
+
+	if err := p.qr.Set(ctx, job.Instance, image); err != nil {
+		p.log.Warn("no se pudo guardar el qr", "instance", job.Instance, "error", err)
+	}
+
+	p.broadcast("line.qr", "", map[string]any{
+		"instance": job.Instance,
+		"qr":       image,
+	})
+	return nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func (p *Processor) handleStatusUpdate(ctx context.Context, job worker.Job) error {
@@ -196,6 +286,11 @@ func (p *Processor) handleConnection(ctx context.Context, job worker.Job) error 
 	// agencia no ve ni un mensaje de ese vendedor.
 	if d.State == "close" {
 		p.log.Warn("línea desconectada", "instance", job.Instance)
+	}
+	if d.State == "open" {
+		// Ya vinculada: el QR guardado dejó de servir y mostrarlo sería ofrecer un
+		// código muerto.
+		p.qr.Clear(ctx, job.Instance)
 	}
 	p.broadcast("instance.status", "", map[string]any{
 		"instance": job.Instance,

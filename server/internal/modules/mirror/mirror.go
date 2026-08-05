@@ -15,6 +15,7 @@ import (
 	"net/http"
 
 	"github.com/juanseaven/viajes-crm/server/internal/kernel"
+	"github.com/juanseaven/viajes-crm/server/internal/kernel/auth"
 	"github.com/juanseaven/viajes-crm/server/internal/kernel/httpx"
 	"github.com/juanseaven/viajes-crm/server/internal/modules"
 	"github.com/juanseaven/viajes-crm/server/internal/modules/mirror/domain"
@@ -46,6 +47,12 @@ type Module struct {
 	upkeep   store.Maintenance
 	log      *slog.Logger
 
+	// Escritura.
+	send        *SendService
+	lines       store.InstanceStore
+	provisioner Provisioner
+	qr          *rediscache.QRCodes
+
 	// Cancela las tareas de fondo propias del módulo (hoy, la purga). Se guarda
 	// para que Shutdown pueda pararlas sin depender del contexto de Start.
 	stopUpkeep context.CancelFunc
@@ -64,10 +71,14 @@ func New(k *kernel.Kernel) *Module {
 	mediaDB := postgres.NewMedia(k.DB)
 	panelSends := rediscache.NewPanelSends(k.Redis)
 
+	outbound := postgres.NewOutbound(k.DB)
+	qr := rediscache.NewQRCodes(k.Redis)
+
 	evo := evolution.New(cfg.EvolutionBaseURL, cfg.EvolutionAPIKey)
 
 	mediaSvc := media.NewService(evo, k.Blobs, mediaDB, cfg.WorkerQueueSize, log)
-	processor := ingest.NewProcessor(events, messages, instances, panelSends, mediaSvc, k.Hub, log)
+	processor := ingest.NewProcessor(
+		events, messages, instances, panelSends, outbound, qr, mediaSvc, k.Hub, log)
 	pool := worker.New(cfg.WorkerShards, cfg.WorkerQueueSize, processor, log)
 
 	return &Module{
@@ -79,6 +90,11 @@ func New(k *kernel.Kernel) *Module {
 		read:     postgres.NewRead(k.DB),
 		upkeep:   postgres.NewMaintenance(k.DB),
 		log:      log,
+
+		send:        NewSendService(outbound, panelSends, evo, k.Blobs, cfg.R2SignedURLTTL, log),
+		lines:       instances,
+		provisioner: evo,
+		qr:          qr,
 	}
 }
 
@@ -102,13 +118,22 @@ func (m *Module) Mount(r modules.Router) {
 	// la apikey del payload, que valida el propio handler.
 	r.Public("POST /webhooks/evolution", m.webhook)
 
+	// Lectura y envío: todo el equipo.
 	r.Authed("GET /lines", http.HandlerFunc(m.listLines))
 	r.Authed("GET /conversations", http.HandlerFunc(m.listConversations))
 	r.Authed("GET /conversations/{id}", http.HandlerFunc(m.getConversation))
 	r.Authed("GET /conversations/{id}/messages", http.HandlerFunc(m.listMessages))
+	r.Authed("POST /conversations/{id}/messages", http.HandlerFunc(m.sendMessage))
 	r.Authed("POST /conversations/{id}/read", http.HandlerFunc(m.markRead))
 	r.Authed("GET /search", http.HandlerFunc(m.searchMessages))
 	r.Authed("GET /media/{id}", http.HandlerFunc(m.serveMedia))
+
+	// Gestión de líneas: solo admin. Conectar un número expone todas sus
+	// conversaciones al equipo entero, así que no es lo mismo que mandar un
+	// mensaje.
+	r.Authed("POST /lines", auth.RequireAdmin(http.HandlerFunc(m.createLineHandler)))
+	r.Authed("DELETE /lines/{id}", auth.RequireAdmin(http.HandlerFunc(m.deleteLineHandler)))
+	r.Authed("GET /lines/{id}/qr", auth.RequireAdmin(http.HandlerFunc(m.lineQR)))
 }
 
 func (m *Module) Start(ctx context.Context) error {

@@ -18,10 +18,8 @@ desde el panel.
 | Kernel | Auth (login, JWT, usuarios), migraciones por módulo, websockets, R2 |
 | mirror — ingesta | Funciona: webhook → worker particionado → Postgres → R2 → websocket |
 | mirror — lectura | Funciona: bandeja unificada o por línea, hilo paginado, búsqueda dentro de los mensajes, marcar revisado |
-| mirror — escritura | **No construida.** Enviar mensajes y dar de alta una línea con QR desde el panel son el alcance del próximo spec |
-| Frontend | Login, shell con menú por módulos, bandeja del espejo completa en modo lectura |
-
-Dar de alta una línea todavía se hace a mano (ver más abajo).
+| mirror — escritura | Funciona: enviar texto y adjuntos, alta y desvinculación de línea con QR desde el panel |
+| Frontend | Login, shell con menú por módulos, bandeja del espejo completa |
 
 ### API del módulo mirror
 
@@ -29,14 +27,23 @@ Todo bajo `/api/mirror`, con sesión. Los listados paginan por keyset: la
 respuesta trae `nextCursor` y se devuelve tal cual en la petición siguiente.
 
 ```
-GET  /lines                          líneas + sin-revisar de cada una
-GET  /conversations                  ?instance= ?q= ?cursor= ?limit=
-GET  /conversations/{id}
-GET  /conversations/{id}/messages    ?before= | ?around=<messageId>
-POST /conversations/{id}/read
-GET  /search                         ?q= ?instance=   (mínimo 3 caracteres)
-GET  /media/{id}                     URL firmada de vida corta
+GET    /lines                          líneas + sin-revisar de cada una
+GET    /conversations                  ?instance= ?q= ?cursor= ?limit=
+GET    /conversations/{id}
+GET    /conversations/{id}/messages    ?before= | ?around=<messageId>
+POST   /conversations/{id}/messages    JSON para texto, multipart con adjunto
+POST   /conversations/{id}/read
+GET    /search                         ?q= ?instance=   (mínimo 3 caracteres)
+GET    /media/{id}                     URL firmada de vida corta
+
+POST   /lines                          (admin) da de alta una línea
+DELETE /lines/{id}                     (admin) la desvincula
+GET    /lines/{id}/qr                  (admin) último QR conocido
 ```
+
+Enviar exige una **`idempotencyKey` generada por el cliente**: `outbound_messages`
+la tiene como `UNIQUE`, así que un doble clic o un reintento del navegador
+devuelven el envío original en vez de mandar el mensaje dos veces.
 
 `around` centra la ventana en un mensaje concreto: es lo que permite que un
 resultado de búsqueda abra el hilo **en** ese mensaje y no al final del chat.
@@ -123,21 +130,19 @@ contraseña desde el panel y sacá esas dos líneas del `.env`.
 
 ## Dar de alta la línea de un vendedor
 
-Evolution solo escucha en `127.0.0.1`, así que desde el servidor:
+Desde el panel: **Conectar línea**, se escribe de quién es el número, y aparece el
+QR para escanear desde *Dispositivos vinculados* de ese teléfono. Solo los
+usuarios con rol `admin` lo ven.
 
-```bash
-curl -X POST http://127.0.0.1:8080/instance/create \
-  -H "apikey: $EVOLUTION_API_KEY" \
-  -H 'Content-Type: application/json' \
-  -d '{"instanceName":"ana-ventas","qrcode":true,"integration":"WHATSAPP-BAILEYS"}'
-```
+El orden interno importa: **la fila en `instances` se crea antes que la instancia
+en Evolution.** Al revés, si Evolution se creara y el `INSERT` fallara, quedaría
+una instancia fantasma vinculada y recibiendo mensajes que el backend descarta
+por no encontrar su fila — un fallo invisible. En este orden, el fallo se ve: una
+línea que figura sin conectar y se puede reintentar o borrar.
 
-Luego insertar la fila correspondiente en `instances` con el `owner_label` del
-vendedor. **Sin esa fila el backend descarta los mensajes de esa línea**: es
-deliberado, un error de aprovisionamiento debe verse en los logs y no crear
-instancias fantasma en la base.
-
-Que esto siga siendo manual es justamente lo que resuelve el próximo spec.
+Desvincular no borra la fila, la marca inactiva: las conversaciones y mensajes
+cuelgan de ella con `ON DELETE CASCADE`, así que borrarla se llevaría puesto el
+historial.
 
 ## Notas de operación
 
@@ -153,10 +158,10 @@ Que esto siga siendo manual es justamente lo que resuelve el próximo spec.
 - La búsqueda dentro de los mensajes tiene un `statement_timeout` de 3 s propio.
   Un término muy común devuelve `SEARCH_TOO_BROAD` en vez de monopolizar una
   conexión. Es el único endpoint que no escala solo con el volumen de mensajes.
-- Si Redis se pierde, los mensajes enviados desde el panel durante esa ventana se
-  clasifican como `device` (escritos desde el teléfono). Se degrada la
-  atribución, nunca se pierde el mensaje. `outbound_messages` permite reconciliar
-  a mano.
+- La atribución de un saliente tiene dos fuentes: la marca en Redis que deja el
+  envío, y `outbound_messages` como respaldo. Si Redis se reinicia o el webhook le
+  gana la carrera a la marca, el autor se recupera igual de la base. Solo un
+  mensaje escrito de verdad desde el teléfono queda sin autor.
 
 ## Desarrollo
 

@@ -67,14 +67,82 @@ export function useThread(conversationId: string | null, focusId?: string) {
     }
   }, [conversationId, cursor]);
 
-  /** Añade al final un mensaje llegado en vivo, si es de este hilo. */
-  const append = useCallback((msg: Message) => {
-    setMessages((prev) =>
-      // El dedupe importa: el mismo mensaje puede llegar por websocket y venir en
-      // una recarga del hilo casi a la vez.
-      prev.some((m) => m.id === msg.id) ? prev : [...prev, msg],
-    );
+  /**
+   * Añade al final un mensaje llegado en vivo.
+   *
+   * `waMessageId` es la clave de reconciliación: si el mensaje que llega es el
+   * eco de algo que enviamos nosotros, reemplaza a la burbuja provisional en vez
+   * de duplicarla.
+   */
+  const append = useCallback((msg: Message, waMessageId?: string) => {
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === msg.id)) return prev; // ya estaba
+      if (waMessageId) {
+        const i = prev.findIndex((m) => m.pending?.waMessageId === waMessageId);
+        if (i >= 0) {
+          const next = [...prev];
+          next[i] = msg;
+          return next;
+        }
+      }
+      return [...prev, msg];
+    });
   }, []);
 
-  return { messages, loading, error, hasOlder: Boolean(cursor), loadOlder, append };
+  /** Pinta la burbuja provisional apenas se aprieta enviar. */
+  const addOptimistic = useCallback(
+    (key: string, body: string, fileName?: string) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `pendiente:${key}`,
+          direction: "outbound",
+          origin: "panel",
+          type: fileName ? "document" : "text",
+          status: "pending",
+          body,
+          timestamp: new Date().toISOString(),
+          pending: { key, fileName },
+        },
+      ]);
+    },
+    [],
+  );
+
+  /**
+   * Resuelve una burbuja provisional.
+   *
+   * Con `waMessageId` la deja esperando el eco, que llegará por websocket y la
+   * reemplazará por el mensaje real. Con error, la marca en rojo para reintentar.
+   *
+   * No se sustituye acá directamente por el mensaje real porque todavía no lo
+   * tenemos: la fila en `messages` la crea el webhook uno o dos segundos después.
+   */
+  const settleOptimistic = useCallback(
+    (key: string, waMessageId: string | null, error?: string) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.pending?.key === key
+            ? {
+                ...m,
+                status: error ? "failed" : "sent",
+                pending: { ...m.pending, waMessageId: waMessageId ?? undefined, error },
+              }
+            : m,
+        ),
+      );
+    },
+    [],
+  );
+
+  return {
+    messages,
+    loading,
+    error,
+    hasOlder: Boolean(cursor),
+    loadOlder,
+    append,
+    addOptimistic,
+    settleOptimistic,
+  };
 }

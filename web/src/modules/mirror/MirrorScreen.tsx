@@ -12,18 +12,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+import { useSession } from "../../kernel/auth/session";
 import { useSocket, type ServerEvent } from "../../kernel/api/useSocket";
-import { mirrorApi, type Conversation, type Line } from "./api";
+import { mirrorApi, type Conversation, type Line, type Message } from "./api";
 import { ConversationList } from "./ConversationList";
+import { LineDialog } from "./LineDialog";
 import { LineFilter } from "./LineFilter";
 import { SearchResults } from "./SearchResults";
 import { Thread } from "./Thread";
 import { useInbox } from "./useInbox";
+import type { useThread } from "./useThread";
 import { mirror } from "./module";
+
+/** Lo que el hilo abierto expone hacia arriba para recibir eventos en vivo. */
+type ThreadHandle = ReturnType<typeof useThread>;
 
 interface NewMessageEvent {
   conversationId: string;
   instanceId: string;
+  /** Clave para emparejar el eco con la burbuja provisional que pintó el envío. */
+  waMessageId?: string;
   body?: string;
   type: string;
   timestamp: string;
@@ -32,6 +40,7 @@ interface NewMessageEvent {
 export function MirrorScreen() {
   const router = useRouter();
   const params = useSearchParams();
+  const session = useSession();
 
   const instance = params.get("instance") ?? "";
   const openId = params.get("c") ?? "";
@@ -41,6 +50,8 @@ export function MirrorScreen() {
   const [lines, setLines] = useState<Line[]>([]);
   const [open, setOpen] = useState<Conversation | null>(null);
   const [contactFilter, setContactFilter] = useState("");
+  const [altaAbierta, setAltaAbierta] = useState(false);
+  const [ultimoQR, setUltimoQR] = useState<{ instance: string; qr: string } | null>(null);
 
   const inbox = useInbox(instance, contactFilter);
 
@@ -105,6 +116,10 @@ export function MirrorScreen() {
 
   const linesDirty = useRef(false);
 
+  // El hilo abierto expone sus acciones acá para que el websocket pueda
+  // inyectarle el mensaje que acaba de llegar sin recargarlo entero.
+  const threadApi = useRef<ThreadHandle | null>(null);
+
   useSocket(
     mirror.name,
     (ev: ServerEvent) => {
@@ -112,13 +127,41 @@ export function MirrorScreen() {
         const p = ev.payload as NewMessageEvent;
         inbox.applyNewMessage(p.conversationId, p.body ?? "", p.type, p.timestamp);
         linesDirty.current = true;
+
+        // Si el mensaje es del hilo abierto, se agrega en vivo. El waMessageId
+        // hace que el eco de lo que enviamos reemplace a su burbuja provisional
+        // en vez de duplicarla.
+        if (p.conversationId === openId) {
+          threadApi.current?.append(
+            {
+              id: (ev.payload as { messageId: string }).messageId,
+              direction: (ev.payload as { direction: Message["direction"] }).direction,
+              origin: (ev.payload as { origin: Message["origin"] }).origin,
+              type: p.type,
+              status: "sent",
+              body: p.body,
+              timestamp: p.timestamp,
+            },
+            p.waMessageId,
+          );
+        }
       }
       if (ev.type === "conversation.read") {
         const p = ev.payload as { conversationId: string };
         inbox.applyRead(p.conversationId);
         linesDirty.current = true;
       }
-      if (ev.type === "instance.status") linesDirty.current = true;
+      if (ev.type === "line.qr") {
+        setUltimoQR(ev.payload as { instance: string; qr: string });
+      }
+      if (ev.type === "instance.status") {
+        linesDirty.current = true;
+        // Una línea que se vincula cierra el modal de alta.
+        if ((ev.payload as { state?: string }).state === "open") {
+          setAltaAbierta(false);
+          loadLines();
+        }
+      }
     },
     subscribed,
   );
@@ -141,11 +184,20 @@ export function MirrorScreen() {
         <p>{mirror.description}</p>
       </header>
 
-      <LineFilter
-        lines={lines}
-        selected={instance}
-        onSelect={(id) => setParams({ instance: id || undefined, c: undefined, m: undefined })}
-      />
+      <div className="lines-bar">
+        <LineFilter
+          lines={lines}
+          selected={instance}
+          onSelect={(id) => setParams({ instance: id || undefined, c: undefined, m: undefined })}
+        />
+        {/* Solo los admin pueden dar de alta; si no lo es, el backend responde 403
+            y el botón simplemente no se muestra. */}
+        {session.user?.role === "admin" && (
+          <button type="button" className="chip" onClick={() => setAltaAbierta(true)}>
+            + Conectar línea
+          </button>
+        )}
+      </div>
 
       <div className="mirror-body">
         {/* No es `.sidebar`: esa clase la usa el shell para el menú de módulos. */}
@@ -185,8 +237,21 @@ export function MirrorScreen() {
           )}
         </aside>
 
-        <Thread conversation={open} focusId={focusId} />
+        <Thread
+          conversation={open}
+          focusId={focusId}
+          lineStatus={lines.find((l) => l.id === open?.instanceId)?.status}
+          threadRef={(t) => { threadApi.current = t; }}
+        />
       </div>
+
+      {altaAbierta && (
+        <LineDialog
+          qrEvents={ultimoQR}
+          onClose={() => setAltaAbierta(false)}
+          onConnected={() => { setAltaAbierta(false); loadLines(); }}
+        />
+      )}
     </section>
   );
 }

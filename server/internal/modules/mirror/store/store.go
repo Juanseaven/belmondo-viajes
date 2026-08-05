@@ -55,6 +55,16 @@ type InstanceStore interface {
 	IDByName(ctx context.Context, evolutionName string) (string, error)
 	UpdateConnection(ctx context.Context, evolutionName, status, phoneJID string) error
 	Touch(ctx context.Context, evolutionName string, at time.Time) error
+
+	// Create registra una línea nueva, antes de existir en Evolution.
+	Create(ctx context.Context, evolutionName, ownerLabel, displayName string) (string, error)
+
+	// NameByID devuelve el evolution_name, que es la clave hacia Evolution.
+	NameByID(ctx context.Context, id string) (string, error)
+
+	// Deactivate marca la línea como inactiva. No borra la fila: el historial de
+	// conversaciones y mensajes cuelga de ella.
+	Deactivate(ctx context.Context, id string) error
 }
 
 // MediaStore lleva el estado del pipeline de subida a R2.
