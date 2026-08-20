@@ -1,4 +1,4 @@
-# Diseño del módulo ventas
+# Diseño del módulo operaciones
 
 ## Objetivo
 
@@ -10,7 +10,7 @@ reserva y la de control de reserva— y le da a la empresa su propia base de
 clientes y viajes, visible desde la conversación de WhatsApp donde el vendedor
 ya trabaja todo el día.
 
-Nace un módulo nuevo, `ventas`. El módulo `mirror` no se toca: ni una columna,
+Nace un módulo nuevo, `operaciones`. El módulo `mirror` no se toca: ni una columna,
 ni una migración.
 
 ## La regla de módulos, revisada
@@ -18,7 +18,7 @@ ni una migración.
 Hasta hoy el README y `modules/module.go` decían que **los módulos no se conocen
 entre sí**. La intención era que agregar un módulo fuera fácil; la redacción
 prohibió de más. La ceguera no compra facilidad: compra duplicación. Un módulo
-de ventas ciego necesitaría su propia copia de cada contacto, y su evidencia
+de operaciones ciego necesitaría su propia copia de cada contacto, y su evidencia
 sería un uuid suelto que nada garantiza.
 
 La regla pasa a ser:
@@ -71,7 +71,7 @@ bloque.
 
 ## El modelo
 
-Siete tablas, todas del módulo `ventas`.
+Siete tablas, todas del módulo `operaciones`.
 
 ### Cliente
 
@@ -87,7 +87,7 @@ un cliente, y quien compra por teléfono no tiene contacto alguno.
 **único**: un contacto pertenece a un solo cliente, y un cliente puede tener
 varios contactos. El puente vive acá y no como columna en `mirror.contacts`
 porque escribir en tablas ajenas está prohibido; la consecuencia feliz es que
-desinstalar `ventas` deja el espejo exactamente como estaba.
+desinstalar `operaciones` deja el espejo exactamente como estaba.
 
 El vínculo no cuesta un paso: al abrir el primer viaje desde una conversación,
 si ese contacto no tiene cliente se crea uno con el nombre del contacto y quedan
@@ -281,14 +281,14 @@ Cualquiera atiende cualquier conversación y toca cualquier viaje. De ahí:
   Nadie se acuerda de un viaje que no vendió.
 - **Tiempo real, y no como lujo.** Si dos personas miran el mismo viaje y una
   cierra «avisar por visa», la otra tiene que verlo desaparecer sin refrescar, o
-  le manda al cliente el mismo mensaje dos veces. `ventas` publica sus eventos
+  le manda al cliente el mismo mensaje dos veces. `operaciones` publica sus eventos
   por el hub de websockets del kernel.
 - **No hay «mis viajes».** El vendedor queda registrado como dato; no filtra ni
   esconde nada.
 
 ## Los endpoints
 
-Todo bajo `/api/ventas/`, con sesión.
+Todo bajo `/api/operaciones/`, con sesión.
 
 ```
 GET    /viajes?contacto=            los viajes de un contacto
@@ -313,7 +313,7 @@ vencimiento calculado.
 cambia la fecha de salida, y reevalúa todos los controles derivados.
 
 `GET /bandeja` existe porque la lista de conversaciones sigue siendo de
-`mirror`, con su paginación, su búsqueda y sus no-leídos. `ventas` **podría**
+`mirror`, con su paginación, su búsqueda y sus no-leídos. `operaciones` **podría**
 servir la bandeja entera con un JOIN —la regla nueva se lo permite— pero
 duplicaría esa lógica. Responde solo «para estos contactos, qué viaje y qué
 control sigue»: una llamada más sobre los ~30 contactos de la página visible,
@@ -321,12 +321,12 @@ cero lógica duplicada.
 
 ## Una asimetría conocida
 
-En el backend, `ventas` depende de `mirror`. En el frontend es al revés: la
-pantalla del espejo importa los componentes de `ventas` para dibujar el banner,
+En el backend, `operaciones` depende de `mirror`. En el frontend es al revés: la
+pantalla del espejo importa los componentes de `operaciones` para dibujar el banner,
 el panel y el chip.
 
 No es un ciclo —son capas distintas— pero es una asimetría y conviene tenerla
-escrita. `ventas` no aparece en el menú: no tiene pantalla propia, su interfaz
+escrita. `operaciones` no aparece en el menú: no tiene pantalla propia, su interfaz
 vive dentro de la del espejo. Si algún día molesta, la salida es que la pantalla
 del espejo deje de ser «de mirror» y pase a ser una pantalla de la aplicación
 que compone los dos módulos. No hace falta ahora.
@@ -335,7 +335,7 @@ que compone los dos módulos. No hace falta ahora.
 
 Entra en este trabajo:
 
-- el módulo `ventas` con sus siete tablas, sus migraciones y sus endpoints;
+- el módulo `operaciones` con sus siete tablas, sus migraciones y sus endpoints;
 - clientes con su puente hacia los contactos de WhatsApp;
 - viajes con alta mínima de tres campos;
 - pasajeros;
