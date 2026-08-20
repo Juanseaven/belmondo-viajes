@@ -6,7 +6,9 @@
 package httpapi
 
 import (
+	"bufio"
 	"log/slog"
+	"net"
 	"net/http"
 	"slices"
 	"strings"
@@ -160,4 +162,11 @@ type statusRecorder struct {
 func (r *statusRecorder) WriteHeader(code int) {
 	r.status = code
 	r.ResponseWriter.WriteHeader(code)
+}
+
+// Hijack conserva la interfaz opcional del ResponseWriter real. Gorilla la
+// necesita para convertir la respuesta HTTP autenticada en una conexión
+// WebSocket; sin esta delegación el middleware de logging rompe el upgrade.
+func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return http.NewResponseController(r.ResponseWriter).Hijack()
 }

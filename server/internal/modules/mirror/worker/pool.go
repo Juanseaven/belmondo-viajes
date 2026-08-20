@@ -30,6 +30,7 @@ var ErrQueueFull = errors.New("cola del worker llena")
 type Job struct {
 	EventID      int64  // fila en webhook_events, para marcarla procesada
 	Event        string // messages.upsert, connection.update, ...
+	State        string // root-level state used by Receipt events
 	Instance     string
 	PartitionKey string // instancia|remoteJid — determina el shard
 	Payload      []byte // el `data` crudo

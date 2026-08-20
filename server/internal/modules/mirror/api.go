@@ -48,6 +48,7 @@ func (m *Module) listConversations(w http.ResponseWriter, r *http.Request) {
 	rows, err := m.read.Inbox(r.Context(), store.InboxQuery{
 		InstanceID: q.Get("instance"),
 		Search:     q.Get("q"),
+		NeedsReply: q.Get("status") == "unanswered",
 		Cursor:     cursor,
 		Limit:      limit,
 	})

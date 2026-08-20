@@ -63,8 +63,8 @@ func (m *Messages) Save(ctx context.Context, msg *domain.Message, sentByUserID s
 		INSERT INTO messages (
 			conversation_id, instance_id, contact_id, wa_message_id,
 			direction, origin, type, status, sent_by_user_id,
-			body, quoted_wa_message_id, wa_timestamp
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,''),$12)
+			body, quoted_wa_message_id, wa_timestamp, sender_jid, sender_name
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,''),$12,NULLIF($13,''),NULLIF($14,''))
 		ON CONFLICT (instance_id, wa_message_id) DO NOTHING
 		RETURNING id`
 
@@ -72,7 +72,7 @@ func (m *Messages) Save(ctx context.Context, msg *domain.Message, sentByUserID s
 	err = tx.QueryRow(ctx, insertMsg,
 		conversationID, instanceID, contactID, msg.WAMessageID,
 		msg.Direction, msg.Origin, msg.Type, msg.Status, sentBy,
-		nullIfEmpty(msg.Body), msg.QuotedID, msg.Timestamp,
+		nullIfEmpty(msg.Body), msg.QuotedID, msg.Timestamp, msg.SenderJID, msg.SenderName,
 	).Scan(&messageID)
 
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -100,11 +100,13 @@ func (m *Messages) Save(ctx context.Context, msg *domain.Message, sentByUserID s
 		                                   THEN $3 ELSE last_message_preview END,
 		       last_message_type    = CASE WHEN last_message_at IS NULL OR $2 >= last_message_at
 		                                   THEN $4::message_type ELSE last_message_type END,
-		       unread_count         = CASE WHEN $5 = 'inbound'
+		       last_message_direction = CASE WHEN last_message_at IS NULL OR $2 >= last_message_at
+		                                     THEN $5::message_direction ELSE last_message_direction END,
+		       unread_count         = CASE WHEN $5 = 'inbound' AND NOT $6
 		                                   THEN unread_count + 1 ELSE unread_count END
 		 WHERE id = $1`
 	if _, err := tx.Exec(ctx, bumpConv,
-		conversationID, msg.Timestamp, preview(msg), msg.Type, msg.Direction,
+		conversationID, msg.Timestamp, preview(msg), msg.Type, msg.Direction, msg.Historical,
 	); err != nil {
 		return nil, fmt.Errorf("actualizando conversación: %w", err)
 	}
@@ -113,15 +115,21 @@ func (m *Messages) Save(ctx context.Context, msg *domain.Message, sentByUserID s
 	if msg.Type.HasMedia() && msg.Media != nil {
 		const insertMedia = `
 			INSERT INTO media_assets (
-				message_id, mime_type, file_name, size_bytes, duration_seconds, width, height
-			) VALUES ($1, NULLIF($2,''), NULLIF($3,''), NULLIF($4,0), NULLIF($5,0), NULLIF($6,0), NULLIF($7,0))
+				message_id, mime_type, file_name, size_bytes, duration_seconds, width, height,
+				source_data, source_url
+			) VALUES ($1, NULLIF($2,''), NULLIF($3,''), NULLIF($4,0), NULLIF($5,0), NULLIF($6,0), NULLIF($7,0), $8, NULLIF($9,''))
 			RETURNING id`
 		if err := tx.QueryRow(ctx, insertMedia,
 			messageID, msg.Media.MimeType, msg.Media.FileName, msg.Media.SizeBytes,
-			msg.Media.Duration, msg.Media.Width, msg.Media.Height,
+			msg.Media.Duration, msg.Media.Width, msg.Media.Height, msg.Media.Data, msg.Media.SourceURL,
 		).Scan(&mediaID); err != nil {
 			return nil, fmt.Errorf("insertando media_asset: %w", err)
 		}
+	}
+
+	senderName, senderPhone, err := resolvedSender(ctx, tx, instanceID, msg.SenderJID, msg.SenderName)
+	if err != nil {
+		return nil, fmt.Errorf("resolviendo autor del grupo: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -134,8 +142,42 @@ func (m *Messages) Save(ctx context.Context, msg *domain.Message, sentByUserID s
 		InstanceID:     instanceID,
 		ContactID:      contactID,
 		MediaAssetID:   mediaID,
+		SenderName:     senderName,
+		SenderPhone:    senderPhone,
 		IsNew:          true,
 	}, nil
+}
+
+func resolvedSender(ctx context.Context, tx pgx.Tx, instanceID, senderJID, fallbackName string) (string, string, error) {
+	if senderJID == "" {
+		return "", "", nil
+	}
+	const q = `
+		WITH directory AS (
+			SELECT * FROM contact_directory
+			 WHERE instance_id=$1 AND (wa_jid=$2 OR lid_jid=$2)
+			 ORDER BY (wa_jid=$2) DESC LIMIT 1
+		), global_contact AS (
+			SELECT * FROM contacts
+			 WHERE wa_jid=$2 OR lid_jid=$2
+			 ORDER BY (wa_jid=$2) DESC LIMIT 1
+		)
+		SELECT coalesce(
+		         nullif(global_contact.display_name,''),
+		         nullif(directory.full_name,''), nullif(directory.first_name,''),
+		         nullif(directory.business_name,''), nullif(directory.push_name,''),
+		         nullif(global_contact.push_name,''), nullif($3,''), ''),
+		       coalesce(nullif(global_contact.phone_number,''),
+		         CASE WHEN directory.wa_jid LIKE '%@s.whatsapp.net'
+		              THEN '+' || split_part(directory.wa_jid, '@', 1) END, '')
+		  FROM (SELECT 1) singleton
+		  LEFT JOIN directory ON true
+		  LEFT JOIN global_contact ON true`
+	var name, phone string
+	if err := tx.QueryRow(ctx, q, instanceID, senderJID, fallbackName).Scan(&name, &phone); err != nil {
+		return "", "", err
+	}
+	return name, phone, nil
 }
 
 func upsertContact(ctx context.Context, tx pgx.Tx, msg *domain.Message) (string, error) {
@@ -200,8 +242,9 @@ func (m *Messages) MarkDeleted(ctx context.Context, instanceName, waMessageID st
 }
 
 func phoneFromJID(jid string) string {
-	if i := strings.IndexByte(jid, '@'); i > 0 {
-		return "+" + jid[:i]
+	const suffix = "@s.whatsapp.net"
+	if strings.HasSuffix(jid, suffix) {
+		return "+" + strings.TrimSuffix(jid, suffix)
 	}
 	return ""
 }

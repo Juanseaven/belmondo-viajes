@@ -11,11 +11,23 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { ArrowLeft, Info, Plus, Search } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { useSession } from "../../kernel/auth/session";
 import { useSocket, type ServerEvent } from "../../kernel/api/useSocket";
 import { mirrorApi, type Conversation, type Line, type Message } from "./api";
 import { ConversationList } from "./ConversationList";
+import { ContactDetails } from "./ContactDetails";
+import { DemoMirrorScreen } from "./DemoMirrorScreen";
 import { LineDialog } from "./LineDialog";
 import { LineFilter } from "./LineFilter";
 import { SearchResults } from "./SearchResults";
@@ -26,20 +38,33 @@ import { mirror } from "./module";
 
 /** Lo que el hilo abierto expone hacia arriba para recibir eventos en vivo. */
 type ThreadHandle = ReturnType<typeof useThread>;
+type InboxTab = "all" | "unanswered";
 
 interface NewMessageEvent {
+  messageId: string;
   conversationId: string;
   instanceId: string;
   /** Clave para emparejar el eco con la burbuja provisional que pintó el envío. */
   waMessageId?: string;
   body?: string;
   type: string;
+  direction: Message["direction"];
+  origin: Message["origin"];
   timestamp: string;
+  quotedId?: string;
+  senderJid?: string;
+  senderName?: string;
+  senderPhone?: string;
 }
 
 export function MirrorScreen() {
-  const router = useRouter();
   const params = useSearchParams();
+  if (params.get("demo") === "1") return <DemoMirrorScreen />;
+  return <LiveMirrorScreen params={params} />;
+}
+
+function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParams> }) {
+  const router = useRouter();
   const session = useSession();
 
   const instance = params.get("instance") ?? "";
@@ -49,11 +74,18 @@ export function MirrorScreen() {
 
   const [lines, setLines] = useState<Line[]>([]);
   const [open, setOpen] = useState<Conversation | null>(null);
-  const [contactFilter, setContactFilter] = useState("");
+  const [searchValue, setSearchValue] = useState(query);
   const [altaAbierta, setAltaAbierta] = useState(false);
+  const [lineaParaVincular, setLineaParaVincular] = useState<Line | null>(null);
   const [ultimoQR, setUltimoQR] = useState<{ instance: string; qr: string } | null>(null);
+  const [tab, setTab] = useState<InboxTab>("all");
+  const [detailsOpen, setDetailsOpen] = useState(true);
 
-  const inbox = useInbox(instance, contactFilter);
+  const inbox = useInbox(instance, query ? "" : searchValue, tab === "unanswered");
+
+  useEffect(() => {
+    setSearchValue(query);
+  }, [query]);
 
   /** Escribe en la URL sin apilar historial: esto es filtrar, no navegar. */
   const setParams = useCallback(
@@ -76,6 +108,22 @@ export function MirrorScreen() {
   }, []);
 
   useEffect(loadLines, [loadLines]);
+
+  const disconnectLine = async (line: Line) => {
+    await mirrorApi.deleteLine(line.id);
+    setLines((current) => current.filter((item) => item.id !== line.id));
+
+    const deletedConversationWasOpen = open?.instanceId === line.id;
+    if (instance === line.id || deletedConversationWasOpen) {
+      setOpen(null);
+      setParams({
+        instance: instance === line.id ? undefined : instance || undefined,
+        c: undefined,
+        m: undefined,
+      });
+    }
+    await inbox.reload();
+  };
 
   // La conversación abierta se resuelve desde la URL y no desde el clic: así un
   // enlace pegado en el navegador abre el hilo correcto.
@@ -115,6 +163,7 @@ export function MirrorScreen() {
   const subscribed = useMemo(() => (instance ? [instance] : []), [instance]);
 
   const linesDirty = useRef(false);
+  const qrPrompted = useRef(new Set<string>());
 
   // El hilo abierto expone sus acciones acá para que el websocket pueda
   // inyectarle el mensaje que acaba de llegar sin recargarlo entero.
@@ -125,25 +174,36 @@ export function MirrorScreen() {
     (ev: ServerEvent) => {
       if (ev.type === "message.new") {
         const p = ev.payload as NewMessageEvent;
-        inbox.applyNewMessage(p.conversationId, p.body ?? "", p.type, p.timestamp);
+        inbox.applyNewMessage(p.conversationId, p.body ?? "", p.type, p.timestamp, p.direction);
         linesDirty.current = true;
 
         // Si el mensaje es del hilo abierto, se agrega en vivo. El waMessageId
         // hace que el eco de lo que enviamos reemplace a su burbuja provisional
         // en vez de duplicarla.
         if (p.conversationId === openId) {
-          threadApi.current?.append(
-            {
-              id: (ev.payload as { messageId: string }).messageId,
-              direction: (ev.payload as { direction: Message["direction"] }).direction,
-              origin: (ev.payload as { origin: Message["origin"] }).origin,
-              type: p.type,
-              status: "sent",
-              body: p.body,
-              timestamp: p.timestamp,
-            },
-            p.waMessageId,
-          );
+          const liveMessage: Message = {
+            id: p.messageId,
+            direction: p.direction,
+            origin: p.origin,
+            type: p.type,
+            status: "sent",
+            body: p.body,
+            timestamp: p.timestamp,
+            quotedId: p.quotedId,
+            senderJid: p.senderJid,
+            senderName: p.senderName,
+            senderPhone: p.senderPhone,
+          };
+          if (p.quotedId) {
+            mirrorApi.messages(openId, { around: p.messageId })
+              .then((page) => {
+                const enriched = page.items.find((message) => message.id === p.messageId);
+                threadApi.current?.append(enriched ?? liveMessage, p.waMessageId);
+              })
+              .catch(() => threadApi.current?.append(liveMessage, p.waMessageId));
+          } else {
+            threadApi.current?.append(liveMessage, p.waMessageId);
+          }
         }
       }
       if (ev.type === "conversation.read") {
@@ -152,15 +212,29 @@ export function MirrorScreen() {
         linesDirty.current = true;
       }
       if (ev.type === "line.qr") {
-        setUltimoQR(ev.payload as { instance: string; qr: string });
+        const qrEvent = ev.payload as { instance: string; qr: string };
+        setUltimoQR(qrEvent);
+        const existing = lines.find((line) => line.name === qrEvent.instance && line.status !== "open");
+        if (session.user?.role === "admin" && existing?.wasConnected && !qrPrompted.current.has(existing.name)) {
+          qrPrompted.current.add(existing.name);
+          setLineaParaVincular(existing);
+        }
       }
       if (ev.type === "instance.status") {
         linesDirty.current = true;
         // Una línea que se vincula cierra el modal de alta.
         if ((ev.payload as { state?: string }).state === "open") {
+          const connected = ev.payload as { instance?: string };
           setAltaAbierta(false);
+          setLineaParaVincular(null);
+          if (connected.instance) qrPrompted.current.delete(connected.instance);
           loadLines();
         }
+      }
+      if (ev.type === "history.sync") {
+        const p = ev.payload as { instance?: string };
+        if (!instance || p.instance === instance) void inbox.reload();
+        linesDirty.current = true;
       }
     },
     subscribed,
@@ -177,48 +251,60 @@ export function MirrorScreen() {
     return () => clearInterval(timer);
   }, [loadLines]);
 
+  const openLine = lines.find((line) => line.id === open?.instanceId);
+
   return (
-    <section className="mirror">
-      <header className="page-header">
-        <h1>WhatsApp</h1>
-        <p>{mirror.description}</p>
-      </header>
-
-      <div className="lines-bar">
-        <LineFilter
-          lines={lines}
-          selected={instance}
-          onSelect={(id) => setParams({ instance: id || undefined, c: undefined, m: undefined })}
-        />
-        {/* Solo los admin pueden dar de alta; si no lo es, el backend responde 403
-            y el botón simplemente no se muestra. */}
-        {session.user?.role === "admin" && (
-          <button type="button" className="chip" onClick={() => setAltaAbierta(true)}>
-            + Conectar línea
-          </button>
-        )}
-      </div>
-
-      <div className="mirror-body">
-        {/* No es `.sidebar`: esa clase la usa el shell para el menú de módulos. */}
+    <section className="mirror-workspace">
+      <div className={`${open ? "mirror-body has-details" : "mirror-body"}${detailsOpen ? "" : " operation-collapsed"}`}>
         <aside className="inbox-pane">
-          <div className="searches">
-            <input
-              type="search"
-              placeholder="Buscar contacto…"
-              value={contactFilter}
-              onChange={(e) => setContactFilter(e.target.value)}
+          <div className="inbox-lines">
+            <LineFilter
+              lines={lines}
+              selected={instance}
+              onSelect={(id) => setParams({ instance: id || undefined, c: undefined, m: undefined })}
+              canManage={session.user?.role === "admin"}
+              onDisconnect={disconnectLine}
             />
-            <input
-              type="search"
-              placeholder="Buscar en los mensajes…"
-              defaultValue={query}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  setParams({ q: e.currentTarget.value || undefined, c: undefined, m: undefined });
-                }
-              }}
-            />
+            {session.user?.role === "admin" && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="inbox-connect"
+                onClick={() => { setLineaParaVincular(null); setAltaAbierta(true); }}
+              >
+                <Plus aria-hidden />Conectar línea
+              </Button>
+            )}
+          </div>
+
+          <div className="inbox-tabs" role="tablist" aria-label="Filtrar conversaciones">
+            <button type="button" role="tab" aria-selected={tab === "all"} onClick={() => setTab("all")}>
+              Todas
+            </button>
+            <button type="button" role="tab" aria-selected={tab === "unanswered"} onClick={() => setTab("unanswered")}>
+              Sin responder
+            </button>
+          </div>
+
+          <div className="inbox-search">
+            <div>
+              <Search aria-hidden />
+              <Input
+                type="search"
+                aria-label="Buscar contacto o mensaje"
+                placeholder="Buscar contacto o mensaje…"
+                value={searchValue}
+                onChange={(event) => {
+                  setSearchValue(event.target.value);
+                  if (query) setParams({ q: undefined, c: undefined, m: undefined });
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    setParams({ q: searchValue || undefined, c: undefined, m: undefined });
+                  }
+                }}
+              />
+            </div>
           </div>
 
           {query ? (
@@ -226,7 +312,10 @@ export function MirrorScreen() {
               query={query}
               instance={instance}
               onOpen={(hit) => setParams({ c: hit.conversationId, m: hit.messageId })}
-              onClear={() => setParams({ q: undefined, m: undefined })}
+              onClear={() => {
+                setSearchValue("");
+                setParams({ q: undefined, m: undefined });
+              }}
             />
           ) : (
             <ConversationList
@@ -237,19 +326,57 @@ export function MirrorScreen() {
           )}
         </aside>
 
-        <Thread
+        <div className="thread-pane">
+          {open && (
+            <>
+              <Button
+                className="mobile-back-trigger"
+                variant="ghost"
+                size="icon"
+                aria-label="Volver a conversaciones"
+                onClick={() => setParams({ c: undefined, m: undefined })}
+              >
+                <ArrowLeft aria-hidden />
+              </Button>
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button className="mobile-details-trigger" variant="outline" size="icon" aria-label="Ver detalles del contacto">
+                    <Info aria-hidden />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent className="details-sheet">
+                  <SheetHeader className="sr-only">
+                    <SheetTitle>Detalles del contacto</SheetTitle>
+                  </SheetHeader>
+                  <ContactDetails conversation={open} line={openLine} mode="sheet" />
+                </SheetContent>
+              </Sheet>
+            </>
+          )}
+          <Thread
+            conversation={open}
+            focusId={focusId}
+            lineStatus={lines.find((line) => line.id === open?.instanceId)?.status}
+            detailsHidden={!detailsOpen}
+            onShowDetails={() => setDetailsOpen(true)}
+            threadRef={(thread) => { threadApi.current = thread; }}
+          />
+        </div>
+        <ContactDetails
           conversation={open}
-          focusId={focusId}
-          lineStatus={lines.find((l) => l.id === open?.instanceId)?.status}
-          threadRef={(t) => { threadApi.current = t; }}
+          line={openLine}
+          mode="panel"
+          collapsed={!detailsOpen}
+          onClose={() => setDetailsOpen(false)}
         />
       </div>
 
-      {altaAbierta && (
+      {(altaAbierta || lineaParaVincular) && (
         <LineDialog
+          existingLine={lineaParaVincular ?? undefined}
           qrEvents={ultimoQR}
-          onClose={() => setAltaAbierta(false)}
-          onConnected={() => { setAltaAbierta(false); loadLines(); }}
+          onClose={() => { setAltaAbierta(false); setLineaParaVincular(null); }}
+          onConnected={() => { setAltaAbierta(false); setLineaParaVincular(null); loadLines(); }}
         />
       )}
     </section>

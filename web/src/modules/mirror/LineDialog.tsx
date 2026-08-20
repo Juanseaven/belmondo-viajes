@@ -1,132 +1,141 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ApiError } from "../../kernel/api/client";
-import { mirrorApi } from "./api";
+import { LoaderCircle, QrCode, Smartphone } from "lucide-react";
 
-/**
- * Alta de una línea nueva.
- *
- * Dos pasos: se registra la línea, y después se muestra el QR para escanear
- * desde el teléfono del vendedor. El QR **rota cada ~30 segundos**, así que la
- * pantalla lo va reemplazando a medida que llegan por websocket; el primero se
- * pide por HTTP para no arrancar en blanco.
- *
- * Reemplaza el `curl` más `INSERT` a mano que documentaba el README.
- */
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+
+import { ApiError } from "../../kernel/api/client";
+import { mirrorApi, type Line } from "./api";
+
 export function LineDialog({
+  existingLine,
   qrEvents,
   onClose,
   onConnected,
 }: {
-  /** Último QR recibido por websocket: { instance, qr }. */
+  existingLine?: Line;
   qrEvents: { instance: string; qr: string } | null;
   onClose: () => void;
   onConnected: () => void;
 }) {
-  const [ownerLabel, setOwnerLabel] = useState("");
+  const [ownerLabel, setOwnerLabel] = useState(existingLine?.displayName || existingLine?.label || "");
   const [creando, setCreando] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const [linea, setLinea] = useState<{ id: string; instance: string } | null>(null);
+  const [linea, setLinea] = useState<{ id: string; instance: string } | null>(
+    existingLine ? { id: existingLine.id, instance: existingLine.name } : null,
+  );
   const [qr, setQr] = useState<string | null>(null);
 
-  // Los QR que llegan en vivo solo interesan si son de la línea que estamos
-  // dando de alta: puede haber otra vinculándose al mismo tiempo.
   useEffect(() => {
     if (linea && qrEvents?.instance === linea.instance) setQr(qrEvents.qr);
   }, [qrEvents, linea]);
 
-  // Sondeo de respaldo: si el websocket se cortó, el QR igual se refresca. Es
-  // barato y evita que el alta se quede clavada sin explicación.
   useEffect(() => {
     if (!linea) return;
-    const timer = setInterval(() => {
+    const refresh = () => {
       mirrorApi
         .lineQR(linea.id)
         .then((res) => setQr(res.qr))
         .catch(() => {
-          // 404 significa que ya no hay QR vigente: o se vinculó, o expiró.
           void mirrorApi
             .lines()
             .then((res) => {
-              const actual = res.lines.find((l) => l.id === linea.id);
+              const actual = res.lines.find((line) => line.id === linea.id);
               if (actual?.status === "open") onConnected();
             })
             .catch(() => undefined);
         });
-    }, 8000);
+    };
+    refresh();
+    const timer = setInterval(refresh, 8000);
     return () => clearInterval(timer);
   }, [linea, onConnected]);
 
-  const crear = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const crear = async (event: React.FormEvent) => {
+    event.preventDefault();
     if (!ownerLabel.trim()) return;
-
     setCreando(true);
     setError(null);
     try {
-      const res = await mirrorApi.createLine({ ownerLabel: ownerLabel.trim() });
-      setLinea({ id: res.id, instance: res.instance });
-      // El primer QR puede haber llegado antes de que montáramos el efecto.
-      mirrorApi.lineQR(res.id).then((r) => setQr(r.qr)).catch(() => undefined);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "No se pudo crear la línea");
+      const response = await mirrorApi.createLine({ ownerLabel: ownerLabel.trim() });
+      setLinea({ id: response.id, instance: response.instance });
+      mirrorApi.lineQR(response.id).then((item) => setQr(item.qr)).catch(() => undefined);
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : "No se pudo crear la línea");
     } finally {
       setCreando(false);
     }
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <header>
-          <h2>Conectar una línea</h2>
-          <button type="button" onClick={onClose}>×</button>
-        </header>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="line-dialog sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{existingLine ? `Volver a vincular ${ownerLabel}` : "Conectar una línea"}</DialogTitle>
+          <DialogDescription>
+            {existingLine
+              ? "La sesión anterior fue revocada. El historial se conserva en esta misma línea."
+              : "Vinculá el WhatsApp de un vendedor para atenderlo desde esta bandeja."}
+          </DialogDescription>
+        </DialogHeader>
 
         {!linea ? (
-          <form onSubmit={crear}>
-            <label>
-              ¿De quién es el número?
-              <input
-                value={ownerLabel}
-                onChange={(e) => setOwnerLabel(e.target.value)}
-                placeholder="Ana Pérez"
-                autoFocus
-              />
-            </label>
-            <p className="hint">
-              Aparece en la bandeja para saber por qué número entró cada mensaje.
+          <form className="line-dialog-form" onSubmit={crear}>
+            <label htmlFor="line-owner">Nombre de la línea</label>
+            <Input
+              id="line-owner"
+              value={ownerLabel}
+              onChange={(event) => setOwnerLabel(event.target.value)}
+              placeholder="Ej. Ventas Juan"
+              autoFocus
+            />
+            <p className="field-hint">
+              Se mostrará junto a cada conversación para identificar el número de origen.
             </p>
-            {error && <p className="error">{error}</p>}
-            <button type="submit" disabled={creando || !ownerLabel.trim()}>
-              {creando ? "Creando…" : "Crear y mostrar el QR"}
-            </button>
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            <DialogFooter className="line-dialog-footer">
+              <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+              <Button type="submit" disabled={creando || !ownerLabel.trim()}>
+                {creando ? <LoaderCircle className="animate-spin" aria-hidden /> : <Smartphone aria-hidden />}
+                {creando ? "Creando…" : "Crear y mostrar QR"}
+              </Button>
+            </DialogFooter>
           </form>
         ) : (
           <div className="qr-step">
-            <ol className="hint">
+            <ol>
               <li>Abrí WhatsApp en el teléfono de {ownerLabel}.</li>
-              <li>Andá a <strong>Dispositivos vinculados</strong>.</li>
+              <li>Entrá en <strong>Dispositivos vinculados</strong>.</li>
               <li>Escaneá este código.</li>
             </ol>
-
             {qr ? (
-              // eslint-disable-next-line @next/next/no-img-element -- es un data
-              // URI en base64 que manda Evolution, no un archivo remoto.
+              // eslint-disable-next-line @next/next/no-img-element -- QR en data URI.
               <img className="qr" src={qr} alt="Código QR de vinculación" />
             ) : (
-              <p className="empty">Esperando el código…</p>
+              <div className="qr-waiting">
+                <QrCode aria-hidden />
+                <span>Esperando el código…</span>
+              </div>
             )}
-
-            <p className="hint">
-              El código se renueva solo cada medio minuto. La ventana se cierra
-              sola al vincularse.
-            </p>
+            <p className="field-hint">El código se renueva automáticamente y la ventana se cierra al vincularse.</p>
           </div>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

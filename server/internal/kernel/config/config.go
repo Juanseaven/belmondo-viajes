@@ -21,9 +21,10 @@ type Config struct {
 	RedisAddr string
 	RedisDB   int
 
-	EvolutionBaseURL string
-	EvolutionAPIKey  string
-	WebhookAPIKey    string
+	EvolutionBaseURL    string
+	EvolutionAPIKey     string
+	EvolutionWebhookURL string
+	WebhookAPIKey       string
 
 	WorkerShards    int
 	WorkerQueueSize int
@@ -76,9 +77,10 @@ func Load() (*Config, error) {
 		RedisAddr: env("REDIS_ADDR", "redis:6379"),
 		RedisDB:   envInt("REDIS_DB", 1),
 
-		EvolutionBaseURL: env("EVOLUTION_BASE_URL", "http://evolution-api:8080"),
-		EvolutionAPIKey:  os.Getenv("EVOLUTION_API_KEY"),
-		WebhookAPIKey:    os.Getenv("WEBHOOK_API_KEY"),
+		EvolutionBaseURL:    env("EVOLUTION_BASE_URL", "http://evolution-api:8080"),
+		EvolutionAPIKey:     os.Getenv("EVOLUTION_API_KEY"),
+		EvolutionWebhookURL: env("EVOLUTION_WEBHOOK_URL", "http://backend:8080/webhooks/evolution"),
+		WebhookAPIKey:       os.Getenv("WEBHOOK_API_KEY"),
 
 		WorkerShards:    envInt("WORKER_SHARDS", 8),
 		WorkerQueueSize: envInt("WORKER_QUEUE_SIZE", 512),

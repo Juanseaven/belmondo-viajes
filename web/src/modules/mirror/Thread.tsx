@@ -1,47 +1,53 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import type { Conversation } from "./api";
+import { Fragment, useEffect, useRef, useState } from "react";
+import { MessageCircleMore, PanelRightOpen, Phone } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import type { Conversation, Message, MessageQuote } from "./api";
 import { Composer } from "./Composer";
+import { ContactAvatar } from "./ContactAvatar";
 import { MessageBubble } from "./MessageBubble";
 import { useThread } from "./useThread";
 
-/**
- * El hilo de una conversación, con scroll invertido: se abre abajo y se pagina
- * hacia arriba.
- */
 export function Thread({
   conversation,
   focusId,
   lineStatus,
+  detailsHidden = false,
+  onShowDetails,
   threadRef,
 }: {
   conversation: Conversation | null;
   focusId?: string;
-  /** Estado de vinculación de la línea: si no está abierta, no se puede enviar. */
   lineStatus?: string;
-  /** Deja el hilo accesible desde arriba, para que el websocket pueda inyectar. */
+  detailsHidden?: boolean;
+  onShowDetails?: () => void;
   threadRef?: (thread: ReturnType<typeof useThread>) => void;
 }) {
-  const thread = useThread(conversation?.id ?? null, focusId);
+  const [replyingTo, setReplyingTo] = useState<MessageQuote>();
+  const [aroundId, setAroundId] = useState(focusId);
+  const [highlightedId, setHighlightedId] = useState(focusId);
+  const thread = useThread(conversation?.id ?? null, aroundId);
   const { messages, loading, error, hasOlder, loadOlder } = thread;
 
   threadRef?.(thread);
 
   const scroller = useRef<HTMLDivElement>(null);
   const topSentinel = useRef<HTMLDivElement>(null);
-  const anchorRef = useRef<HTMLDivElement>(null);
-
-  // Al pedir mensajes anteriores, el navegador mantiene el scrollTop mientras el
-  // contenido crece por arriba: el hilo salta. Se corrige guardando la altura
-  // antes de cargar y restaurando la diferencia después.
+  const messageRefs = useRef(new Map<string, HTMLDivElement>());
   const prevHeight = useRef(0);
+
+  useEffect(() => {
+    setReplyingTo(undefined);
+    setAroundId(focusId);
+    setHighlightedId(focusId);
+  }, [conversation?.id, focusId]);
 
   useEffect(() => {
     const node = topSentinel.current;
     const box = scroller.current;
     if (!node || !box || !hasOlder) return;
-
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (!entry.isIntersecting) return;
@@ -57,24 +63,46 @@ export function Thread({
   useEffect(() => {
     const box = scroller.current;
     if (!box) return;
-
     if (prevHeight.current > 0) {
       box.scrollTop = box.scrollHeight - prevHeight.current;
       prevHeight.current = 0;
       return;
     }
-    // En modo búsqueda se centra el mensaje buscado; si no, al final del chat.
-    if (focusId && anchorRef.current) {
-      anchorRef.current.scrollIntoView({ block: "center" });
+    const anchor = highlightedId ? messageRefs.current.get(highlightedId) : undefined;
+    if (anchor) {
+      anchor.scrollIntoView({ block: "center", behavior: "smooth" });
     } else {
       box.scrollTop = box.scrollHeight;
     }
-  }, [messages, focusId]);
+  }, [messages, highlightedId]);
+
+  const selectReply = (message: Message) => {
+    setReplyingTo({
+      id: message.id,
+      direction: message.direction,
+      type: message.type,
+      body: message.deletedAt ? undefined : message.body,
+      senderName: message.direction === "outbound"
+        ? message.sentByName || (message.origin === "device" ? "Desde el teléfono" : "Vos")
+        : conversation?.isGroup
+          ? message.senderName || message.senderPhone || message.senderJid || "Contacto"
+          : conversation?.contactName || "Contacto",
+    });
+  };
+
+  const openQuote = (messageId: string) => {
+    setHighlightedId(messageId);
+    if (!messages.some((message) => message.id === messageId)) {
+      setAroundId(messageId);
+    }
+  };
 
   if (!conversation) {
     return (
-      <div className="thread empty">
-        <p>Elegí una conversación para verla.</p>
+      <div className="thread-empty">
+        <span><MessageCircleMore aria-hidden /></span>
+        <strong>Elegí una conversación</strong>
+        <p>Seleccioná un contacto de la bandeja para ver el historial y responder.</p>
       </div>
     );
   }
@@ -82,38 +110,88 @@ export function Thread({
   return (
     <div className="thread">
       <header className="thread-header">
-        <div>
-          <h2>{conversation.contactName}</h2>
-          <span className="line-tag">{conversation.instanceLabel}</span>
+        <div className="thread-identity">
+          <ContactAvatar name={conversation.contactName} src={conversation.avatarUrl} size="lg" />
+          <div className="thread-contact">
+            <h2>{conversation.contactName}</h2>
+            <span>
+              {conversation.phoneNumber && <><Phone aria-hidden />{conversation.phoneNumber}<i aria-hidden>·</i></>}
+              <span className={`line-status-dot ${lineStatus ?? "open"}`} aria-hidden />
+              {conversation.instanceLabel}
+            </span>
+          </div>
         </div>
-        {conversation.phoneNumber && <span className="phone">{conversation.phoneNumber}</span>}
+        {detailsHidden && onShowDetails && (
+          <Button type="button" variant="outline" size="sm" onClick={onShowDetails} aria-label="Ver detalles">
+            <PanelRightOpen aria-hidden />
+            Ver detalles
+          </Button>
+        )}
       </header>
 
       <div className="messages" ref={scroller}>
         <div ref={topSentinel} />
-        {hasOlder && <p className="loading-older">Cargando anteriores…</p>}
-
-        {loading && messages.length === 0 && <p className="empty">Cargando…</p>}
-        {error && <p className="error">{error}</p>}
+        {hasOlder && <p className="loading-older">Cargando mensajes anteriores…</p>}
+        {loading && messages.length === 0 && <p className="thread-state">Cargando conversación…</p>}
+        {error && <p className="thread-state error">{error}</p>}
         {!loading && !error && messages.length === 0 && (
-          <p className="empty">Esta conversación no tiene mensajes.</p>
+          <p className="thread-state">Esta conversación todavía no tiene mensajes.</p>
         )}
-
-        {messages.map((m) => (
-          <div key={m.id} ref={m.id === focusId ? anchorRef : undefined}
-               className={m.id === focusId ? "highlight" : undefined}>
-            <MessageBubble message={m} />
-          </div>
-        ))}
+        {messages.map((message, index) => {
+          const label = dayLabel(message.timestamp);
+          const startsDay = index === 0 || dayKey(messages[index - 1].timestamp) !== dayKey(message.timestamp);
+          return (
+            <Fragment key={message.id}>
+              {startsDay && (
+                <div className="day-divider" role="separator" aria-label={label}>
+                  <span>{label}</span>
+                </div>
+              )}
+              <div
+                ref={(node) => {
+                  if (node) messageRefs.current.set(message.id, node);
+                  else messageRefs.current.delete(message.id);
+                }}
+                data-message-id={message.id}
+                aria-current={message.id === highlightedId ? "true" : undefined}
+                className={message.id === highlightedId ? "highlight" : undefined}
+              >
+                <MessageBubble
+                  message={message}
+                  isGroup={conversation.isGroup}
+                  onReply={selectReply}
+                  onOpenQuote={openQuote}
+                />
+              </div>
+            </Fragment>
+          );
+        })}
       </div>
 
       <Composer
         conversationId={conversation.id}
         disabled={lineStatus !== undefined && lineStatus !== "open"}
-        disabledReason="La línea está desconectada. Hay que volver a vincularla para poder escribir."
+        disabledReason="La línea está desconectada. Volvé a vincularla para poder escribir."
         onOptimistic={thread.addOptimistic}
         onSettled={thread.settleOptimistic}
+        replyTo={replyingTo}
+        onCancelReply={() => setReplyingTo(undefined)}
+        onSent={() => setReplyingTo(undefined)}
       />
     </div>
   );
+}
+
+function dayKey(value: string): string {
+  const date = new Date(value);
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function dayLabel(value: string): string {
+  return new Intl.DateTimeFormat("es-AR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date(value));
 }

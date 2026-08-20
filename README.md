@@ -116,7 +116,7 @@ cp .env.example .env
 #   openssl rand -hex 32
 
 docker compose up -d postgres redis
-docker compose up -d evolution-api
+docker compose up -d evolution-go
 docker compose up -d backend web
 ```
 

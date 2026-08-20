@@ -1,36 +1,49 @@
-// Package evolution es el cliente saliente hacia Evolution API. Junto con
-// webhook, es la única parte del sistema que conoce ese proveedor.
+// Package evolution is the outbound boundary to Evolution Go.
 package evolution
 
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
+
+	"github.com/juanseaven/viajes-crm/server/internal/modules/mirror/domain"
 )
 
-type Client struct {
-	baseURL string
-	apiKey  string
-	http    *http.Client
+var subscriptions = []string{
+	"MESSAGE",
+	"SEND_MESSAGE",
+	"READ_RECEIPT",
+	"HISTORY_SYNC",
+	"CONNECTION",
+	"CONTACT",
+	"GROUP",
+	"QRCODE",
 }
 
-func New(baseURL, apiKey string) *Client {
+type Client struct {
+	baseURL    string
+	globalKey  string
+	webhookURL string
+	http       *http.Client
+}
+
+func New(baseURL, globalKey, webhookURL string) *Client {
 	return &Client{
-		baseURL: baseURL,
-		apiKey:  apiKey,
+		baseURL:    strings.TrimRight(baseURL, "/"),
+		globalKey:  globalKey,
+		webhookURL: webhookURL,
 		http: &http.Client{
-			// Generoso porque getBase64FromMediaMessage descarga y descifra
-			// archivos que pueden ser vídeos de varios MB.
 			Timeout: 60 * time.Second,
 			Transport: &http.Transport{
-				// Con N líneas conectadas hay N flujos de media concurrentes; el
-				// valor por defecto (2 por host) los serializaría.
 				MaxIdleConnsPerHost: 32,
 				IdleConnTimeout:     90 * time.Second,
 			},
@@ -38,9 +51,19 @@ func New(baseURL, apiKey string) *Client {
 	}
 }
 
-// SendTextResult contiene el key.id que devuelve WhatsApp. Es el puente hacia el
-// webhook: PanelSendTracker lo marca para que, cuando el evento vuelva con
-// fromMe:true, se clasifique como origin='panel' y no como 'device'.
+// instanceToken derives a stable, provider-specific credential without storing
+// another secret in Postgres. A line name is unique and immutable in this app.
+func (c *Client) instanceToken(instance string) string {
+	return InstanceToken(c.globalKey, instance)
+}
+
+// InstanceToken derives the per-line token expected by Evolution Go.
+func InstanceToken(globalKey, instance string) string {
+	mac := hmac.New(sha256.New, []byte(globalKey))
+	_, _ = mac.Write([]byte("evolution-go-instance:" + instance))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
 type SendTextResult struct {
 	Key struct {
 		ID        string `json:"id"`
@@ -51,113 +74,203 @@ type SendTextResult struct {
 	MessageTimestamp any    `json:"messageTimestamp"`
 }
 
-// SendText envía un mensaje de texto por una línea concreta.
-func (c *Client) SendText(ctx context.Context, instance, number, text string) (*SendTextResult, error) {
+// Quote usa exactamente el contrato expuesto por Evolution Go 0.7.2.
+type Quote struct {
+	MessageID   string `json:"messageId"`
+	Participant string `json:"participant,omitempty"`
+}
+
+type sendResponse struct {
+	Data struct {
+		Info struct {
+			ID       string `json:"ID"`
+			Chat     string `json:"Chat"`
+			IsFromMe bool   `json:"IsFromMe"`
+		} `json:"Info"`
+	} `json:"data"`
+}
+
+func (c *Client) SendText(ctx context.Context, instance, number, text string, quote *Quote) (*SendTextResult, error) {
 	body := map[string]any{
 		"number": number,
 		"text":   text,
-		// Retardo humano corto: WhatsApp penaliza el envío instantáneo desde API
-		// y esta cuenta es el número real de trabajo de un vendedor.
-		"delay":       800,
-		"linkPreview": true,
+		"delay":  800,
 	}
-	var out SendTextResult
-	if err := c.do(ctx, http.MethodPost, "/message/sendText/"+url.PathEscape(instance), body, &out); err != nil {
+	if quote != nil && quote.MessageID != "" {
+		body["quoted"] = quote
+	}
+	var out sendResponse
+	if err := c.do(ctx, http.MethodPost, "/send/text", c.instanceToken(instance), body, &out); err != nil {
 		return nil, err
 	}
-	if out.Key.ID == "" {
-		return nil, fmt.Errorf("evolution aceptó el envío pero no devolvió key.id")
-	}
-	return &out, nil
+	return normalizeSend(out)
 }
 
-// SendMedia envía un archivo ya alojado en una URL accesible por Evolution
-// (típicamente una URL firmada de R2).
-func (c *Client) SendMedia(ctx context.Context, instance, number, mediaURL, mediatype, caption, fileName string) (*SendTextResult, error) {
+func (c *Client) SendMedia(ctx context.Context, instance, number, mediaURL, mediatype, caption, fileName string, quote *Quote) (*SendTextResult, error) {
 	body := map[string]any{
-		"number":    number,
-		"mediatype": mediatype, // image | video | document | audio
-		"media":     mediaURL,
-		"caption":   caption,
-		"fileName":  fileName,
+		"number":   number,
+		"url":      mediaURL,
+		"type":     mediatype,
+		"caption":  caption,
+		"filename": fileName,
 	}
-	var out SendTextResult
-	if err := c.do(ctx, http.MethodPost, "/message/sendMedia/"+url.PathEscape(instance), body, &out); err != nil {
+	if quote != nil && quote.MessageID != "" {
+		body["quoted"] = quote
+	}
+	var out sendResponse
+	if err := c.do(ctx, http.MethodPost, "/send/media", c.instanceToken(instance), body, &out); err != nil {
 		return nil, err
 	}
-	return &out, nil
+	return normalizeSend(out)
 }
 
-// DownloadMedia obtiene el binario descifrado de un adjunto.
+func normalizeSend(out sendResponse) (*SendTextResult, error) {
+	if out.Data.Info.ID == "" {
+		return nil, fmt.Errorf("Evolution Go aceptó el envío pero no devolvió data.Info.ID")
+	}
+	result := &SendTextResult{Status: "sent"}
+	result.Key.ID = out.Data.Info.ID
+	result.Key.RemoteJID = out.Data.Info.Chat
+	result.Key.FromMe = out.Data.Info.IsFromMe
+	return result, nil
+}
+
+// CreateInstance creates the provider record and starts exactly one WhatsApp
+// client. The QR arrives asynchronously through the subscribed QRCODE webhook.
 //
-// El webhook solo trae una URL de mmg.whatsapp.net cifrada con mediaKey: no es
-// descargable directamente. Evolution mantiene las claves de sesión y es el único
-// que puede descifrarla, por eso el rodeo.
-func (c *Client) DownloadMedia(ctx context.Context, instance, waMessageID string) ([]byte, string, error) {
+// Do not call /instance/qr immediately after /instance/connect: Evolution starts
+// the client in a goroutine, so that endpoint can still see no runtime client
+// and start a second QR loop. Its timeout then kills the already paired session.
+func (c *Client) CreateInstance(ctx context.Context, instanceID, name string) (string, error) {
+	token := c.instanceToken(name)
 	body := map[string]any{
-		"message":      map[string]any{"key": map[string]any{"id": waMessageID}},
-		"convertToMp4": false,
+		"instanceId": instanceID,
+		"name":       name,
+		"token":      token,
 	}
-	var out struct {
-		Base64   string `json:"base64"`
-		Mimetype string `json:"mimetype"`
-		FileName string `json:"fileName"`
-	}
-	path := "/chat/getBase64FromMediaMessage/" + url.PathEscape(instance)
-	if err := c.do(ctx, http.MethodPost, path, body, &out); err != nil {
-		return nil, "", err
-	}
-	if out.Base64 == "" {
-		return nil, "", fmt.Errorf("respuesta sin base64 para el mensaje %s", waMessageID)
-	}
-	raw, err := base64.StdEncoding.DecodeString(out.Base64)
-	if err != nil {
-		return nil, "", fmt.Errorf("base64 inválido: %w", err)
-	}
-	return raw, out.Mimetype, nil
-}
-
-// CreateInstance da de alta una línea nueva. El QR se recoge después por el
-// evento qrcode.updated del webhook.
-func (c *Client) CreateInstance(ctx context.Context, name string) error {
-	body := map[string]any{
-		"instanceName": name,
-		"qrcode":       true,
-		"integration":  "WHATSAPP-BAILEYS",
-	}
-	return c.do(ctx, http.MethodPost, "/instance/create", body, nil)
-}
-
-// Logout desvincula el teléfono sin borrar la instancia en Evolution.
-func (c *Client) Logout(ctx context.Context, instance string) error {
-	return c.do(ctx, http.MethodDelete, "/instance/logout/"+url.PathEscape(instance), nil, nil)
-}
-
-// DeleteInstance elimina la instancia en Evolution.
-//
-// La fila de `instances` NO se borra al llamar a esto: las conversaciones y
-// mensajes cuelgan de ella con ON DELETE CASCADE, así que borrarla se llevaría
-// puesto el historial, que es justamente lo que el panel existe para conservar.
-// El módulo la marca inactiva.
-func (c *Client) DeleteInstance(ctx context.Context, instance string) error {
-	return c.do(ctx, http.MethodDelete, "/instance/delete/"+url.PathEscape(instance), nil, nil)
-}
-
-// ConnectionState consulta si una línea sigue vinculada.
-func (c *Client) ConnectionState(ctx context.Context, instance string) (string, error) {
-	var out struct {
-		Instance struct {
-			State string `json:"state"`
-		} `json:"instance"`
-	}
-	path := "/instance/connectionState/" + url.PathEscape(instance)
-	if err := c.do(ctx, http.MethodGet, path, nil, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, "/instance/create", c.globalKey, body, nil); err != nil {
 		return "", err
 	}
-	return out.Instance.State, nil
+
+	connect := map[string]any{
+		"webhookUrl": c.webhookURL,
+		"subscribe":  subscriptions,
+		"immediate":  true,
+	}
+	if err := c.do(ctx, http.MethodPost, "/instance/connect", token, connect, nil); err != nil {
+		return "", fmt.Errorf("conectando la instancia: %w", err)
+	}
+	return "", nil
 }
 
-func (c *Client) do(ctx context.Context, method, path string, in, out any) error {
+// ConfigureWebhook reapplies subscriptions to an already linked line. Evolution
+// updates the running client's settings in place when /instance/connect is
+// called again, so this does not require another QR or start a second session.
+func (c *Client) ConfigureWebhook(ctx context.Context, instance string) error {
+	connect := map[string]any{
+		"webhookUrl": c.webhookURL,
+		"subscribe":  subscriptions,
+		"immediate":  true,
+	}
+	return c.do(ctx, http.MethodPost, "/instance/connect", c.instanceToken(instance), connect, nil)
+}
+
+func (c *Client) QRCode(ctx context.Context, instance string) (string, error) {
+	var out struct {
+		Data struct {
+			QRCode string `json:"qrcode"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/instance/qr", c.instanceToken(instance), nil, &out); err != nil {
+		return "", err
+	}
+	if out.Data.QRCode == "" {
+		return "", fmt.Errorf("Evolution Go no devolvió un código QR")
+	}
+	return out.Data.QRCode, nil
+}
+
+func (c *Client) Logout(ctx context.Context, instance string) error {
+	return c.do(ctx, http.MethodDelete, "/instance/logout", c.instanceToken(instance), nil, nil)
+}
+
+func (c *Client) DeleteInstance(ctx context.Context, instance string) error {
+	var out struct {
+		Data []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/instance/all", c.globalKey, nil, &out); err != nil {
+		return err
+	}
+	for _, candidate := range out.Data {
+		if candidate.Name == instance {
+			path := "/instance/delete/" + url.PathEscape(candidate.ID)
+			return c.do(ctx, http.MethodDelete, path, c.globalKey, nil, nil)
+		}
+	}
+	return nil
+}
+
+func (c *Client) ConnectionState(ctx context.Context, instance string) (string, error) {
+	var out struct {
+		Data struct {
+			Connected      bool `json:"Connected"`
+			LoggedIn       bool `json:"LoggedIn"`
+			ConnectedLower bool `json:"connected"`
+			LoggedInLower  bool `json:"loggedIn"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/instance/status", c.instanceToken(instance), nil, &out); err != nil {
+		return "", err
+	}
+	if out.Data.LoggedIn || out.Data.LoggedInLower {
+		return "open", nil
+	}
+	if out.Data.Connected || out.Data.ConnectedLower {
+		return "connecting", nil
+	}
+	return "close", nil
+}
+
+// Contacts returns the address book synchronized by the linked WhatsApp line.
+// FullName is the name chosen by the owner of that line; PushName is the public
+// profile name chosen by the remote person. They must remain separate.
+func (c *Client) Contacts(ctx context.Context, instance string) ([]domain.ContactIdentity, error) {
+	var out struct {
+		Data []struct {
+			JID          string `json:"Jid"`
+			FirstName    string `json:"FirstName"`
+			FullName     string `json:"FullName"`
+			PushName     string `json:"PushName"`
+			BusinessName string `json:"BusinessName"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/user/contacts", c.instanceToken(instance), nil, &out); err != nil {
+		return nil, err
+	}
+	contacts := make([]domain.ContactIdentity, 0, len(out.Data))
+	for _, item := range out.Data {
+		if item.JID == "" || strings.HasSuffix(item.JID, "@g.us") {
+			continue
+		}
+		contacts = append(contacts, domain.ContactIdentity{
+			PhoneJID: item.JID, FirstName: item.FirstName, FullName: item.FullName,
+			PushName: item.PushName, BusinessName: item.BusinessName,
+		})
+	}
+	return contacts, nil
+}
+
+// Evolution Go needs the original protobuf message, not just its WhatsApp ID,
+// to download media. Inbound media is therefore transported through the
+// webhook's mediaUrl (MinIO) and copied by the media pipeline instead.
+func (c *Client) DownloadMedia(_ context.Context, _, waMessageID string) ([]byte, string, error) {
+	return nil, "", fmt.Errorf("media %s no disponible por ID en Evolution Go", waMessageID)
+}
+
+func (c *Client) do(ctx context.Context, method, path, apiKey string, in, out any) error {
 	var reader io.Reader
 	if in != nil {
 		buf, err := json.Marshal(in)
@@ -171,7 +284,7 @@ func (c *Client) do(ctx context.Context, method, path string, in, out any) error
 	if err != nil {
 		return err
 	}
-	req.Header.Set("apikey", c.apiKey)
+	req.Header.Set("apikey", apiKey)
 	if in != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -183,8 +296,6 @@ func (c *Client) do(ctx context.Context, method, path string, in, out any) error
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 300 {
-		// Se limita la lectura del cuerpo de error: un 502 de un proxy puede
-		// devolver una página HTML entera.
 		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
 		return fmt.Errorf("%s %s devolvió %d: %s", method, path, resp.StatusCode, detail)
 	}

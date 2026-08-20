@@ -60,12 +60,18 @@ func (r *Read) SearchMessages(ctx context.Context, q store.SearchQuery) ([]store
 
 	sql := `
 		SELECT m.id, m.conversation_id, m.instance_id, i.owner_label,
-		       coalesce(nullif(ct.display_name, ''), nullif(ct.push_name, ''),
-		                ct.phone_number, ct.wa_jid),
+		       coalesce(nullif(ct.display_name, ''),
+		                CASE WHEN NOT c.is_group THEN coalesce(
+		                  nullif(cd.full_name, ''), nullif(cd.first_name, ''),
+		                  nullif(cd.business_name, ''), nullif(cd.push_name, '')) END,
+		                nullif(ct.push_name, ''), ct.phone_number, ct.wa_jid),
 		       m.body, m.wa_timestamp
 		  FROM messages m
 		  JOIN instances i  ON i.id = m.instance_id
 		  JOIN contacts  ct ON ct.id = m.contact_id
+		  JOIN conversations c ON c.id = m.conversation_id
+		  LEFT JOIN contact_directory cd
+		         ON cd.instance_id = m.instance_id AND cd.wa_jid = ct.wa_jid
 		 WHERE ` + strings.Join(where, " AND ") + `
 		 ORDER BY m.wa_timestamp DESC, m.id DESC` +
 		fmt.Sprintf(` LIMIT $%d`, len(args))

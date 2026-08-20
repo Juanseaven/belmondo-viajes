@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { mirrorApi, type Message } from "./api";
+import { mirrorApi, type Message, type MessageQuote } from "./api";
 
 /**
  * El hilo de una conversación.
@@ -91,7 +91,7 @@ export function useThread(conversationId: string | null, focusId?: string) {
 
   /** Pinta la burbuja provisional apenas se aprieta enviar. */
   const addOptimistic = useCallback(
-    (key: string, body: string, fileName?: string) => {
+    (key: string, body: string, fileName?: string, quote?: MessageQuote) => {
       setMessages((prev) => [
         ...prev,
         {
@@ -101,6 +101,8 @@ export function useThread(conversationId: string | null, focusId?: string) {
           type: fileName ? "document" : "text",
           status: "pending",
           body,
+          quotedId: quote ? "pending" : undefined,
+          quote,
           timestamp: new Date().toISOString(),
           pending: { key, fileName },
         },

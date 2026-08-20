@@ -39,24 +39,29 @@ var migrationFiles embed.FS
 type Module struct {
 	k *kernel.Kernel
 
-	pool     *worker.Pool
-	mediaSvc *media.Service
-	webhook  http.Handler
-	mediaDB  store.MediaStore
-	read     store.ReadStore
-	upkeep   store.Maintenance
-	log      *slog.Logger
+	pool      *worker.Pool
+	mediaSvc  *media.Service
+	webhook   http.Handler
+	mediaDB   store.MediaStore
+	read      store.ReadStore
+	upkeep    store.Maintenance
+	contacts  store.ContactStore
+	directory lineDirectory
+	log       *slog.Logger
 
 	// Escritura.
 	send        *SendService
 	lines       store.InstanceStore
 	provisioner Provisioner
-	qr          *rediscache.QRCodes
+	qr          QRCache
 
 	// Cancela las tareas de fondo propias del módulo (hoy, la purga). Se guarda
 	// para que Shutdown pueda pararlas sin depender del contexto de Start.
 	stopUpkeep context.CancelFunc
 	upkeepDone chan struct{}
+
+	stopRecovery context.CancelFunc
+	recoveryDone chan struct{}
 }
 
 // New cablea el módulo. Construye sus propias dependencias (el cliente de
@@ -67,6 +72,7 @@ func New(k *kernel.Kernel) *Module {
 
 	events := postgres.NewEvents(k.DB)
 	messages := postgres.NewMessages(k.DB)
+	contacts := postgres.NewContacts(k.DB)
 	instances := postgres.NewInstances(k.DB)
 	mediaDB := postgres.NewMedia(k.DB)
 	panelSends := rediscache.NewPanelSends(k.Redis)
@@ -74,22 +80,24 @@ func New(k *kernel.Kernel) *Module {
 	outbound := postgres.NewOutbound(k.DB)
 	qr := rediscache.NewQRCodes(k.Redis)
 
-	evo := evolution.New(cfg.EvolutionBaseURL, cfg.EvolutionAPIKey)
+	evo := evolution.New(cfg.EvolutionBaseURL, cfg.EvolutionAPIKey, cfg.EvolutionWebhookURL)
 
 	mediaSvc := media.NewService(evo, k.Blobs, mediaDB, cfg.WorkerQueueSize, log)
 	processor := ingest.NewProcessor(
-		events, messages, instances, panelSends, outbound, qr, mediaSvc, k.Hub, log)
+		events, messages, contacts, evo, instances, panelSends, outbound, qr, mediaSvc, k.Hub, log)
 	pool := worker.New(cfg.WorkerShards, cfg.WorkerQueueSize, processor, log)
 
 	return &Module{
-		k:        k,
-		pool:     pool,
-		mediaSvc: mediaSvc,
-		webhook:  webhook.NewHandler(events, pool, cfg.WebhookAPIKey, log),
-		mediaDB:  mediaDB,
-		read:     postgres.NewRead(k.DB),
-		upkeep:   postgres.NewMaintenance(k.DB),
-		log:      log,
+		k:         k,
+		pool:      pool,
+		mediaSvc:  mediaSvc,
+		webhook:   webhook.NewHandler(events, pool, instances, cfg.EvolutionAPIKey, log),
+		mediaDB:   mediaDB,
+		read:      postgres.NewRead(k.DB),
+		upkeep:    postgres.NewMaintenance(k.DB),
+		contacts:  contacts,
+		directory: evo,
+		log:       log,
 
 		send:        NewSendService(outbound, panelSends, evo, k.Blobs, cfg.R2SignedURLTTL, log),
 		lines:       instances,
@@ -139,6 +147,7 @@ func (m *Module) Mount(r modules.Router) {
 func (m *Module) Start(ctx context.Context) error {
 	m.mediaSvc.Start(ctx, m.k.Cfg.MediaWorkers)
 	m.pool.Start(ctx)
+	m.refreshLineDirectories(ctx)
 
 	// Recupera los adjuntos que quedaron a medias en el reinicio anterior.
 	if err := m.mediaSvc.Requeue(ctx, 200); err != nil {
@@ -150,12 +159,42 @@ func (m *Module) Start(ctx context.Context) error {
 	m.upkeepDone = make(chan struct{})
 	go m.runPurge(upkeepCtx)
 
+	recoveryCtx, stopRecovery := context.WithCancel(context.WithoutCancel(ctx))
+	m.stopRecovery = stopRecovery
+	m.recoveryDone = make(chan struct{})
+	go m.runLineRecovery(recoveryCtx)
+
 	return nil
+}
+
+func (m *Module) refreshLineDirectories(ctx context.Context) {
+	lines, err := m.read.Lines(ctx)
+	if err != nil {
+		m.log.Warn("no se pudieron listar líneas para sincronizar agendas", "error", err)
+		return
+	}
+	for _, line := range lines {
+		if !shouldRecoverLine(line) {
+			continue
+		}
+		if err := m.reconcileLine(ctx, line, true); err != nil {
+			m.log.Warn("no se pudo recuperar la línea", "instance", line.Name, "error", err)
+		}
+	}
 }
 
 // Shutdown drena en el orden que evita perder trabajo: primero el pool de eventos
 // (que produce trabajo de media) y después el pipeline de media.
 func (m *Module) Shutdown(ctx context.Context) error {
+	if m.stopRecovery != nil {
+		m.stopRecovery()
+		select {
+		case <-m.recoveryDone:
+		case <-ctx.Done():
+			m.log.Warn("la recuperación de líneas no terminó a tiempo; se abandona")
+		}
+	}
+
 	// La purga es trabajo de fondo prescindible: se corta primero para que no
 	// compita por conexiones con lo que sí hay que drenar.
 	if m.stopUpkeep != nil {

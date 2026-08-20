@@ -20,6 +20,7 @@ export interface Line {
   phoneNumber?: string;
   status: "created" | "connecting" | "open" | "close";
   isActive: boolean;
+  wasConnected?: boolean;
   lastSeenAt?: string;
   unread: number;
 }
@@ -37,6 +38,7 @@ export interface Conversation {
   preview?: string;
   lastType?: string;
   unread: number;
+  needsReply?: boolean;
 }
 
 export interface MessageMedia {
@@ -51,6 +53,15 @@ export interface MessageMedia {
   status: "pending" | "processing" | "stored" | "failed";
 }
 
+export interface MessageQuote {
+  /** UUID interno del mensaje original; sirve para cargar una ventana `around`. */
+  id: string;
+  direction: "inbound" | "outbound";
+  type: string;
+  body?: string;
+  senderName?: string;
+}
+
 export interface Message {
   id: string;
   direction: "inbound" | "outbound";
@@ -62,7 +73,11 @@ export interface Message {
   timestamp: string;
   sentById?: string;
   sentByName?: string;
+  senderJid?: string;
+  senderName?: string;
+  senderPhone?: string;
   quotedId?: string;
+  quote?: MessageQuote;
   editedAt?: string;
   deletedAt?: string;
   media?: MessageMedia;
@@ -122,7 +137,7 @@ function qs(params: Record<string, string | number | undefined>): string {
 export const mirrorApi = {
   lines: () => api<{ lines: Line[] }>("/api/mirror/lines"),
 
-  conversations: (params: { instance?: string; q?: string; cursor?: string }) =>
+  conversations: (params: { instance?: string; q?: string; cursor?: string; status?: "unanswered" }) =>
     api<Page<Conversation>>(`/api/mirror/conversations${qs(params)}`),
 
   conversation: (id: string) => api<Conversation>(`/api/mirror/conversations/${id}`),
@@ -151,19 +166,24 @@ export const mirrorApi = {
    */
   send: (
     conversationId: string,
-    payload: { body: string; idempotencyKey: string; file?: File },
+    payload: { body: string; idempotencyKey: string; file?: File; replyToMessageId?: string },
   ) => {
     const path = `/api/mirror/conversations/${conversationId}/messages`;
     if (!payload.file) {
       return api<SendResult>(path, {
         method: "POST",
-        body: JSON.stringify({ body: payload.body, idempotencyKey: payload.idempotencyKey }),
+        body: JSON.stringify({
+          body: payload.body,
+          idempotencyKey: payload.idempotencyKey,
+          replyToMessageId: payload.replyToMessageId,
+        }),
       });
     }
 
     const form = new FormData();
     form.set("body", payload.body);
     form.set("idempotencyKey", payload.idempotencyKey);
+    if (payload.replyToMessageId) form.set("replyToMessageId", payload.replyToMessageId);
     form.set("file", payload.file);
     // Sin Content-Type a propósito: el navegador tiene que ponerlo él para
     // incluir el boundary del multipart.

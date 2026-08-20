@@ -18,6 +18,11 @@ import (
 type fakeOutbound struct {
 	target    store.SendTarget
 	targetErr error
+	quote     store.QuoteTarget
+	quoteErr  error
+
+	quoteConversationID string
+	quoteMessageID      string
 
 	// Simula el índice único: la segunda vez que llega una clave, devuelve la fila
 	// existente en vez de crear otra.
@@ -33,6 +38,12 @@ func newFakeOutbound(target store.SendTarget) *fakeOutbound {
 
 func (f *fakeOutbound) Target(context.Context, string) (store.SendTarget, error) {
 	return f.target, f.targetErr
+}
+
+func (f *fakeOutbound) QuoteTarget(_ context.Context, conversationID, messageID string) (store.QuoteTarget, error) {
+	f.quoteConversationID = conversationID
+	f.quoteMessageID = messageID
+	return f.quote, f.quoteErr
 }
 
 func (f *fakeOutbound) Create(_ context.Context, o *store.Outbound) (*store.Outbound, bool, error) {
@@ -67,11 +78,13 @@ type fakeEvolution struct {
 	mediaCalls int
 	lastMedia  string
 	lastType   string
+	lastQuote  *evolution.Quote
 	err        error
 }
 
-func (f *fakeEvolution) SendText(context.Context, string, string, string) (*evolution.SendTextResult, error) {
+func (f *fakeEvolution) SendText(_ context.Context, _, _, _ string, quote *evolution.Quote) (*evolution.SendTextResult, error) {
 	f.textCalls++
+	f.lastQuote = quote
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -80,10 +93,11 @@ func (f *fakeEvolution) SendText(context.Context, string, string, string) (*evol
 	return out, nil
 }
 
-func (f *fakeEvolution) SendMedia(_ context.Context, _, _, mediaURL, mediatype, _, _ string) (*evolution.SendTextResult, error) {
+func (f *fakeEvolution) SendMedia(_ context.Context, _, _, mediaURL, mediatype, _, _ string, quote *evolution.Quote) (*evolution.SendTextResult, error) {
 	f.mediaCalls++
 	f.lastMedia = mediaURL
 	f.lastType = mediatype
+	f.lastQuote = quote
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -117,6 +131,8 @@ func (f *fakeBlobs) Put(_ context.Context, key, _ string, data []byte) error {
 func (f *fakeBlobs) SignedURL(_ context.Context, key string, _ time.Duration) (string, error) {
 	return "https://firmada.example/" + key, nil
 }
+
+func (*fakeBlobs) DeletePrefix(context.Context, string) error { return nil }
 
 // --- Andamiaje --------------------------------------------------------------
 
@@ -168,6 +184,55 @@ func TestEnviarDosVecesConLaMismaClaveMandaUnaSola(t *testing.T) {
 	}
 	if primero.ID != segundo.ID {
 		t.Fatalf("el reintento devolvió otro envío (%s vs %s)", primero.ID, segundo.ID)
+	}
+}
+
+// El navegador manda nuestro UUID, no un id de WhatsApp libre. Resolverlo junto
+// con la conversación evita que alguien cite por accidente (o a propósito) un
+// mensaje de otro chat.
+func TestEnvioCitadoPasaUnaCitaValidadaAEvolution(t *testing.T) {
+	out := newFakeOutbound(lineaConectada())
+	out.quote = store.QuoteTarget{
+		WAMessageID: "wa-original",
+		Participant: "573001112233@s.whatsapp.net",
+	}
+	evo := &fakeEvolution{}
+	svc := newSendService(out, evo, &fakePanel{marks: map[string]string{}}, &fakeBlobs{put: map[string][]byte{}})
+	req := nuevoEnvio("clave-citada", "te respondo esto")
+	req.ReplyToMessageID = "msg-interno-1"
+
+	if _, err := svc.Send(context.Background(), req); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	if out.quoteConversationID != "conv-1" || out.quoteMessageID != "msg-interno-1" {
+		t.Fatalf("la cita se resolvió con conversación=%q mensaje=%q",
+			out.quoteConversationID, out.quoteMessageID)
+	}
+	if evo.lastQuote == nil || evo.lastQuote.MessageID != "wa-original" ||
+		evo.lastQuote.Participant != "573001112233@s.whatsapp.net" {
+		t.Fatalf("cita enviada a Evolution = %+v", evo.lastQuote)
+	}
+}
+
+func TestCitaAjenaNoRegistraNiEnviaElMensaje(t *testing.T) {
+	out := newFakeOutbound(lineaConectada())
+	out.quoteErr = store.ErrNotFound
+	evo := &fakeEvolution{}
+	svc := newSendService(out, evo, &fakePanel{marks: map[string]string{}}, &fakeBlobs{put: map[string][]byte{}})
+	req := nuevoEnvio("clave-citada", "te respondo esto")
+	req.ReplyToMessageID = "msg-de-otro-chat"
+
+	_, err := svc.Send(context.Background(), req)
+
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("error = %v, se esperaba store.ErrNotFound", err)
+	}
+	if evo.textCalls != 0 || evo.mediaCalls != 0 {
+		t.Fatal("se llamó a Evolution con una cita ajena")
+	}
+	if len(out.byKey) != 0 {
+		t.Fatal("se registró el envío pese a que la cita era inválida")
 	}
 }
 

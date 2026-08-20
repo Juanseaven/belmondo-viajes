@@ -1,36 +1,53 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { AlertCircle, Radio } from "lucide-react";
+
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
+
+import { ContactAvatar } from "./ContactAvatar";
 import type { useInbox } from "./useInbox";
 
-/** Etiqueta corta para los mensajes que no son texto. */
 const TYPE_LABEL: Record<string, string> = {
-  image: "📷 Foto",
-  video: "🎥 Vídeo",
-  audio: "🎤 Audio",
-  document: "📎 Documento",
+  image: "Foto",
+  video: "Vídeo",
+  audio: "Audio",
+  document: "Documento",
   sticker: "Sticker",
-  location: "📍 Ubicación",
-  contact: "👤 Contacto",
+  location: "Ubicación",
+  contact: "Contacto",
 };
+
+/** Estado comercial de la fila: lo que hace falta hacer con esa conversación. */
+export interface RowState {
+  label: string;
+  tone?: "warn" | "late";
+  /** Referencia a la operación, cuando la conversación ya se convirtió en viaje. */
+  operation?: string;
+}
 
 export function ConversationList({
   inbox,
   selectedId,
   onSelect,
+  showAvatars = true,
+  states,
 }: {
   inbox: ReturnType<typeof useInbox>;
   selectedId: string;
   onSelect: (id: string) => void;
+  showAvatars?: boolean;
+  states?: Record<string, RowState>;
 }) {
   const sentinel = useRef<HTMLDivElement>(null);
 
-  // Scroll infinito por observador y no por evento de scroll: no dispara en cada
-  // píxel y no hace falta rebotarlo a mano.
   useEffect(() => {
     const node = sentinel.current;
     if (!node || !inbox.hasMore) return;
-
     const observer = new IntersectionObserver(
       ([entry]) => entry.isIntersecting && void inbox.loadMore(),
       { rootMargin: "200px" },
@@ -41,56 +58,104 @@ export function ConversationList({
 
   if (inbox.error) {
     return (
-      <div className="conversations">
-        <p className="error">{inbox.error}</p>
-        <button type="button" onClick={() => void inbox.reload()}>
-          Reintentar
-        </button>
-      </div>
+      <Alert variant="destructive" className="inbox-alert">
+        <AlertCircle aria-hidden />
+        <AlertTitle>No se pudo cargar la bandeja</AlertTitle>
+        <AlertDescription>
+          <span>{inbox.error}</span>
+          <Button type="button" variant="outline" size="sm" onClick={() => void inbox.reload()}>
+            Reintentar
+          </Button>
+        </AlertDescription>
+      </Alert>
     );
   }
 
   if (inbox.loading && inbox.items.length === 0) {
-    return <p className="empty">Cargando conversaciones…</p>;
+    return (
+      <div className="conversation-skeletons" aria-label="Cargando conversaciones">
+        {Array.from({ length: 7 }, (_, index) => (
+          <div className="conversation-skeleton" key={index}>
+            <Skeleton className="size-10 rounded-full" />
+            <div>
+              <Skeleton className="mb-2 h-3.5 w-36" />
+              <Skeleton className="h-3 w-48" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
   }
 
   if (inbox.items.length === 0) {
-    return <p className="empty">No hay conversaciones todavía.</p>;
+    return (
+      <div className="inbox-empty">
+        <Radio aria-hidden />
+        <strong>No hay conversaciones todavía.</strong>
+        <p>Conectá una línea para empezar a recibir mensajes en esta bandeja.</p>
+      </div>
+    );
   }
 
   return (
-    <ul className="conversations">
-      {inbox.items.map((c) => (
-        <li key={c.id}>
-          <button
-            type="button"
-            className={c.id === selectedId ? "conv active" : "conv"}
-            onClick={() => onSelect(c.id)}
-          >
-            <span className="conv-top">
-              <strong>{c.contactName}</strong>
-              {c.lastMessageAt && (
-                <time dateTime={c.lastMessageAt}>{shortTime(c.lastMessageAt)}</time>
+    <ScrollArea className="conversation-scroll">
+      <ul className="conversation-list">
+        {inbox.items.map((conversation) => {
+          const state = states?.[conversation.id] ?? (conversation.needsReply
+            ? { label: "Sin responder", tone: "warn" as const }
+            : undefined);
+          return (
+          <li key={conversation.id}>
+            <button
+              type="button"
+              className={conversation.id === selectedId ? "conversation-row active" : "conversation-row"}
+              onClick={() => onSelect(conversation.id)}
+            >
+              {showAvatars && (
+                <ContactAvatar
+                  name={conversation.contactName}
+                  src={conversation.avatarUrl}
+                  size="lg"
+                  className="conversation-avatar"
+                />
               )}
-            </span>
-            <span className="conv-bottom">
-              <span className="preview">
-                {c.preview || TYPE_LABEL[c.lastType ?? ""] || "—"}
+              <span className="conversation-copy">
+                <span className="conversation-heading">
+                  <strong>{conversation.contactName}</strong>
+                  {conversation.lastMessageAt && (
+                    <time dateTime={conversation.lastMessageAt}>{shortTime(conversation.lastMessageAt)}</time>
+                  )}
+                </span>
+                <span className="conversation-preview-row">
+                  <span className="conversation-preview">
+                    {conversation.preview || TYPE_LABEL[conversation.lastType ?? ""] || "Sin vista previa"}
+                  </span>
+                  {conversation.unread > 0 && <Badge>{conversation.unread}</Badge>}
+                </span>
+                {/* Tercera línea: por dónde entró y qué falta hacer. El estado se
+                    tiñe solo cuando pide acción; el resto queda en neutro. */}
+                <span className="conversation-meta">
+                  {/* La procedencia de línea no se pierde cuando hay operación:
+                      son dos datos distintos y el supervisor mira los dos. */}
+                  <span className="conversation-line">{conversation.instanceLabel}</span>
+                  {state?.operation && <span className="conversation-operation">{state.operation}</span>}
+                  {state?.label && (
+                    <span className={state.tone ? `conversation-state ${state.tone}` : "conversation-state"}>
+                      {state.label}
+                    </span>
+                  )}
+                </span>
               </span>
-              {c.unread > 0 && <span className="badge">{c.unread}</span>}
-            </span>
-            {/* La línea de origen siempre visible: en la bandeja unificada, saber
-                por qué número entró el mensaje es la mitad de la información. */}
-            <span className="line-tag">{c.instanceLabel}</span>
-          </button>
-        </li>
-      ))}
-      <div ref={sentinel} />
-    </ul>
+            </button>
+          </li>
+          );
+        })}
+        <li aria-hidden><div ref={sentinel} /></li>
+      </ul>
+    </ScrollArea>
   );
 }
 
-/** Hora si es de hoy, fecha corta si no. Como cualquier bandeja. */
 function shortTime(iso: string): string {
   const date = new Date(iso);
   const today = new Date();

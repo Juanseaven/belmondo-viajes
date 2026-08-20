@@ -12,14 +12,15 @@ import (
 
 // Line es una línea de WhatsApp tal como la ve el filtro de la bandeja.
 type Line struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`  // evolution_name; la clave hacia Evolution
-	Label       string     `json:"label"` // owner_label: el nombre que se muestra
-	DisplayName string     `json:"displayName,omitempty"`
-	PhoneNumber string     `json:"phoneNumber,omitempty"`
-	Status      string     `json:"status"` // created | connecting | open | close
-	IsActive    bool       `json:"isActive"`
-	LastSeenAt  *time.Time `json:"lastSeenAt,omitempty"`
+	ID           string     `json:"id"`
+	Name         string     `json:"name"`  // evolution_name; la clave hacia Evolution
+	Label        string     `json:"label"` // owner_label: el nombre que se muestra
+	DisplayName  string     `json:"displayName,omitempty"`
+	PhoneNumber  string     `json:"phoneNumber,omitempty"`
+	Status       string     `json:"status"` // created | connecting | open | close
+	IsActive     bool       `json:"isActive"`
+	WasConnected bool       `json:"wasConnected"`
+	LastSeenAt   *time.Time `json:"lastSeenAt,omitempty"`
 
 	// Suma de unread_count de sus conversaciones. Permite ver qué línea tiene
 	// movimiento sin ir entrando una por una.
@@ -49,6 +50,7 @@ type InboxItem struct {
 	Preview       string     `json:"preview,omitempty"`
 	LastType      string     `json:"lastType,omitempty"`
 	Unread        int        `json:"unread"`
+	NeedsReply    bool       `json:"needsReply"`
 }
 
 // Cursor devuelve la posición de esta fila en la bandeja. Debe coincidir con el
@@ -76,13 +78,30 @@ type ThreadMessage struct {
 	SentByID   string `json:"sentById,omitempty"`
 	SentByName string `json:"sentByName,omitempty"`
 
-	QuotedID  string     `json:"quotedId,omitempty"`
-	EditedAt  *time.Time `json:"editedAt,omitempty"`
-	DeletedAt *time.Time `json:"deletedAt,omitempty"`
+	// Remitente real de un mensaje entrante en un grupo.
+	SenderJID   string `json:"senderJid,omitempty"`
+	SenderName  string `json:"senderName,omitempty"`
+	SenderPhone string `json:"senderPhone,omitempty"`
+
+	QuotedID  string               `json:"quotedId,omitempty"`
+	Quote     *QuotedThreadMessage `json:"quote,omitempty"`
+	EditedAt  *time.Time           `json:"editedAt,omitempty"`
+	DeletedAt *time.Time           `json:"deletedAt,omitempty"`
 
 	// Metadatos del adjunto. El binario se pide aparte a /media/{id}, que devuelve
 	// una URL firmada de vida corta.
 	Media *ThreadMedia `json:"media,omitempty"`
+}
+
+// QuotedThreadMessage es la vista mínima del mensaje original que WhatsApp
+// muestra dentro de una respuesta. ID es nuestro UUID y permite cargar una
+// ventana `around` al tocar la cita.
+type QuotedThreadMessage struct {
+	ID         string `json:"id"`
+	Direction  string `json:"direction"`
+	Type       string `json:"type"`
+	Body       string `json:"body,omitempty"`
+	SenderName string `json:"senderName,omitempty"`
 }
 
 type ThreadMedia struct {
@@ -124,6 +143,7 @@ func (h SearchHit) Cursor() Cursor {
 type InboxQuery struct {
 	InstanceID string // vacío = todas las líneas
 	Search     string // filtra por nombre o número de contacto
+	NeedsReply bool   // solo conversaciones cuyo ultimo mensaje es entrante
 	Cursor     Cursor
 	Limit      int
 }

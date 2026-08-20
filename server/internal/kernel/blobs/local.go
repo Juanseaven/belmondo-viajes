@@ -69,6 +69,23 @@ func (l *Local) Put(_ context.Context, key, _ string, data []byte) error {
 	return nil
 }
 
+// DeletePrefix elimina el directorio que representa un prefijo de objetos. Solo
+// acepta prefijos terminados en barra para que nunca se confunda una línea con
+// otra cuyo nombre empiece igual.
+func (l *Local) DeletePrefix(_ context.Context, prefix string) error {
+	if prefix == "" || !strings.HasSuffix(prefix, "/") {
+		return fmt.Errorf("prefijo de borrado inválido: %q", prefix)
+	}
+	path, err := l.resolve(strings.TrimSuffix(prefix, "/"))
+	if err != nil {
+		return err
+	}
+	if err := os.RemoveAll(path); err != nil {
+		return fmt.Errorf("borrando %s: %w", prefix, err)
+	}
+	return nil
+}
+
 // SignedURL emite un enlace temporal hacia la ruta de archivos del kernel.
 func (l *Local) SignedURL(_ context.Context, key string, ttl time.Duration) (string, error) {
 	if _, err := l.resolve(key); err != nil {

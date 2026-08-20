@@ -4,6 +4,8 @@ import { useEffect, useRef } from "react";
 import { token } from "./client";
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8080";
+const FIRST_RETRY_MS = 1_000;
+const MAX_RETRY_MS = 30_000;
 
 export interface ServerEvent<T = unknown> {
   /** Qué módulo lo emite. Ver `ws.Event` en el backend. */
@@ -35,29 +37,48 @@ export function useSocket(
   const instanceKey = instances.join(",");
 
   useEffect(() => {
-    const jwt = token.get();
-    if (!jwt) return;
+    let stopped = false;
+    let socket: WebSocket | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let retryMs = FIRST_RETRY_MS;
 
-    const socket = new WebSocket(`${WS_URL}/api/ws?token=${encodeURIComponent(jwt)}`);
+    const connect = () => {
+      const jwt = token.get();
+      if (stopped || !jwt) return;
 
-    socket.onopen = () => {
-      socket.send(
-        JSON.stringify({
-          action: "subscribe",
-          modules: [moduleName],
-          instances: instanceKey ? instanceKey.split(",") : [],
-        }),
-      );
+      socket = new WebSocket(`${WS_URL}/api/ws?token=${encodeURIComponent(jwt)}`);
+
+      socket.onopen = () => {
+        retryMs = FIRST_RETRY_MS;
+        socket?.send(
+          JSON.stringify({
+            action: "subscribe",
+            modules: [moduleName],
+            instances: instanceKey ? instanceKey.split(",") : [],
+          }),
+        );
+      };
+
+      socket.onmessage = (message) => {
+        try {
+          handler.current(JSON.parse(message.data) as ServerEvent);
+        } catch {
+          // Un evento ilegible no puede tumbar la conexión.
+        }
+      };
+
+      socket.onclose = () => {
+        if (stopped) return;
+        retryTimer = setTimeout(connect, retryMs);
+        retryMs = Math.min(retryMs * 2, MAX_RETRY_MS);
+      };
     };
 
-    socket.onmessage = (msg) => {
-      try {
-        handler.current(JSON.parse(msg.data) as ServerEvent);
-      } catch {
-        // Un evento ilegible no puede tumbar la conexión.
-      }
+    connect();
+    return () => {
+      stopped = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      socket?.close();
     };
-
-    return () => socket.close();
   }, [moduleName, instanceKey]);
 }

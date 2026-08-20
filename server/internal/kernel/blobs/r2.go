@@ -24,6 +24,38 @@ import (
 type Store interface {
 	Put(ctx context.Context, key, contentType string, data []byte) error
 	SignedURL(ctx context.Context, key string, ttl time.Duration) (string, error)
+	DeletePrefix(ctx context.Context, prefix string) error
+}
+
+// DeletePrefix elimina todos los objetos de una línea. Los objetos se listan y
+// borran individualmente para mantener la operación compatible con R2 y
+// naturalmente idempotente: borrar una clave ya ausente también es éxito.
+func (r *R2) DeletePrefix(ctx context.Context, prefix string) error {
+	if prefix == "" || prefix[len(prefix)-1] != '/' {
+		return fmt.Errorf("prefijo de borrado inválido: %q", prefix)
+	}
+	paginator := s3.NewListObjectsV2Paginator(r.client, &s3.ListObjectsV2Input{
+		Bucket: aws.String(r.bucket),
+		Prefix: aws.String(prefix),
+	})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return fmt.Errorf("listando prefijo %s: %w", prefix, err)
+		}
+		for _, object := range page.Contents {
+			if object.Key == nil {
+				continue
+			}
+			if _, err := r.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: aws.String(r.bucket),
+				Key:    object.Key,
+			}); err != nil {
+				return fmt.Errorf("borrando %s: %w", *object.Key, err)
+			}
+		}
+	}
+	return nil
 }
 
 // R2 implementa Store sobre Cloudflare R2, que habla el protocolo S3.

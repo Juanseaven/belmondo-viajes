@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -120,6 +121,112 @@ func seedMessage(t *testing.T, ctx context.Context, p *pgxpool.Pool,
 	return id
 }
 
+// La combinación conversación + UUID interno es la frontera de seguridad de
+// las respuestas citadas. Un UUID válido de otro chat no debe alcanzar nunca a
+// Evolution.
+func TestQuoteTargetResuelveSoloMensajesDeLaMismaConversacion(t *testing.T) {
+	ctx, p := testDB(t)
+	line := seedLine(t, ctx, p, "ana", "Ana")
+	if _, err := p.Exec(ctx,
+		`UPDATE instances SET phone_jid = '5491100000000@s.whatsapp.net' WHERE id = $1`, line); err != nil {
+		t.Fatalf("preparando jid de la línea: %v", err)
+	}
+	contactA := seedContact(t, ctx, p, "5491111111111@s.whatsapp.net", "A", "+5491111111111")
+	contactB := seedContact(t, ctx, p, "5491222222222@s.whatsapp.net", "B", "+5491222222222")
+	convA := seedConversation(t, ctx, p, line, contactA, time.Now().UTC(), 0)
+	convB := seedConversation(t, ctx, p, line, contactB, time.Now().UTC(), 0)
+	messageA := seedMessage(t, ctx, p, convA, line, contactA, "wa-a", "mensaje A", time.Now().UTC())
+	messageB := seedMessage(t, ctx, p, convB, line, contactB, "wa-b", "mensaje B", time.Now().UTC())
+	if _, err := p.Exec(ctx,
+		`UPDATE messages SET sender_jid = '5491111111111@s.whatsapp.net' WHERE id = $1`, messageA); err != nil {
+		t.Fatalf("preparando remitente: %v", err)
+	}
+
+	got, err := NewOutbound(p).QuoteTarget(ctx, convA, messageA)
+	if err != nil {
+		t.Fatalf("QuoteTarget: %v", err)
+	}
+	if got.WAMessageID != "wa-a" || got.Participant != "5491111111111@s.whatsapp.net" {
+		t.Fatalf("cita = %+v", got)
+	}
+
+	if _, err := p.Exec(ctx,
+		`UPDATE messages SET direction = 'outbound', origin = 'device', sender_jid = NULL WHERE id = $1`, messageA); err != nil {
+		t.Fatalf("preparando mensaje saliente: %v", err)
+	}
+	got, err = NewOutbound(p).QuoteTarget(ctx, convA, messageA)
+	if err != nil {
+		t.Fatalf("QuoteTarget saliente: %v", err)
+	}
+	if got.WAMessageID != "wa-a" || got.Participant != "5491100000000@s.whatsapp.net" {
+		t.Fatalf("cita saliente = %+v", got)
+	}
+
+	if _, err := NewOutbound(p).QuoteTarget(ctx, convA, messageB); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("mensaje de otro chat: error = %v, se esperaba ErrNotFound", err)
+	}
+}
+
+func TestThreadResuelveLaVistaDelMensajeCitado(t *testing.T) {
+	ctx, p := testDB(t)
+	line := seedLine(t, ctx, p, "ana", "Ana")
+	contact := seedContact(t, ctx, p, "5491111111111@s.whatsapp.net", "Cliente", "+5491111111111")
+	conv := seedConversation(t, ctx, p, line, contact, time.Now().UTC(), 0)
+	base := time.Now().UTC().Add(-time.Minute)
+	originalID := seedMessage(t, ctx, p, conv, line, contact, "wa-original", "mensaje original", base)
+	replyID := seedMessage(t, ctx, p, conv, line, contact, "wa-respuesta", "respuesta", base.Add(time.Second))
+	if _, err := p.Exec(ctx,
+		`UPDATE messages SET sender_name = 'Ana cliente' WHERE id = $1`, originalID); err != nil {
+		t.Fatalf("preparando autor: %v", err)
+	}
+	if _, err := p.Exec(ctx,
+		`UPDATE messages SET quoted_wa_message_id = 'wa-original' WHERE id = $1`, replyID); err != nil {
+		t.Fatalf("preparando cita: %v", err)
+	}
+
+	messages, err := NewRead(p).Thread(ctx, store.ThreadQuery{ConversationID: conv, Limit: 10})
+	if err != nil {
+		t.Fatalf("Thread: %v", err)
+	}
+	var reply store.ThreadMessage
+	for _, message := range messages {
+		if message.ID == replyID {
+			reply = message
+		}
+	}
+	if reply.Quote == nil {
+		t.Fatal("la respuesta no incluyó la vista de la cita")
+	}
+	if reply.Quote.ID != originalID || reply.Quote.Body != "mensaje original" ||
+		reply.Quote.Type != "text" || reply.Quote.Direction != "inbound" ||
+		reply.Quote.SenderName != "Ana cliente" {
+		t.Fatalf("vista de cita = %+v", reply.Quote)
+	}
+}
+
+func TestThreadConCitaNoDisponibleConservaElMensaje(t *testing.T) {
+	ctx, p := testDB(t)
+	line := seedLine(t, ctx, p, "ana", "Ana")
+	contact := seedContact(t, ctx, p, "5491111111111@s.whatsapp.net", "Cliente", "+5491111111111")
+	conv := seedConversation(t, ctx, p, line, contact, time.Now().UTC(), 0)
+	replyID := seedMessage(t, ctx, p, conv, line, contact, "wa-respuesta", "respuesta", time.Now().UTC())
+	if _, err := p.Exec(ctx,
+		`UPDATE messages SET quoted_wa_message_id = 'wa-que-no-se-sincronizo' WHERE id = $1`, replyID); err != nil {
+		t.Fatalf("preparando cita ausente: %v", err)
+	}
+
+	messages, err := NewRead(p).Thread(ctx, store.ThreadQuery{ConversationID: conv, Limit: 10})
+	if err != nil {
+		t.Fatalf("Thread: %v", err)
+	}
+	if len(messages) != 1 || messages[0].ID != replyID {
+		t.Fatalf("mensajes = %+v", messages)
+	}
+	if messages[0].QuotedID != "wa-que-no-se-sincronizo" || messages[0].Quote != nil {
+		t.Fatalf("cita ausente = quotedId %q, quote %+v", messages[0].QuotedID, messages[0].Quote)
+	}
+}
+
 // --- Bandeja ----------------------------------------------------------------
 
 // EL test que justifica el keyset.
@@ -215,8 +322,100 @@ func TestBandejaFiltraPorLinea(t *testing.T) {
 	}
 }
 
+func TestBandejaFiltraConversacionesCuyoUltimoMensajeEsEntrante(t *testing.T) {
+	ctx, p := testDB(t)
+	read := NewRead(p)
+
+	line := seedLine(t, ctx, p, "ana", "Ana")
+	now := time.Now().UTC()
+	inboundContact := seedContact(t, ctx, p, "inbound@s.whatsapp.net", "Espera respuesta", "")
+	outboundContact := seedContact(t, ctx, p, "outbound@s.whatsapp.net", "Ya respondida", "")
+	inbound := seedConversation(t, ctx, p, line, inboundContact, now, 1)
+	outbound := seedConversation(t, ctx, p, line, outboundContact, now.Add(-time.Minute), 0)
+
+	if _, err := p.Exec(ctx,
+		`UPDATE conversations
+		    SET last_message_direction = CASE id WHEN $1 THEN 'inbound'::message_direction ELSE 'outbound'::message_direction END
+		  WHERE id IN ($1, $2)`, inbound, outbound); err != nil {
+		t.Fatalf("preparando direcciones: %v", err)
+	}
+
+	got, err := read.Inbox(ctx, store.InboxQuery{NeedsReply: true, Limit: 10})
+	if err != nil {
+		t.Fatalf("Inbox: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != inbound {
+		t.Fatalf("sin responder devolvio %#v, se esperaba solo %s", got, inbound)
+	}
+	if !got[0].NeedsReply {
+		t.Fatal("la fila entrante no expuso needsReply")
+	}
+}
+
+func TestMensajeViejoNoCambiaLaDireccionDelUltimoMensaje(t *testing.T) {
+	ctx, p := testDB(t)
+	messages := NewMessages(p)
+
+	seedLine(t, ctx, p, "ana", "Ana")
+	latest := time.Now().UTC().Truncate(time.Second)
+	base := domain.Message{
+		InstanceName: "ana",
+		RemoteJID:    "5491100000000@s.whatsapp.net",
+		PushName:     "Cliente",
+		Type:         domain.TypeText,
+		Status:       domain.StatusSent,
+	}
+
+	outbound := base
+	outbound.WAMessageID = "latest-outbound"
+	outbound.Direction = domain.Outbound
+	outbound.Origin = domain.OriginDevice
+	outbound.Timestamp = latest
+	if _, err := messages.Save(ctx, &outbound, ""); err != nil {
+		t.Fatalf("guardando saliente reciente: %v", err)
+	}
+
+	inbound := base
+	inbound.WAMessageID = "older-inbound"
+	inbound.Direction = domain.Inbound
+	inbound.Origin = domain.OriginContact
+	inbound.Timestamp = latest.Add(-time.Hour)
+	if _, err := messages.Save(ctx, &inbound, ""); err != nil {
+		t.Fatalf("guardando entrante viejo: %v", err)
+	}
+
+	rows, err := NewRead(p).Inbox(ctx, store.InboxQuery{NeedsReply: true, Limit: 10})
+	if err != nil {
+		t.Fatalf("Inbox: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("el mensaje viejo marco la conversacion como sin responder: %#v", rows)
+	}
+}
+
 // Un id de línea que no es un uuid no puede reventar la consulta con un error de
 // sintaxis de Postgres.
+func TestBandejaNoMuestraConversacionesDeLineasInactivas(t *testing.T) {
+	ctx, p := testDB(t)
+	read := NewRead(p)
+
+	line := seedLine(t, ctx, p, "linea-inactiva", "Línea inactiva")
+	contact := seedContact(t, ctx, p, "inactivo@s.whatsapp.net", "Contacto viejo", "")
+	seedConversation(t, ctx, p, line, contact, time.Now().UTC(), 0)
+
+	if _, err := p.Exec(ctx, `UPDATE instances SET is_active = false WHERE id = $1`, line); err != nil {
+		t.Fatalf("desactivando línea: %v", err)
+	}
+
+	got, err := read.Inbox(ctx, store.InboxQuery{Limit: 10})
+	if err != nil {
+		t.Fatalf("Inbox: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("se esperaban 0 conversaciones de líneas activas, se obtuvieron %d", len(got))
+	}
+}
+
 func TestBandejaConLineaInvalidaDevuelveVacio(t *testing.T) {
 	ctx, p := testDB(t)
 
@@ -249,6 +448,93 @@ func TestBandejaBuscaContactoPorNombreYTelefono(t *testing.T) {
 		if len(got) != 1 || got[0].ID != convAna {
 			t.Fatalf("buscando %q se obtuvieron %d filas, se esperaba solo la de Ana María", term, len(got))
 		}
+	}
+}
+
+func TestBandejaYGrupoPrefierenElNombreAgendadoPorLaLinea(t *testing.T) {
+	ctx, p := testDB(t)
+	read := NewRead(p)
+
+	line := seedLine(t, ctx, p, "juanse", "Juanse")
+	now := time.Now().UTC()
+	person := seedContact(t, ctx, p, "5491126437432@s.whatsapp.net", "BETOAVEN", "+5491126437432")
+	private := seedConversation(t, ctx, p, line, person, now, 0)
+
+	if _, err := p.Exec(ctx, `
+		INSERT INTO contact_directory
+		       (instance_id, wa_jid, full_name, push_name)
+		VALUES ($1, '5491126437432@s.whatsapp.net', 'Beto', 'BETOAVEN')`, line); err != nil {
+		t.Fatalf("sembrando agenda por línea: %v", err)
+	}
+
+	items, err := read.Inbox(ctx, store.InboxQuery{Limit: 10})
+	if err != nil {
+		t.Fatalf("Inbox: %v", err)
+	}
+	var got string
+	for _, item := range items {
+		if item.ID == private {
+			got = item.ContactName
+		}
+	}
+	if got != "Beto" {
+		t.Fatalf("private contact name = %q, want saved address-book name Beto", got)
+	}
+}
+
+func TestHiloGrupalResuelveElAutorConLaAgendaDeLaLinea(t *testing.T) {
+	ctx, p := testDB(t)
+	read := NewRead(p)
+
+	line := seedLine(t, ctx, p, "juanse", "Juanse")
+	group := seedContact(t, ctx, p, "120363321554617552@g.us", "Administrativas aven", "")
+	now := time.Now().UTC()
+	conv := seedConversation(t, ctx, p, line, group, now, 0)
+	if _, err := p.Exec(ctx, `UPDATE conversations SET remote_jid=$2, is_group=true WHERE id=$1`, conv, "120363321554617552@g.us"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Exec(ctx, `
+		INSERT INTO contact_directory
+		       (instance_id, wa_jid, lid_jid, full_name, push_name)
+		VALUES ($1, '5491126437432@s.whatsapp.net', '94132898906287@lid', 'Beto', 'BETOAVEN')`, line); err != nil {
+		t.Fatalf("sembrando agenda por línea: %v", err)
+	}
+	message := seedMessage(t, ctx, p, conv, line, group, "wa-group", "Hola", now)
+	if _, err := p.Exec(ctx, `UPDATE messages SET sender_jid='94132898906287@lid', sender_name='BETOAVEN' WHERE id=$1`, message); err != nil {
+		t.Fatal(err)
+	}
+
+	messages, err := read.Thread(ctx, store.ThreadQuery{ConversationID: conv, Limit: 10})
+	if err != nil {
+		t.Fatalf("Thread: %v", err)
+	}
+	if len(messages) != 1 || messages[0].SenderName != "Beto" || messages[0].SenderPhone != "+5491126437432" {
+		t.Fatalf("group message author = %+v, want Beto / +5491126437432", messages)
+	}
+}
+
+func TestGuardarMensajeGrupalDevuelveElAutorResueltoParaTiempoReal(t *testing.T) {
+	ctx, p := testDB(t)
+	line := seedLine(t, ctx, p, "juanse", "Juanse")
+	if _, err := p.Exec(ctx, `
+		INSERT INTO contact_directory
+		       (instance_id, wa_jid, full_name, push_name)
+		VALUES ($1, '5491126437432@s.whatsapp.net', 'Beto', 'BETOAVEN')`, line); err != nil {
+		t.Fatal(err)
+	}
+
+	saved, err := NewMessages(p).Save(ctx, &domain.Message{
+		InstanceName: "juanse", RemoteJID: "120363321554617552@g.us",
+		WAMessageID: "GROUP-REALTIME", SenderJID: "5491126437432@s.whatsapp.net",
+		SenderName: "BETOAVEN", Direction: domain.Inbound, Origin: domain.OriginContact,
+		Type: domain.TypeText, Status: domain.StatusSent, Body: "Hola",
+		Timestamp: time.Now().UTC(), IsGroup: true,
+	}, "")
+	if err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if saved.SenderName != "Beto" || saved.SenderPhone != "+5491126437432" {
+		t.Fatalf("saved realtime author = %q/%q, want Beto/+5491126437432", saved.SenderName, saved.SenderPhone)
 	}
 }
 
@@ -465,7 +751,12 @@ func TestBusquedaEncuentraYRecorta(t *testing.T) {
 	read := NewRead(p)
 
 	line := seedLine(t, ctx, p, "ana", "Ana")
-	contact := seedContact(t, ctx, p, "c1@s.whatsapp.net", "Ana María", "")
+	contact := seedContact(t, ctx, p, "c1@s.whatsapp.net", "PERFIL PUBLICO", "")
+	if _, err := p.Exec(ctx, `
+		INSERT INTO contact_directory (instance_id, wa_jid, full_name, push_name)
+		VALUES ($1, 'c1@s.whatsapp.net', 'Ana María', 'PERFIL PUBLICO')`, line); err != nil {
+		t.Fatal(err)
+	}
 	now := time.Now().UTC()
 	conv := seedConversation(t, ctx, p, line, contact, now, 0)
 

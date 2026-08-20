@@ -76,20 +76,65 @@ func (i *Instances) NameByID(ctx context.Context, id string) (string, error) {
 	return name, err
 }
 
-// Deactivate desvincula la línea sin tocar su historial.
-func (i *Instances) Deactivate(ctx context.Context, id string) error {
+// Delete borra la línea y todos sus datos dependientes dentro de una sola
+// transacción. Los contactos son globales: solo se eliminan si ninguna otra
+// línea conserva una conversación con ellos.
+func (i *Instances) Delete(ctx context.Context, id string) error {
 	if !isUUID(id) {
 		return store.ErrNotFound
 	}
-	tag, err := i.db.Exec(ctx,
-		`UPDATE instances SET is_active = false, status = 'close' WHERE id = $1`, id)
+
+	tx, err := i.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 0 {
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var name string
+	if err := tx.QueryRow(ctx,
+		`SELECT evolution_name FROM instances WHERE id = $1`, id).Scan(&name); errors.Is(err, pgx.ErrNoRows) {
 		return store.ErrNotFound
+	} else if err != nil {
+		return err
 	}
-	return nil
+
+	rows, err := tx.Query(ctx,
+		`SELECT DISTINCT contact_id::text FROM conversations WHERE instance_id = $1`, id)
+	if err != nil {
+		return err
+	}
+	var contactIDs []string
+	for rows.Next() {
+		var contactID string
+		if err := rows.Scan(&contactID); err != nil {
+			rows.Close()
+			return err
+		}
+		contactIDs = append(contactIDs, contactID)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	if _, err := tx.Exec(ctx, `DELETE FROM instances WHERE id = $1`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM webhook_events WHERE instance_name = $1`, name); err != nil {
+		return err
+	}
+	if len(contactIDs) > 0 {
+		if _, err := tx.Exec(ctx, `
+			DELETE FROM contacts c
+			 WHERE c.id = ANY($1::uuid[])
+			   AND NOT EXISTS (
+			       SELECT 1 FROM conversations remaining WHERE remaining.contact_id = c.id
+			   )`, contactIDs); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 // normalizeState mapea los estados de Baileys al enum instance_status. Cualquier

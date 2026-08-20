@@ -44,6 +44,31 @@ func (o *Outbound) Target(ctx context.Context, conversationID string) (store.Sen
 	return t, err
 }
 
+func (o *Outbound) QuoteTarget(ctx context.Context, conversationID, messageID string) (store.QuoteTarget, error) {
+	if !isUUID(conversationID) || !isUUID(messageID) {
+		return store.QuoteTarget{}, store.ErrNotFound
+	}
+
+	const q = `
+		SELECT m.wa_message_id,
+		       CASE WHEN m.direction = 'outbound'
+		            THEN coalesce(i.phone_jid, '')
+		            ELSE coalesce(m.sender_jid, c.remote_jid, '')
+		       END
+		  FROM messages m
+		  JOIN conversations c ON c.id = m.conversation_id
+		  JOIN instances i ON i.id = m.instance_id
+		 WHERE m.id = $2 AND c.id = $1`
+
+	var target store.QuoteTarget
+	err := o.db.QueryRow(ctx, q, conversationID, messageID).Scan(
+		&target.WAMessageID, &target.Participant)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return store.QuoteTarget{}, store.ErrNotFound
+	}
+	return target, err
+}
+
 const outboundColumns = `
 	id, conversation_id, instance_id, user_id, idempotency_key,
 	type::text, coalesce(body, ''), coalesce(media_storage_key, ''),

@@ -35,6 +35,8 @@ type PersistedMessage struct {
 	ConversationID string
 	InstanceID     string
 	ContactID      string
+	SenderName     string
+	SenderPhone    string
 	MediaAssetID   string // vacío si el mensaje no lleva adjunto
 	IsNew          bool   // false si ya existía (reintento que burló el dedupe)
 }
@@ -50,6 +52,14 @@ type MessageStore interface {
 	MarkDeleted(ctx context.Context, instanceName, waMessageID string) error
 }
 
+// ContactStore conserva el directorio que WhatsApp entrega durante la
+// sincronizacion. Es independiente de los mensajes porque nombres y mapeos LID
+// suelen llegar en bloques distintos.
+type ContactStore interface {
+	UpsertDirectory(ctx context.Context, instanceName string, contacts []domain.ContactIdentity) error
+	SetGroupName(ctx context.Context, instanceName, groupJID, name string) error
+}
+
 // InstanceStore gestiona las líneas conectadas.
 type InstanceStore interface {
 	IDByName(ctx context.Context, evolutionName string) (string, error)
@@ -62,9 +72,9 @@ type InstanceStore interface {
 	// NameByID devuelve el evolution_name, que es la clave hacia Evolution.
 	NameByID(ctx context.Context, id string) (string, error)
 
-	// Deactivate marca la línea como inactiva. No borra la fila: el historial de
-	// conversaciones y mensajes cuelga de ella.
-	Deactivate(ctx context.Context, id string) error
+	// Delete borra la línea. Las conversaciones, mensajes, media y envíos salen
+	// por ON DELETE CASCADE; también elimina contactos que ya no usa otra línea.
+	Delete(ctx context.Context, id string) error
 }
 
 // MediaStore lleva el estado del pipeline de subida a R2.
@@ -84,6 +94,8 @@ type PendingMedia struct {
 	WAMessageID  string
 	MimeType     string
 	FileName     string
+	Data         []byte
+	SourceURL    string
 	Attempts     int
 }
 

@@ -166,3 +166,36 @@ func TestOpenDeUnaClaveInexistente(t *testing.T) {
 		t.Fatalf("error = %v, se esperaba ErrNotFound", err)
 	}
 }
+
+func TestDeletePrefixRemovesOnlyTheSelectedLineFiles(t *testing.T) {
+	l := newLocal(t)
+	ctx := context.Background()
+	for key, body := range map[string]string{
+		"juanse-abc/2026-08/in.jpg":           "incoming",
+		"outgoing/juanse-abc/2026-08/out.pdf": "outgoing",
+		"otra-linea/2026-08/keep.jpg":         "keep",
+	} {
+		if err := l.Put(ctx, key, "application/octet-stream", []byte(body)); err != nil {
+			t.Fatalf("Put(%s): %v", key, err)
+		}
+	}
+
+	purger, ok := any(l).(interface {
+		DeletePrefix(context.Context, string) error
+	})
+	if !ok {
+		t.Fatal("Local no implementa DeletePrefix")
+	}
+	if err := purger.DeletePrefix(ctx, "juanse-abc/"); err != nil {
+		t.Fatalf("DeletePrefix: %v", err)
+	}
+
+	removed, _ := l.resolve("juanse-abc/2026-08/in.jpg")
+	if _, err := os.Stat(removed); !os.IsNotExist(err) {
+		t.Fatalf("el archivo de la línea sigue existiendo: %v", err)
+	}
+	kept, _ := l.resolve("otra-linea/2026-08/keep.jpg")
+	if _, err := os.Stat(kept); err != nil {
+		t.Fatalf("se tocó un archivo de otra línea: %v", err)
+	}
+}

@@ -2,21 +2,35 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
-import { useSession } from "../auth/session";
-import { visibleModules } from "../../modules/registry";
+import { useEffect, useState, type ComponentType, type FocusEvent, type ReactNode } from "react";
+import { LogOut, MessageCircleMore } from "lucide-react";
 
-/**
- * Marco del panel: barra lateral con los módulos y guarda de sesión.
- *
- * El menú NO sale del registro del frontend a secas, sino de cruzarlo con lo que
- * `/api/me` autoriza. El backend es la autoridad sobre qué existe; el frontend
- * solo sabe dibujarlo.
- */
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
+import { visibleModules } from "../../modules/registry";
+import { useSession } from "../auth/session";
+
+const SIDEBAR_WIDTH = 56;
+const SIDEBAR_OPEN_WIDTH = 208;
+
+/** Cada módulo trae su ícono; los que no figuran caen en el de mensajería. */
+const MODULE_ICONS: Record<string, ComponentType<{ "aria-hidden"?: boolean }>> = {
+  mirror: MessageCircleMore,
+};
+
+function initials(value: string): string {
+  const parts = value.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  return `${parts[0][0]}${parts.at(-1)?.[0] ?? ""}`.toUpperCase();
+}
 export function Shell({ children }: { children: ReactNode }) {
   const { user, modules, loading, logout } = useSession();
   const router = useRouter();
   const pathname = usePathname();
+  const [hovered, setHovered] = useState(false);
+  const [focusWithin, setFocusWithin] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -26,36 +40,69 @@ export function Shell({ children }: { children: ReactNode }) {
   if (!user) return null;
 
   const items = visibleModules(modules);
+  const open = hovered || focusWithin;
+
+  function handleBlur(event: FocusEvent<HTMLElement>) {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      setFocusWithin(false);
+    }
+  }
 
   return (
     <div className="shell">
-      <aside className="sidebar">
-        <div className="brand">viajes_crm</div>
-
-        <nav>
-          {items.map((m) => (
-            <Link
-              key={m.name}
-              href={m.path}
-              className={pathname.startsWith(m.path) ? "nav-item active" : "nav-item"}
-            >
-              <span aria-hidden>{m.icon}</span>
-              {m.label}
-            </Link>
-          ))}
-          {items.length === 0 && (
-            <p className="empty">No tenés módulos habilitados.</p>
-          )}
+      <aside
+        className={cn("app-sidebar", open && "is-open")}
+        style={{ width: open ? SIDEBAR_OPEN_WIDTH : SIDEBAR_WIDTH }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onFocusCapture={() => setFocusWithin(true)}
+        onBlurCapture={handleBlur}
+      >
+        <nav aria-label="Navegación principal" className="sidebar-scroll">
+          {open && <p className="sidebar-section">PRINCIPAL</p>}
+          {items.map((module) => {
+            const label = module.name === "mirror" ? "Bandeja de entrada" : module.label;
+            const active = pathname.startsWith(module.path);
+            const Icon = MODULE_ICONS[module.name] ?? MessageCircleMore;
+            return (
+              <Link
+                key={module.name}
+                href={module.path}
+                className={cn("nav-item", active && "active", open && "is-open")}
+                aria-label={!open ? label : undefined}
+                title={!open ? label : undefined}
+              >
+                {active && <span className="nav-active-rail" aria-hidden />}
+                <span className="nav-icon"><Icon aria-hidden /></span>
+                {open && <span className="nav-label">{label}</span>}
+              </Link>
+            );
+          })}
+          {items.length === 0 && open && <p className="sidebar-empty">No tenés módulos habilitados.</p>}
         </nav>
 
-        <footer className="user">
-          <div>
-            <strong>{user.fullName}</strong>
-            <small>{user.role === "admin" ? "Administrador" : "Equipo"}</small>
-          </div>
-          <button type="button" onClick={logout}>
-            Salir
-          </button>
+        <div className="sidebar-separator" />
+
+        <footer className={cn("user-menu", open && "is-open")}>
+          {open && (
+            <>
+              <Avatar className="user-avatar">
+                <AvatarFallback>{initials(user.fullName)}</AvatarFallback>
+              </Avatar>
+              <div className="user-copy">
+                <strong>{user.fullName}</strong>
+                <small>{user.role === "admin" ? "Administrador" : "Equipo"}</small>
+              </div>
+            </>
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button type="button" variant="ghost" size="icon" onClick={logout} aria-label="Cerrar sesión">
+                <LogOut aria-hidden />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right">Cerrar sesión</TooltipContent>
+          </Tooltip>
         </footer>
       </aside>
 

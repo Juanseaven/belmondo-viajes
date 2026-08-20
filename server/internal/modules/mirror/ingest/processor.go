@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/juanseaven/viajes-crm/server/internal/kernel/ws"
@@ -43,11 +44,19 @@ type OutboundLookup interface {
 	UserByWAMessageID(ctx context.Context, instanceID, waMessageID string) (string, bool)
 }
 
+// DirectoryProvider exposes the address book synchronized by one Evolution
+// instance. These names are line-specific and differ from public push names.
+type DirectoryProvider interface {
+	Contacts(ctx context.Context, instance string) ([]domain.ContactIdentity, error)
+}
+
 // Processor implementa worker.Handler. Traduce el payload, resuelve el origen
 // real del mensaje, persiste y notifica.
 type Processor struct {
 	events    store.EventStore
 	messages  store.MessageStore
+	contacts  store.ContactStore
+	directory DirectoryProvider
 	instances store.InstanceStore
 	panel     store.PanelSendTracker
 	outbound  OutboundLookup
@@ -60,6 +69,8 @@ type Processor struct {
 func NewProcessor(
 	events store.EventStore,
 	messages store.MessageStore,
+	contacts store.ContactStore,
+	directory DirectoryProvider,
 	instances store.InstanceStore,
 	panel store.PanelSendTracker,
 	outbound OutboundLookup,
@@ -69,7 +80,7 @@ func NewProcessor(
 	log *slog.Logger,
 ) *Processor {
 	return &Processor{
-		events: events, messages: messages, instances: instances,
+		events: events, messages: messages, contacts: contacts, directory: directory, instances: instances,
 		panel: panel, outbound: outbound, qr: qr,
 		media: media, hub: hub, log: log,
 	}
@@ -78,16 +89,26 @@ func NewProcessor(
 func (p *Processor) Handle(ctx context.Context, job worker.Job) error {
 	var err error
 	switch job.Event {
-	case webhook.EventMessagesUpsert, webhook.EventSendMessage:
+	case webhook.EventMessage, webhook.EventSendMessage:
 		err = p.handleMessage(ctx, job)
-	case webhook.EventMessagesUpdate:
-		err = p.handleStatusUpdate(ctx, job)
-	case webhook.EventMessagesDelete:
-		err = p.handleDelete(ctx, job)
-	case webhook.EventConnectionUpdate:
+	case webhook.EventReceipt:
+		err = p.handleReceipt(ctx, job)
+	case webhook.EventHistorySync:
+		err = p.handleHistorySync(ctx, job)
+	case webhook.EventContact, webhook.EventPushName:
+		err = p.refreshDirectory(ctx, job.Instance)
+	case webhook.EventGroupInfo, webhook.EventJoinedGroup:
+		err = p.handleGroupUpdate(ctx, job)
+	case webhook.EventConnected, webhook.EventPairSuccess,
+		webhook.EventDisconnected, webhook.EventLoggedOut, webhook.EventConnectFailure:
 		err = p.handleConnection(ctx, job)
-	case webhook.EventQRCodeUpdated:
+	case webhook.EventQRCode:
 		err = p.handleQRCode(ctx, job)
+	case webhook.EventOfflineSyncCompleted:
+		err = p.handleOfflineSyncCompleted(ctx, job)
+	case webhook.EventQRTimeout:
+		p.qr.Clear(ctx, job.Instance)
+		p.broadcast("line.qr_timeout", "", map[string]any{"instance": job.Instance})
 	default:
 		// Evento suscrito pero sin tratamiento propio. Queda registrado en
 		// webhook_events, que es donde vive el valor forense.
@@ -108,7 +129,10 @@ func (p *Processor) handleMessage(ctx context.Context, job worker.Job) error {
 	if err != nil {
 		return fmt.Errorf("parseando mensaje: %w", err)
 	}
+	return p.persistMessage(ctx, job, msg, true)
+}
 
+func (p *Processor) persistMessage(ctx context.Context, job worker.Job, msg *domain.Message, notify bool) error {
 	// --- Resolución del origen real ------------------------------------------
 	// webhook.ParseMessage marca todo fromMe como OriginDevice porque desde el
 	// payload no hay más información: WhatsApp entrega igual lo que se escribió
@@ -122,7 +146,7 @@ func (p *Processor) handleMessage(ctx context.Context, job worker.Job) error {
 	// que el webhook le haya ganado la carrera al Mark. Sin él, esos mensajes se
 	// atribuirían al teléfono y la trazabilidad mentiría en silencio.
 	var sentBy string
-	if msg.Direction == domain.Outbound {
+	if msg.Direction == domain.Outbound && !msg.Historical {
 		if userID, ok := p.panel.Claim(ctx, msg.WAMessageID); ok {
 			msg.Origin = domain.OriginPanel
 			sentBy = userID
@@ -143,7 +167,7 @@ func (p *Processor) handleMessage(ctx context.Context, job worker.Job) error {
 	// El adjunto se encola FUERA de la transacción y sin esperar. El mensaje ya
 	// aparece en el panel; el archivo llegará en segundos. Descargarlo aquí
 	// bloquearía toda la conversación durante la subida a R2.
-	if saved.MediaAssetID != "" {
+	if saved.MediaAssetID != "" && p.media != nil {
 		p.media.Enqueue(store.PendingMedia{
 			ID:           saved.MediaAssetID,
 			MessageID:    saved.MessageID,
@@ -151,9 +175,14 @@ func (p *Processor) handleMessage(ctx context.Context, job worker.Job) error {
 			WAMessageID:  msg.WAMessageID,
 			MimeType:     mediaMime(msg),
 			FileName:     mediaFileName(msg),
+			Data:         mediaData(msg),
+			SourceURL:    mediaSourceURL(msg),
 		})
 	}
 
+	if !notify {
+		return nil
+	}
 	p.broadcast("message.new", saved.InstanceID, map[string]any{
 		"messageId":      saved.MessageID,
 		"conversationId": saved.ConversationID,
@@ -165,8 +194,50 @@ func (p *Processor) handleMessage(ctx context.Context, job worker.Job) error {
 		"origin":      msg.Origin,
 		"type":        msg.Type,
 		"body":        msg.Body,
+		"quotedId":    msg.QuotedID,
+		"senderJid":   msg.SenderJID,
+		"senderName":  firstNonEmpty(saved.SenderName, msg.SenderName),
+		"senderPhone": saved.SenderPhone,
 		"hasMedia":    saved.MediaAssetID != "",
 		"timestamp":   msg.Timestamp,
+	})
+	return nil
+}
+
+func (p *Processor) handleHistorySync(ctx context.Context, job worker.Job) error {
+	contacts, err := webhook.ParseHistorySyncContacts(job.Payload)
+	if err != nil {
+		return err
+	}
+	if p.contacts != nil && len(contacts) > 0 {
+		if err := p.contacts.UpsertDirectory(ctx, job.Instance, contacts); err != nil {
+			return fmt.Errorf("guardando directorio de WhatsApp: %w", err)
+		}
+	}
+	messages, progress, err := webhook.ParseHistorySync(job.Instance, job.Payload)
+	if err != nil {
+		return err
+	}
+	imported := 0
+	for _, msg := range messages {
+		msg.Historical = true
+		if msg.Type.HasMedia() {
+			msg.Media = nil
+		}
+		if err := p.persistMessage(ctx, job, msg, false); err != nil {
+			return fmt.Errorf("importando mensaje histórico %s: %w", msg.WAMessageID, err)
+		}
+		imported++
+	}
+	if progress == 100 {
+		if err := p.refreshDirectory(ctx, job.Instance); err != nil {
+			return err
+		}
+	}
+	p.broadcast("history.sync", "", map[string]any{
+		"instance": job.Instance,
+		"progress": progress,
+		"imported": imported,
 	})
 	return nil
 }
@@ -190,20 +261,16 @@ func (p *Processor) outboundAuthor(ctx context.Context, instanceName, waMessageI
 // vez de esperar al siguiente.
 func (p *Processor) handleQRCode(ctx context.Context, job worker.Job) error {
 	var d struct {
-		QRCode struct {
-			Base64 string `json:"base64"`
-			Code   string `json:"code"`
-		} `json:"qrcode"`
 		Base64 string `json:"base64"`
+		QRCode string `json:"qrcode"`
 		Code   string `json:"code"`
 	}
 	if err := json.Unmarshal(job.Payload, &d); err != nil {
 		return fmt.Errorf("parseando el qr: %w", err)
 	}
 
-	// Evolution ha movido este campo entre versiones: unas veces anidado bajo
-	// `qrcode`, otras en la raíz.
-	image := firstNonEmpty(d.QRCode.Base64, d.Base64)
+	// Evolution Go entrega la imagen como data URL en `qrcode`.
+	image := firstNonEmpty(d.QRCode, d.Base64)
 	if image == "" {
 		// Sin imagen no hay nada que mostrar, pero tampoco es un fallo: el evento
 		// queda registrado y el siguiente QR llega en segundos.
@@ -231,25 +298,20 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func (p *Processor) handleStatusUpdate(ctx context.Context, job worker.Job) error {
+func (p *Processor) handleReceipt(ctx context.Context, job worker.Job) error {
 	var d struct {
-		KeyID string `json:"keyId"`
-		Key   struct {
-			ID string `json:"id"`
-		} `json:"key"`
-		Status string `json:"status"`
+		MessageIDs []string `json:"MessageIDs"`
+		Type       string   `json:"Type"`
 	}
 	if err := json.Unmarshal(job.Payload, &d); err != nil {
-		return fmt.Errorf("parseando update de estado: %w", err)
+		return fmt.Errorf("parseando recibo: %w", err)
 	}
-	id := d.KeyID
-	if id == "" {
-		id = d.Key.ID
+	for _, id := range d.MessageIDs {
+		if err := p.messages.UpdateStatus(ctx, job.Instance, id, receiptStatus(firstNonEmpty(d.Type, job.State))); err != nil {
+			return err
+		}
 	}
-	if id == "" {
-		return nil
-	}
-	return p.messages.UpdateStatus(ctx, job.Instance, id, mapStatus(d.Status))
+	return nil
 }
 
 func (p *Processor) handleDelete(ctx context.Context, job worker.Job) error {
@@ -271,31 +333,99 @@ func (p *Processor) handleDelete(ctx context.Context, job worker.Job) error {
 
 func (p *Processor) handleConnection(ctx context.Context, job worker.Job) error {
 	var d struct {
-		State string `json:"state"`
-		WUID  string `json:"wuid"`
+		Status string `json:"status"`
+		JID    string `json:"jid"`
 	}
 	if err := json.Unmarshal(job.Payload, &d); err != nil {
 		return err
 	}
-	if err := p.instances.UpdateConnection(ctx, job.Instance, d.State, d.WUID); err != nil {
+	state := "close"
+	if job.Event == webhook.EventConnected || job.Event == webhook.EventPairSuccess {
+		state = "open"
+	}
+	if err := p.instances.UpdateConnection(ctx, job.Instance, state, d.JID); err != nil {
 		return err
 	}
 	_ = p.instances.Touch(ctx, job.Instance, time.Now())
 
 	// Una línea caída es lo más urgente que puede pasar: mientras esté así, la
 	// agencia no ve ni un mensaje de ese vendedor.
-	if d.State == "close" {
+	if state == "close" {
 		p.log.Warn("línea desconectada", "instance", job.Instance)
 	}
-	if d.State == "open" {
+	if state == "open" {
 		// Ya vinculada: el QR guardado dejó de servir y mostrarlo sería ofrecer un
 		// código muerto.
 		p.qr.Clear(ctx, job.Instance)
+		if err := p.refreshDirectory(ctx, job.Instance); err != nil {
+			p.log.Warn("no se pudo refrescar la agenda al conectar", "instance", job.Instance, "error", err)
+		}
 	}
 	p.broadcast("instance.status", "", map[string]any{
 		"instance": job.Instance,
-		"state":    d.State,
+		"state":    state,
 	})
+	return nil
+}
+
+func (p *Processor) handleOfflineSyncCompleted(ctx context.Context, job worker.Job) error {
+	var d struct {
+		Count int `json:"Count"`
+	}
+	_ = json.Unmarshal(job.Payload, &d)
+	if p.instances != nil {
+		_ = p.instances.Touch(ctx, job.Instance, time.Now())
+	}
+	if err := p.refreshDirectory(ctx, job.Instance); err != nil {
+		return err
+	}
+	p.broadcast("history.sync", "", map[string]any{
+		"instance": job.Instance,
+		"progress": 100,
+		"complete": true,
+		"count":    d.Count,
+	})
+	return nil
+}
+
+func (p *Processor) handleGroupUpdate(ctx context.Context, job worker.Job) error {
+	var data struct {
+		JID  string `json:"JID"`
+		Name struct {
+			Name string `json:"Name"`
+		} `json:"Name"`
+		GroupName struct {
+			Name string `json:"Name"`
+		} `json:"GroupName"`
+	}
+	if err := json.Unmarshal(job.Payload, &data); err != nil {
+		return fmt.Errorf("parseando actualización de grupo: %w", err)
+	}
+	name := firstNonEmpty(data.Name.Name, data.GroupName.Name)
+	if data.JID == "" || name == "" || p.contacts == nil {
+		return nil
+	}
+	if err := p.contacts.SetGroupName(ctx, job.Instance, data.JID, name); err != nil {
+		return fmt.Errorf("guardando nombre del grupo: %w", err)
+	}
+	p.broadcast("history.sync", "", map[string]any{"instance": job.Instance})
+	return nil
+}
+
+func (p *Processor) refreshDirectory(ctx context.Context, instance string) error {
+	if p.directory == nil || p.contacts == nil {
+		return nil
+	}
+	contacts, err := p.directory.Contacts(ctx, instance)
+	if err != nil {
+		return fmt.Errorf("leyendo agenda de Evolution: %w", err)
+	}
+	if len(contacts) == 0 {
+		return nil
+	}
+	if err := p.contacts.UpsertDirectory(ctx, instance, contacts); err != nil {
+		return fmt.Errorf("guardando agenda de la línea: %w", err)
+	}
 	return nil
 }
 
@@ -328,6 +458,20 @@ func mediaFileName(msg *domain.Message) string {
 	return msg.Media.FileName
 }
 
+func mediaData(msg *domain.Message) []byte {
+	if msg.Media == nil {
+		return nil
+	}
+	return msg.Media.Data
+}
+
+func mediaSourceURL(msg *domain.Message) string {
+	if msg.Media == nil {
+		return ""
+	}
+	return msg.Media.SourceURL
+}
+
 // mapStatus traduce los ACK de Baileys. Ojo: no es el mismo mapeo que el de
 // webhook.ParseMessage, que trabaja sobre el campo `status` del mensaje inicial.
 func mapStatus(s string) domain.MessageStatus {
@@ -341,6 +485,19 @@ func mapStatus(s string) domain.MessageStatus {
 	case "READ", "PLAYED":
 		return domain.StatusRead
 	case "ERROR":
+		return domain.StatusFailed
+	default:
+		return domain.StatusSent
+	}
+}
+
+func receiptStatus(value string) domain.MessageStatus {
+	switch strings.ToLower(value) {
+	case "delivered", "delivery_ack":
+		return domain.StatusDelivered
+	case "read", "readself", "played":
+		return domain.StatusRead
+	case "error", "failed":
 		return domain.StatusFailed
 	default:
 		return domain.StatusSent

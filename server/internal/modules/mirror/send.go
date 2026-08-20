@@ -33,8 +33,8 @@ const panelSendTTL = 5 * time.Minute
 
 // Sender es el cliente de Evolution visto por este archivo.
 type Sender interface {
-	SendText(ctx context.Context, instance, number, text string) (*evolution.SendTextResult, error)
-	SendMedia(ctx context.Context, instance, number, mediaURL, mediatype, caption, fileName string) (*evolution.SendTextResult, error)
+	SendText(ctx context.Context, instance, number, text string, quote *evolution.Quote) (*evolution.SendTextResult, error)
+	SendMedia(ctx context.Context, instance, number, mediaURL, mediatype, caption, fileName string, quote *evolution.Quote) (*evolution.SendTextResult, error)
 }
 
 // Attachment es un archivo que acompaña al mensaje.
@@ -50,9 +50,10 @@ type SendRequest struct {
 	UserID         string
 	// IdempotencyKey la genera el cliente. Es lo que hace inofensivo un doble
 	// clic o un reintento del navegador.
-	IdempotencyKey string
-	Body           string
-	Attachment     *Attachment
+	IdempotencyKey   string
+	Body             string
+	Attachment       *Attachment
+	ReplyToMessageID string
 }
 
 // SendService envía mensajes por una línea y deja constancia de cada intento.
@@ -99,6 +100,18 @@ func (s *SendService) Send(ctx context.Context, req SendRequest) (*store.Outboun
 		return nil, ErrLineOffline
 	}
 
+	var quote *evolution.Quote
+	if req.ReplyToMessageID != "" {
+		resolved, err := s.outbound.QuoteTarget(ctx, req.ConversationID, req.ReplyToMessageID)
+		if err != nil {
+			return nil, err
+		}
+		quote = &evolution.Quote{
+			MessageID:   resolved.WAMessageID,
+			Participant: resolved.Participant,
+		}
+	}
+
 	msgType := domain.TypeText
 	if req.Attachment != nil {
 		msgType = mediaType(req.Attachment.MimeType)
@@ -132,7 +145,7 @@ func (s *SendService) Send(ctx context.Context, req SendRequest) (*store.Outboun
 		return record, nil
 	}
 
-	result, err := s.dispatch(ctx, target, req, storageKey, msgType)
+	result, err := s.dispatch(ctx, target, req, storageKey, msgType, quote)
 	if err != nil {
 		if markErr := s.outbound.MarkFailed(ctx, record.ID, err.Error()); markErr != nil {
 			s.log.Error("no se pudo registrar el fallo de envío",
@@ -163,10 +176,10 @@ func (s *SendService) Send(ctx context.Context, req SendRequest) (*store.Outboun
 // dispatch elige el endpoint de Evolution según haya adjunto o no.
 func (s *SendService) dispatch(
 	ctx context.Context, target store.SendTarget, req SendRequest,
-	storageKey string, msgType domain.MessageType,
+	storageKey string, msgType domain.MessageType, quote *evolution.Quote,
 ) (*evolution.SendTextResult, error) {
 	if storageKey == "" {
-		return s.evo.SendText(ctx, target.InstanceName, target.RemoteJID, req.Body)
+		return s.evo.SendText(ctx, target.InstanceName, target.RemoteJID, req.Body, quote)
 	}
 
 	// Evolution descarga el archivo por su cuenta, así que necesita una URL que
@@ -177,7 +190,7 @@ func (s *SendService) dispatch(
 		return nil, fmt.Errorf("firmando el adjunto: %w", err)
 	}
 	return s.evo.SendMedia(ctx, target.InstanceName, target.RemoteJID,
-		url, evolutionMediaType(msgType), req.Body, req.Attachment.FileName)
+		url, evolutionMediaType(msgType), req.Body, req.Attachment.FileName, quote)
 }
 
 // outgoingKey construye la ruta del adjunto saliente.

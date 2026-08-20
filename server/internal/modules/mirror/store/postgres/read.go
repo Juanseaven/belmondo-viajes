@@ -30,7 +30,9 @@ func (r *Read) Lines(ctx context.Context) ([]store.Line, error) {
 	const q = `
 		SELECT i.id, i.evolution_name, i.owner_label,
 		       coalesce(i.display_name, ''), coalesce(i.phone_number, ''),
-		       i.status, i.is_active, i.last_seen_at,
+		       i.status, i.is_active,
+		       (i.connected_at IS NOT NULL OR coalesce(i.phone_jid, '') <> ''),
+		       i.last_seen_at,
 		       coalesce(sum(c.unread_count), 0)::int
 		  FROM instances i
 		  LEFT JOIN conversations c
@@ -51,7 +53,7 @@ func (r *Read) Lines(ctx context.Context) ([]store.Line, error) {
 	for rows.Next() {
 		var l store.Line
 		if err := rows.Scan(&l.ID, &l.Name, &l.Label, &l.DisplayName, &l.PhoneNumber,
-			&l.Status, &l.IsActive, &l.LastSeenAt, &l.Unread); err != nil {
+			&l.Status, &l.IsActive, &l.WasConnected, &l.LastSeenAt, &l.Unread); err != nil {
 			return nil, err
 		}
 		lines = append(lines, l)
@@ -64,21 +66,32 @@ func (r *Read) Lines(ctx context.Context) ([]store.Line, error) {
 // sobre el mismo valor que ve el usuario.
 const inboxColumns = `
 	c.id, c.instance_id, i.owner_label, c.contact_id,
-	coalesce(nullif(ct.display_name, ''), nullif(ct.push_name, ''), ct.phone_number, ct.wa_jid),
+	coalesce(
+		nullif(ct.display_name, ''),
+		CASE WHEN NOT c.is_group THEN coalesce(
+			nullif(cd.full_name, ''), nullif(cd.first_name, ''),
+			nullif(cd.business_name, ''), nullif(cd.push_name, '')
+		) END,
+		nullif(ct.push_name, ''), ct.phone_number, ct.wa_jid
+	),
 	coalesce(ct.phone_number, ''), coalesce(ct.profile_pic_url, ''),
 	c.is_group, c.last_message_at, coalesce(c.last_message_preview, ''),
-	coalesce(c.last_message_type::text, ''), c.unread_count`
+	coalesce(c.last_message_type::text, ''), c.unread_count,
+	coalesce(c.last_message_direction = 'inbound', false)`
 
 const inboxFrom = `
 	FROM conversations c
 	JOIN instances i ON i.id = c.instance_id
-	JOIN contacts  ct ON ct.id = c.contact_id`
+	JOIN contacts  ct ON ct.id = c.contact_id
+	LEFT JOIN contact_directory cd
+	       ON cd.instance_id = c.instance_id AND cd.wa_jid = ct.wa_jid`
 
 func scanInbox(row pgx.Row) (store.InboxItem, error) {
 	var it store.InboxItem
 	err := row.Scan(&it.ID, &it.InstanceID, &it.InstanceLbl, &it.ContactID,
 		&it.ContactName, &it.PhoneNumber, &it.AvatarURL,
-		&it.IsGroup, &it.LastMessageAt, &it.Preview, &it.LastType, &it.Unread)
+		&it.IsGroup, &it.LastMessageAt, &it.Preview, &it.LastType, &it.Unread,
+		&it.NeedsReply)
 	return it, err
 }
 
@@ -89,7 +102,7 @@ func scanInbox(row pgx.Row) (store.InboxItem, error) {
 // la clave de conversations_inbox_idx. Comparar tuplas y no columnas sueltas
 // permite a Postgres resolverlo con un solo descenso por el índice.
 func (r *Read) Inbox(ctx context.Context, q store.InboxQuery) ([]store.InboxItem, error) {
-	where := []string{"NOT c.is_archived"}
+	where := []string{"NOT c.is_archived", "i.is_active"}
 	var args []any
 
 	if q.InstanceID != "" {
@@ -106,9 +119,17 @@ func (r *Read) Inbox(ctx context.Context, q store.InboxQuery) ([]store.InboxItem
 		args = append(args, "%"+q.Search+"%")
 		where = append(where, fmt.Sprintf(
 			`(coalesce(ct.display_name,'') ILIKE $%d
+			  OR coalesce(cd.full_name,'') ILIKE $%d
+			  OR coalesce(cd.first_name,'') ILIKE $%d
+			  OR coalesce(cd.business_name,'') ILIKE $%d
+			  OR coalesce(cd.push_name,'') ILIKE $%d
 			  OR coalesce(ct.push_name,'') ILIKE $%d
 			  OR coalesce(ct.phone_number,'') ILIKE $%d)`,
-			len(args), len(args), len(args)))
+			len(args), len(args), len(args), len(args), len(args), len(args), len(args)))
+	}
+
+	if q.NeedsReply {
+		where = append(where, "c.last_message_direction = 'inbound'")
 	}
 
 	if !q.Cursor.IsZero() {

@@ -1,43 +1,46 @@
 package webhook
 
 import (
+	"context"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"time"
 
+	"github.com/juanseaven/viajes-crm/server/internal/modules/mirror/evolution"
 	"github.com/juanseaven/viajes-crm/server/internal/modules/mirror/store"
 	"github.com/juanseaven/viajes-crm/server/internal/modules/mirror/worker"
 )
 
-// maxBodyBytes acota el payload. Los webhooks de Evolution son JSON de metadatos
-// (el binario del media NO viaja aquí), así que 2 MB sobra e impide que un body
-// gigante agote la memoria del proceso.
-const maxBodyBytes = 2 << 20
+// HistorySync can contain many conversations. Media bytes are kept in MinIO,
+// so 32 MiB bounds metadata bursts without rejecting normal initial syncs.
+const maxBodyBytes = 64 << 20
 
-// Submitter es el pool de workers visto por el handler.
 type Submitter interface {
 	Submit(job worker.Job) error
 }
 
-// Handler recibe los webhooks de Evolution API.
-//
-// Contrato de diseño: hace lo mínimo y responde. Validar, persistir el crudo y
-// encolar. Nada de resolver contactos, descargar media ni hacer fan-out — eso
-// ocurre en el pool. Evolution corta a los 30 s y reintenta hasta 10 veces con
-// backoff; un handler lento provoca una tormenta de reintentos.
-type Handler struct {
-	events store.EventStore
-	pool   Submitter
-	apiKey string
-	log    *slog.Logger
+type InstanceLookup interface {
+	IDByName(ctx context.Context, evolutionName string) (string, error)
 }
 
-func NewHandler(events store.EventStore, pool Submitter, apiKey string, log *slog.Logger) *Handler {
-	return &Handler{events: events, pool: pool, apiKey: apiKey, log: log}
+type Handler struct {
+	events    store.EventStore
+	pool      Submitter
+	instances InstanceLookup
+	globalKey string
+	log       *slog.Logger
+	now       func() time.Time
+}
+
+func NewHandler(events store.EventStore, pool Submitter, instances InstanceLookup, globalKey string, log *slog.Logger) *Handler {
+	return &Handler{events: events, pool: pool, instances: instances, globalKey: globalKey, log: log, now: time.Now}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -54,44 +57,27 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var env Envelope
 	if err := json.Unmarshal(body, &env); err != nil {
-		// 400 y no 5xx: el payload es inválido, reintentarlo no arregla nada.
 		h.log.Warn("payload de webhook ilegible", "error", err)
 		http.Error(w, "json inválido", http.StatusBadRequest)
 		return
 	}
-
-	// La apikey puede venir en el cuerpo (webhook global) o en la cabecera.
-	// Comparación en tiempo constante: esta clave controla todas las líneas.
-	presented := env.APIKey
-	if presented == "" {
-		presented = r.Header.Get("apikey")
+	if env.InstanceName == "" || env.InstanceID == "" || env.Event == "" {
+		http.Error(w, "faltan instanceName, instanceId o event", http.StatusBadRequest)
+		return
 	}
-	if subtle.ConstantTimeCompare([]byte(presented), []byte(h.apiKey)) != 1 {
-		h.log.Warn("webhook con apikey inválida",
-			"instance", env.Instance, "remote", r.RemoteAddr)
+	if !h.authorized(r.Context(), env) {
+		h.log.Warn("webhook sin credencial válida", "instance", env.InstanceName, "remote", r.RemoteAddr)
 		http.Error(w, "no autorizado", http.StatusUnauthorized)
 		return
 	}
 
-	if env.Instance == "" || env.Event == "" {
-		http.Error(w, "faltan instance o event", http.StatusBadRequest)
-		return
-	}
-
 	dedupe, partition := h.keysFor(env)
-
-	// El INSERT es quien decide si el evento es nuevo. Delegarlo en el índice
-	// único de Postgres, en vez de en un SELECT previo, elimina la condición de
-	// carrera entre dos reintentos concurrentes.
-	eventID, err := h.events.Insert(r.Context(), env.Instance, env.Event, dedupe, body)
+	eventID, err := h.events.Insert(r.Context(), env.InstanceName, env.Event, dedupe, body)
 	switch {
 	case errors.Is(err, store.ErrDuplicate):
-		// Reintento de Evolution sobre algo ya visto. 200 para que deje de
-		// reintentar.
 		w.WriteHeader(http.StatusOK)
 		return
 	case err != nil:
-		// 500 para que Evolution reintente: el evento aún no está a salvo.
 		h.log.Error("no se pudo registrar el evento", "error", err, "event", env.Event)
 		http.Error(w, "error interno", http.StatusInternalServerError)
 		return
@@ -100,14 +86,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	err = h.pool.Submit(worker.Job{
 		EventID:      eventID,
 		Event:        env.Event,
-		Instance:     env.Instance,
+		State:        env.State,
+		Instance:     env.InstanceName,
 		PartitionKey: partition,
 		Payload:      env.Data,
 		ReceivedAt:   time.Now(),
 	})
 	if errors.Is(err, worker.ErrQueueFull) {
-		// 503 + Retry-After. El evento ya está persistido, así que aunque
-		// Evolution se rindiera, el reprocesador de webhook_events lo recogerá.
 		w.Header().Set("Retry-After", "5")
 		http.Error(w, "saturado", http.StatusServiceUnavailable)
 		return
@@ -117,30 +102,57 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"received"}`))
 }
 
-// keysFor extrae la clave de deduplicación y la de partición.
-//
-// Se decodifica solo `key` del payload, no el mensaje entero: en la ruta caliente
-// del handler cada asignación cuenta, y el parseo completo ya lo hace el worker.
+func (h *Handler) authorized(ctx context.Context, env Envelope) bool {
+	localID, err := h.instances.IDByName(ctx, env.InstanceName)
+	if err != nil || localID != env.InstanceID {
+		return false
+	}
+	expected := evolution.InstanceToken(h.globalKey, env.InstanceName)
+	return subtle.ConstantTimeCompare([]byte(env.InstanceToken), []byte(expected)) == 1
+}
+
 func (h *Handler) keysFor(env Envelope) (dedupe, partition string) {
 	var probe struct {
-		Key MessageKey `json:"key"`
+		Info struct {
+			ID   string `json:"ID"`
+			Chat string `json:"Chat"`
+		} `json:"Info"`
 	}
 	if len(env.Data) > 0 {
 		_ = json.Unmarshal(env.Data, &probe)
 	}
-
-	if probe.Key.ID != "" {
-		return DedupeKey(env.Instance, env.Event, probe.Key.ID),
-			PartitionKey(env.Instance, probe.Key.RemoteJID)
+	if probe.Info.ID != "" {
+		return DedupeKey(env.InstanceName, env.Event, probe.Info.ID),
+			PartitionKey(env.InstanceName, probe.Info.Chat)
 	}
 
-	// Eventos sin mensaje (connection.update, qrcode.updated): no hay id estable,
-	// así que se deduplica por instante de llegada y se particiona por instancia
-	// para que el orden de los cambios de estado de una línea se respete.
-	ts := time.Now().UTC().Format(time.RFC3339Nano)
-	return DedupeKey(env.Instance, env.Event, ts), PartitionKey(env.Instance, "")
+	// QR and sync retries carry identical JSON but no message ID. Hashing the
+	// provider payload makes retries idempotent while allowing the next QR/chunk.
+	sum := sha256.Sum256(env.Data)
+	fingerprint := hex.EncodeToString(sum[:])
+	if repeatableLifecycleEvent(env.Event) {
+		// Evolution no incluye un identificador ni timestamp en los eventos de
+		// conexiÃ³n. Dos conexiones reales pueden traer exactamente el mismo JSON,
+		// por lo que deduplicarlas por payload deja la lÃ­nea en un estado viejo.
+		// Estos handlers son idempotentes; cada entrega debe representar una nueva
+		// transiciÃ³n aunque el contenido coincida con una anterior.
+		fingerprint = fmt.Sprintf("%s:%d", fingerprint, h.now().UnixNano())
+	}
+	return DedupeKey(env.InstanceName, env.Event, fingerprint), PartitionKey(env.InstanceName, "")
+}
+
+func repeatableLifecycleEvent(event string) bool {
+	switch event {
+	case EventConnected, EventPairSuccess, EventOfflineSyncCompleted,
+		EventDisconnected, EventLoggedOut, EventConnectFailure,
+		EventQRTimeout, EventQRSuccess:
+		return true
+	default:
+		return false
+	}
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { AlertCircle, Check, LoaderCircle, Paperclip, Reply, Smartphone } from "lucide-react";
 import { mirrorApi, type Message, type MessageMedia } from "./api";
 
 /**
@@ -11,7 +12,17 @@ import { mirrorApi, type Message, type MessageMedia } from "./api";
  *   device  → derecha, salió del teléfono: sin autor en el sistema.
  *   panel   → derecha, con el nombre de quien lo escribió desde la app.
  */
-export function MessageBubble({ message }: { message: Message }) {
+export function MessageBubble({
+  message,
+  isGroup = false,
+  onReply,
+  onOpenQuote,
+}: {
+  message: Message;
+  isGroup?: boolean;
+  onReply?: (message: Message) => void;
+  onOpenQuote?: (messageId: string) => void;
+}) {
   const mine = message.direction === "outbound";
 
   // Provisional: pintado al enviar, todavía sin confirmar por WhatsApp.
@@ -24,13 +35,47 @@ export function MessageBubble({ message }: { message: Message }) {
 
   return (
     <article className={clases.join(" ")}>
+      {onReply && !message.pending && (
+        <button
+          type="button"
+          className="bubble-reply-action"
+          aria-label="Responder mensaje"
+          title="Responder"
+          onClick={() => onReply(message)}
+        >
+          <Reply aria-hidden />
+        </button>
+      )}
+      {isGroup && !mine && (message.senderName || message.senderPhone || message.senderJid) && (
+        <span className="author">{message.senderName || message.senderPhone || message.senderJid}</span>
+      )}
       {message.origin === "panel" && message.sentByName && (
         <span className="author">{message.sentByName}</span>
       )}
-      {message.origin === "device" && <span className="author muted">desde el teléfono</span>}
+      {message.origin === "device" && (
+        <span className="author muted"><Smartphone aria-hidden />Desde el teléfono</span>
+      )}
+
+      {message.quote ? (
+        <button
+          type="button"
+          className="message-quote"
+          aria-label="Ir al mensaje citado"
+          onClick={() => onOpenQuote?.(message.quote!.id)}
+          disabled={!onOpenQuote}
+        >
+          <strong>{message.quote.senderName || (message.quote.direction === "outbound" ? "Vos" : "Contacto")}</strong>
+          <span>{quotePreview(message.quote.body, message.quote.type)}</span>
+        </button>
+      ) : message.quotedId ? (
+        <div className="message-quote unavailable">
+          <strong>Mensaje citado</strong>
+          <span>Mensaje citado no disponible</span>
+        </div>
+      ) : null}
 
       {message.pending?.fileName && (
-        <span className="attachment-name">📎 {message.pending.fileName}</span>
+        <span className="attachment-name"><Paperclip aria-hidden />{message.pending.fileName}</span>
       )}
 
       {message.media && <MediaBlock media={message.media} />}
@@ -51,11 +96,24 @@ export function MessageBubble({ message }: { message: Message }) {
           })}
         </time>
         {message.editedAt && <span className="edited">editado</span>}
-        {provisional && <span className="estado">enviando…</span>}
-        {fallido && <span className="estado error">{message.pending?.error}</span>}
+        {provisional && <span className="estado"><LoaderCircle className="spin" aria-hidden />Enviando</span>}
+        {fallido && <span className="estado error"><AlertCircle aria-hidden />{message.pending?.error}</span>}
+        {mine && !provisional && !fallido && <Check className="message-check" aria-label="Enviado" />}
       </footer>
     </article>
   );
+}
+
+function quotePreview(body: string | undefined, type: string): string {
+  if (body?.trim()) return body;
+  const labels: Record<string, string> = {
+    image: "Foto",
+    video: "Video",
+    audio: "Audio",
+    document: "Documento",
+    sticker: "Sticker",
+  };
+  return labels[type] ?? "Mensaje";
 }
 
 /**
@@ -116,7 +174,7 @@ function MediaBlock({ media }: { media: MessageMedia }) {
       {url && kind === "audio" && <audio src={url} controls preload="none" />}
       {url && kind !== "image" && kind !== "video" && kind !== "audio" && (
         <a href={url} target="_blank" rel="noreferrer" className="document">
-          📎 {media.fileName ?? "Documento"}
+          <Paperclip aria-hidden /> {media.fileName ?? "Documento"}
         </a>
       )}
     </div>

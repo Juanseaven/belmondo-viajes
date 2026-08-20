@@ -88,14 +88,16 @@ func (m *Module) sendMessage(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) readJSONSend(r *http.Request, req *SendRequest) error {
 	var in struct {
-		Body           string `json:"body"`
-		IdempotencyKey string `json:"idempotencyKey"`
+		Body             string `json:"body"`
+		IdempotencyKey   string `json:"idempotencyKey"`
+		ReplyToMessageID string `json:"replyToMessageId"`
 	}
 	if err := httpx.DecodeJSON(r, &in); err != nil {
 		return errors.New("cuerpo inválido")
 	}
 	req.Body = strings.TrimSpace(in.Body)
 	req.IdempotencyKey = in.IdempotencyKey
+	req.ReplyToMessageID = strings.TrimSpace(in.ReplyToMessageID)
 	return nil
 }
 
@@ -109,6 +111,7 @@ func (m *Module) readMultipartSend(r *http.Request, req *SendRequest) error {
 
 	req.Body = strings.TrimSpace(r.FormValue("body"))
 	req.IdempotencyKey = r.FormValue("idempotencyKey")
+	req.ReplyToMessageID = strings.TrimSpace(r.FormValue("replyToMessageId"))
 
 	file, header, err := r.FormFile("file")
 	if err != nil {

@@ -40,10 +40,21 @@ type SendTarget struct {
 	LineActive     bool
 }
 
+// QuoteTarget es la identidad de WhatsApp de un mensaje ya validado dentro de
+// la conversación que se está respondiendo.
+type QuoteTarget struct {
+	WAMessageID string
+	Participant string
+}
+
 // OutboundStore registra los envíos del panel.
 type OutboundStore interface {
 	// Target resuelve línea y destinatario de una conversación.
 	Target(ctx context.Context, conversationID string) (SendTarget, error)
+
+	// QuoteTarget traduce nuestro UUID al identificador de WhatsApp. El filtro por
+	// conversationID es parte del contrato: nunca debe resolver mensajes ajenos.
+	QuoteTarget(ctx context.Context, conversationID, messageID string) (QuoteTarget, error)
 
 	// Create registra la intención de envío.
 	//

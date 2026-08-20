@@ -16,7 +16,7 @@ import { mirrorApi, type Conversation } from "./api";
  *     cubrir este caso acoplaría el sobre del socket a la forma de esta pantalla.
  *     Recargar es autocurativo y pasa una vez por chat nuevo.
  */
-export function useInbox(instance: string, search: string) {
+export function useInbox(instance: string, search: string, unanswered = false) {
   const [items, setItems] = useState<Conversation[]>([]);
   const [cursor, setCursor] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
@@ -31,7 +31,11 @@ export function useInbox(instance: string, search: string) {
     setLoading(true);
     setError(null);
     try {
-      const page = await mirrorApi.conversations({ instance, q: search });
+      const page = await mirrorApi.conversations({
+        instance,
+        q: search,
+        status: unanswered ? "unanswered" : undefined,
+      });
       if (query !== queryRef.current) return;
       setItems(page.items);
       setCursor(page.nextCursor);
@@ -41,7 +45,7 @@ export function useInbox(instance: string, search: string) {
     } finally {
       if (query === queryRef.current) setLoading(false);
     }
-  }, [instance, search]);
+  }, [instance, search, unanswered]);
 
   useEffect(() => {
     // Rebote en la búsqueda: sin esto cada tecla dispara una consulta con ILIKE.
@@ -54,7 +58,12 @@ export function useInbox(instance: string, search: string) {
     if (!cursor) return;
     const query = queryRef.current;
     try {
-      const page = await mirrorApi.conversations({ instance, q: search, cursor });
+      const page = await mirrorApi.conversations({
+        instance,
+        q: search,
+        cursor,
+        status: unanswered ? "unanswered" : undefined,
+      });
       if (query !== queryRef.current) return;
       // Se filtran los ids ya presentes: si entró un mensaje mientras se pedía la
       // página, una conversación pudo saltar hacia arriba y aparecer dos veces.
@@ -67,28 +76,38 @@ export function useInbox(instance: string, search: string) {
       // Un fallo al paginar no debe vaciar lo ya cargado; el usuario reintenta
       // scrolleando.
     }
-  }, [cursor, instance, search]);
+  }, [cursor, instance, search, unanswered]);
 
   /** Aplica un mensaje nuevo llegado por websocket. */
   const applyNewMessage = useCallback(
-    (conversationId: string, preview: string, type: string, at: string) => {
+    (
+      conversationId: string,
+      preview: string,
+      type: string,
+      at: string,
+      direction: "inbound" | "outbound",
+    ) => {
       let known = false;
       setItems((prev) => {
         const found = prev.find((c) => c.id === conversationId);
         if (!found) return prev;
         known = true;
+        if (unanswered && direction === "outbound") {
+          return prev.filter((conversation) => conversation.id !== conversationId);
+        }
         const updated: Conversation = {
           ...found,
           preview,
           lastType: type,
           lastMessageAt: at,
-          unread: found.unread + 1,
+          unread: direction === "inbound" ? found.unread + 1 : found.unread,
+          needsReply: direction === "inbound",
         };
         return [updated, ...prev.filter((c) => c.id !== conversationId)];
       });
-      if (!known) void reload();
+      if (!known && (!unanswered || direction === "inbound")) void reload();
     },
-    [reload],
+    [reload, unanswered],
   );
 
   const applyRead = useCallback((conversationId: string) => {

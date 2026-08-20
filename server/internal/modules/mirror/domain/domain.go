@@ -78,17 +78,36 @@ type Message struct {
 	RemoteJID    string
 	WAMessageID  string
 	PushName     string
-	Direction    Direction
-	Origin       Origin
-	Type         MessageType
-	Status       MessageStatus
-	Body         string
-	QuotedID     string
-	Timestamp    time.Time
-	IsGroup      bool
+	// SenderJID/SenderName identify the participant inside a group. RemoteJID is
+	// the group itself, so without these fields every inbound bubble loses its
+	// author. They stay empty for private chats.
+	SenderJID  string
+	SenderName string
+	Direction  Direction
+	Origin     Origin
+	Type       MessageType
+	Status     MessageStatus
+	Body       string
+	QuotedID   string
+	Timestamp  time.Time
+	IsGroup    bool
+	Historical bool
 
 	// Presente solo si Type.HasMedia(). El binario todavía no se ha descargado.
 	Media *MediaInfo
+}
+
+// ContactIdentity is one entry from WhatsApp's history-sync directory. Modern
+// group messages identify participants with an opaque @lid JID; this mapping is
+// what lets the read side resolve that LID back to a named phone contact.
+type ContactIdentity struct {
+	PhoneJID     string
+	LIDJID       string
+	Name         string // push name from HistorySync; kept for compatibility
+	FirstName    string
+	FullName     string
+	PushName     string
+	BusinessName string
 }
 
 // MediaInfo son los metadatos que viajan en el webhook. El archivo en sí NO
@@ -101,6 +120,8 @@ type MediaInfo struct {
 	Duration  int
 	Width     int
 	Height    int
+	Data      []byte
+	SourceURL string
 }
 
 // Conversation es el thread materializado por (línea, contacto).

@@ -1,10 +1,12 @@
 package mirror
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -216,6 +218,97 @@ func TestFiltrosLleganAlStore(t *testing.T) {
 	}
 	if read.lastInbox.Search != "ana" {
 		t.Fatalf("search = %q, se esperaba ana", read.lastInbox.Search)
+	}
+}
+
+func TestFiltroSinResponderLlegaAlStore(t *testing.T) {
+	read := &fakeRead{}
+	m := newTestModule(read)
+
+	do(m.listConversations, "/?status=unanswered", nil)
+
+	if !read.lastInbox.NeedsReply {
+		t.Fatal("NeedsReply = false, se esperaba true")
+	}
+}
+
+func TestSendMessageJSONAceptaReplyToMessageID(t *testing.T) {
+	out := newFakeOutbound(lineaConectada())
+	out.quote = store.QuoteTarget{WAMessageID: "wa-original", Participant: "5491111111111@s.whatsapp.net"}
+	evo := &fakeEvolution{}
+	m := newTestModule(&fakeRead{})
+	m.send = newSendService(out, evo, &fakePanel{marks: map[string]string{}}, &fakeBlobs{put: map[string][]byte{}})
+
+	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(
+		`{"body":"respuesta","idempotencyKey":"key-json","replyToMessageId":"msg-interno"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", "conv-1")
+	rec := httptest.NewRecorder()
+
+	m.sendMessage(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, cuerpo = %s", rec.Code, rec.Body.String())
+	}
+	if out.quoteMessageID != "msg-interno" || evo.lastQuote == nil || evo.lastQuote.MessageID != "wa-original" {
+		t.Fatalf("mensaje resuelto = %q; cita enviada = %+v", out.quoteMessageID, evo.lastQuote)
+	}
+}
+
+func TestSendMessageMultipartAceptaReplyToMessageID(t *testing.T) {
+	out := newFakeOutbound(lineaConectada())
+	out.quote = store.QuoteTarget{WAMessageID: "wa-original", Participant: "5491111111111@s.whatsapp.net"}
+	evo := &fakeEvolution{}
+	m := newTestModule(&fakeRead{})
+	m.send = newSendService(out, evo, &fakePanel{marks: map[string]string{}}, &fakeBlobs{put: map[string][]byte{}})
+
+	var body bytes.Buffer
+	form := multipart.NewWriter(&body)
+	_ = form.WriteField("body", "respuesta con archivo")
+	_ = form.WriteField("idempotencyKey", "key-media")
+	_ = form.WriteField("replyToMessageId", "msg-interno")
+	file, err := form.CreateFormFile("file", "reserva.pdf")
+	if err != nil {
+		t.Fatalf("CreateFormFile: %v", err)
+	}
+	_, _ = file.Write([]byte("pdf"))
+	_ = form.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/", &body)
+	req.Header.Set("Content-Type", form.FormDataContentType())
+	req.SetPathValue("id", "conv-1")
+	rec := httptest.NewRecorder()
+
+	m.sendMessage(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, cuerpo = %s", rec.Code, rec.Body.String())
+	}
+	if evo.mediaCalls != 1 || evo.lastQuote == nil || evo.lastQuote.MessageID != "wa-original" {
+		t.Fatalf("mediaCalls = %d; cita enviada = %+v", evo.mediaCalls, evo.lastQuote)
+	}
+}
+
+func TestSendMessageDevuelve404SiLaCitaNoPerteneceALaConversacion(t *testing.T) {
+	out := newFakeOutbound(lineaConectada())
+	out.quoteErr = store.ErrNotFound
+	evo := &fakeEvolution{}
+	m := newTestModule(&fakeRead{})
+	m.send = newSendService(out, evo, &fakePanel{marks: map[string]string{}}, &fakeBlobs{put: map[string][]byte{}})
+
+	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(
+		`{"body":"respuesta","idempotencyKey":"key-json","replyToMessageId":"msg-ajeno"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", "conv-1")
+	rec := httptest.NewRecorder()
+
+	m.sendMessage(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, cuerpo = %s", rec.Code, rec.Body.String())
+	}
+	if evo.textCalls != 0 || evo.mediaCalls != 0 {
+		t.Fatal("se despachó un mensaje con una cita ajena")
 	}
 }
 

@@ -19,7 +19,21 @@ const threadColumns = `
 	m.id, m.direction::text, m.origin::text, m.type::text, m.status::text,
 	coalesce(m.body, ''), m.wa_timestamp,
 	coalesce(m.sent_by_user_id::text, ''), coalesce(u.full_name, ''),
+	coalesce(m.sender_jid, ''),
+	coalesce(sender_phone.display_name, sender_lid.display_name,
+	         sender_directory_phone.full_name, sender_directory_lid.full_name,
+	         sender_directory_phone.first_name, sender_directory_lid.first_name,
+	         sender_directory_phone.business_name, sender_directory_lid.business_name,
+	         sender_directory_phone.push_name, sender_directory_lid.push_name,
+	         sender_phone.push_name, sender_lid.push_name, m.sender_name, ''),
+	coalesce(sender_phone.phone_number, sender_lid.phone_number,
+	         CASE WHEN sender_directory_phone.wa_jid LIKE '%@s.whatsapp.net'
+	              THEN '+' || split_part(sender_directory_phone.wa_jid, '@', 1) END,
+	         CASE WHEN sender_directory_lid.wa_jid LIKE '%@s.whatsapp.net'
+	              THEN '+' || split_part(sender_directory_lid.wa_jid, '@', 1) END, ''),
 	coalesce(m.quoted_wa_message_id, ''), m.edited_at, m.deleted_at,
+	qm.id, qm.direction::text, qm.type::text, coalesce(qm.body, ''),
+	coalesce(qu.full_name, qm.sender_name, ''),
 	ma.id, coalesce(ma.mime_type, ''), coalesce(ma.file_name, ''),
 	coalesce(ma.size_bytes, 0), coalesce(ma.duration_seconds, 0),
 	coalesce(ma.width, 0), coalesce(ma.height, 0), ma.storage_status::text`
@@ -27,19 +41,38 @@ const threadColumns = `
 const threadFrom = `
 	FROM messages m
 	LEFT JOIN users        u  ON u.id = m.sent_by_user_id
+	LEFT JOIN contacts sender_phone ON sender_phone.wa_jid = m.sender_jid
+	LEFT JOIN contacts sender_lid ON sender_lid.lid_jid = m.sender_jid
+	LEFT JOIN contact_directory sender_directory_phone
+	       ON sender_directory_phone.instance_id = m.instance_id
+	      AND sender_directory_phone.wa_jid = m.sender_jid
+	LEFT JOIN contact_directory sender_directory_lid
+	       ON sender_directory_lid.instance_id = m.instance_id
+	      AND sender_directory_lid.lid_jid = m.sender_jid
+	LEFT JOIN messages qm
+	       ON qm.instance_id = m.instance_id
+	      AND qm.wa_message_id = m.quoted_wa_message_id
+	LEFT JOIN users qu ON qu.id = qm.sent_by_user_id
 	LEFT JOIN media_assets ma ON ma.message_id = m.id`
 
 func scanThreadMessage(rows pgx.Rows) (store.ThreadMessage, error) {
 	var (
-		m        store.ThreadMessage
-		mediaID  *string
-		md       store.ThreadMedia
-		mdStatus *string
+		m              store.ThreadMessage
+		mediaID        *string
+		md             store.ThreadMedia
+		mdStatus       *string
+		quoteID        *string
+		quoteDirection *string
+		quoteType      *string
+		quoteBody      string
+		quoteSender    string
 	)
 	err := rows.Scan(&m.ID, &m.Direction, &m.Origin, &m.Type, &m.Status,
 		&m.Body, &m.Timestamp,
 		&m.SentByID, &m.SentByName,
+		&m.SenderJID, &m.SenderName, &m.SenderPhone,
 		&m.QuotedID, &m.EditedAt, &m.DeletedAt,
+		&quoteID, &quoteDirection, &quoteType, &quoteBody, &quoteSender,
 		&mediaID, &md.MimeType, &md.FileName,
 		&md.Size, &md.Duration, &md.Width, &md.Height, &mdStatus)
 	if err != nil {
@@ -51,6 +84,19 @@ func scanThreadMessage(rows pgx.Rows) (store.ThreadMessage, error) {
 			md.Status = *mdStatus
 		}
 		m.Media = &md
+	}
+	if quoteID != nil {
+		m.Quote = &store.QuotedThreadMessage{
+			ID:         *quoteID,
+			Body:       quoteBody,
+			SenderName: quoteSender,
+		}
+		if quoteDirection != nil {
+			m.Quote.Direction = *quoteDirection
+		}
+		if quoteType != nil {
+			m.Quote.Type = *quoteType
+		}
 	}
 	return m, nil
 }

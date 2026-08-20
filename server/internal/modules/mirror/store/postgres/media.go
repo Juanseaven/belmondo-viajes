@@ -21,7 +21,8 @@ func NewMedia(db *pgxpool.Pool) *Media { return &Media{db: db} }
 func (m *Media) NextPending(ctx context.Context, limit int) ([]store.PendingMedia, error) {
 	const q = `
 		SELECT ma.id, ma.message_id, i.evolution_name, msg.wa_message_id,
-		       COALESCE(ma.mime_type,''), COALESCE(ma.file_name,''), ma.attempts
+		       COALESCE(ma.mime_type,''), COALESCE(ma.file_name,''),
+		       COALESCE(ma.source_data, ''::bytea), COALESCE(ma.source_url,''), ma.attempts
 		  FROM media_assets ma
 		  JOIN messages  msg ON msg.id = ma.message_id
 		  JOIN instances i   ON i.id   = msg.instance_id
@@ -41,7 +42,7 @@ func (m *Media) NextPending(ctx context.Context, limit int) ([]store.PendingMedi
 	for rows.Next() {
 		var p store.PendingMedia
 		if err := rows.Scan(&p.ID, &p.MessageID, &p.InstanceName,
-			&p.WAMessageID, &p.MimeType, &p.FileName, &p.Attempts); err != nil {
+			&p.WAMessageID, &p.MimeType, &p.FileName, &p.Data, &p.SourceURL, &p.Attempts); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -62,7 +63,8 @@ func (m *Media) MarkStored(ctx context.Context, id, storageKey, sha256 string, s
 	const q = `
 		UPDATE media_assets
 		   SET storage_status = 'stored', storage_key = $2, sha256 = $3,
-		       size_bytes = $4, stored_at = now(), last_error = NULL
+		       size_bytes = $4, stored_at = now(), last_error = NULL,
+		       source_data = NULL, source_url = NULL
 		 WHERE id = $1`
 	_, err := m.db.Exec(ctx, q, id, storageKey, sha256, size)
 	return err

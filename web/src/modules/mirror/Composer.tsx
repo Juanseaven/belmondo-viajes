@@ -1,120 +1,152 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { ApiError } from "../../kernel/api/client";
-import { mirrorApi } from "./api";
+import { Paperclip, SendHorizontal, WifiOff, X } from "lucide-react";
 
-/**
- * Compositor de mensajes.
- *
- * Envía de forma optimista: avisa hacia arriba con la clave de idempotencia
- * ANTES de que el servidor responda, para que el hilo pinte la burbuja al
- * instante. El cliente de Evolution mete un retardo deliberado de 800 ms para no
- * parecer un bot, así que sin esto la app se sentiría trabada en la acción más
- * frecuente.
- */
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+
+import { ApiError } from "../../kernel/api/client";
+import { mirrorApi, type MessageQuote } from "./api";
+
 export function Composer({
   conversationId,
   disabled,
   disabledReason,
   onOptimistic,
   onSettled,
+  replyTo,
+  onCancelReply,
+  onSent,
 }: {
   conversationId: string;
   disabled?: boolean;
   disabledReason?: string;
-  /** Se llama al apretar enviar, antes de que el servidor conteste. */
-  onOptimistic: (key: string, body: string, fileName?: string) => void;
-  /** Resuelve la burbuja provisional: con el id de WhatsApp, o con el error. */
+  onOptimistic: (key: string, body: string, fileName?: string, quote?: MessageQuote) => void;
   onSettled: (key: string, waMessageId: string | null, error?: string) => void;
+  replyTo?: MessageQuote;
+  onCancelReply?: () => void;
+  onSent?: () => void;
 }) {
   const [body, setBody] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const empty = body.trim() === "" && !file;
 
-  const vacio = body.trim() === "" && !file;
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (vacio || disabled) return;
-
-    // La clave se genera una vez y se conserva en el reintento: es lo que hace
-    // que reintentar no duplique el mensaje.
-    const key = crypto.randomUUID();
-    const texto = body.trim();
-    const adjunto = file ?? undefined;
-
-    // Se limpia el compositor ya: quien escribe tiene que poder seguir tecleando
-    // sin esperar a WhatsApp.
-    setBody("");
+  const clearFile = () => {
     setFile(null);
     if (fileInput.current) fileInput.current.value = "";
+  };
 
-    onOptimistic(key, texto, adjunto?.name);
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (empty || disabled) return;
+    const key = crypto.randomUUID();
+    const text = body.trim();
+    const attachment = file ?? undefined;
+    setBody("");
+    clearFile();
+    onOptimistic(key, text, attachment?.name, replyTo);
 
     try {
-      const res = await mirrorApi.send(conversationId, {
-        body: texto,
+      const response = await mirrorApi.send(conversationId, {
+        body: text,
         idempotencyKey: key,
-        file: adjunto,
+        file: attachment,
+        replyToMessageId: replyTo?.id,
       });
-      onSettled(key, res.waMessageId);
-    } catch (err) {
-      const msg =
-        err instanceof ApiError ? err.message : "No se pudo enviar el mensaje";
-      onSettled(key, null, msg);
+      onSettled(key, response.waMessageId);
+      onSent?.();
+    } catch (cause) {
+      const message = cause instanceof ApiError ? cause.message : "No se pudo enviar el mensaje";
+      onSettled(key, null, message);
     }
   };
 
   if (disabled) {
     return (
-      <div className="composer disabled">
-        <p>{disabledReason ?? "No se puede enviar por esta línea."}</p>
+      <div className="composer composer-disabled">
+        <Alert>
+          <WifiOff aria-hidden />
+          <AlertDescription>{disabledReason ?? "No se puede enviar por esta línea."}</AlertDescription>
+        </Alert>
       </div>
     );
   }
 
   return (
     <form className="composer" onSubmit={submit}>
+      {replyTo && (
+        <div className="composer-reply">
+          <span>
+            <strong>Respondiendo a {replyTo.senderName || (replyTo.direction === "outbound" ? "Vos" : "Contacto")}</strong>
+            <small>{quotePreview(replyTo)}</small>
+          </span>
+          <Button type="button" variant="ghost" size="icon-xs" onClick={onCancelReply} aria-label="Cancelar respuesta">
+            <X aria-hidden />
+          </Button>
+        </div>
+      )}
       {file && (
-        <div className="attachment">
-          <span>📎 {file.name}</span>
-          <button type="button" onClick={() => { setFile(null); if (fileInput.current) fileInput.current.value = ""; }}>
-            Quitar
-          </button>
+        <div className="attachment-preview">
+          <Paperclip aria-hidden />
+          <span>{file.name}</span>
+          <Button type="button" variant="ghost" size="icon-xs" onClick={clearFile} aria-label="Quitar archivo">
+            <X aria-hidden />
+          </Button>
         </div>
       )}
 
-      <div className="composer-row">
-        <label className="attach" title="Adjuntar archivo">
-          📎
-          <input
-            ref={fileInput}
-            type="file"
-            hidden
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
-        </label>
-
-        <textarea
+      <div className="composer-box">
+        <Textarea
           value={body}
+          aria-label="Mensaje"
           placeholder="Escribí un mensaje…"
-          rows={1}
-          onChange={(e) => setBody(e.target.value)}
-          onKeyDown={(e) => {
-            // Enter envía, Shift+Enter salta de línea. Es lo que espera cualquiera
-            // que venga de WhatsApp.
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void submit(e);
+          rows={2}
+          onChange={(event) => setBody(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && replyTo) {
+              event.preventDefault();
+              onCancelReply?.();
+              return;
+            }
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              void submit(event);
             }
           }}
         />
-
-        <button type="submit" disabled={vacio}>
-          Enviar
-        </button>
+        <div className="composer-actions">
+          <Button type="button" variant="ghost" size="icon" asChild>
+            <label aria-label="Adjuntar archivo" title="Adjuntar archivo">
+              <Paperclip aria-hidden />
+              <input
+                ref={fileInput}
+                type="file"
+                hidden
+                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+              />
+            </label>
+          </Button>
+          <span className="composer-hint">Enter para enviar · Shift+Enter para salto</span>
+          <Button type="submit" size="icon-lg" disabled={empty} aria-label="Enviar mensaje">
+            <SendHorizontal aria-hidden />
+          </Button>
+        </div>
       </div>
     </form>
   );
+}
+
+function quotePreview(quote: MessageQuote): string {
+  if (quote.body?.trim()) return quote.body;
+  const labels: Record<string, string> = {
+    image: "Foto",
+    video: "Video",
+    audio: "Audio",
+    document: "Documento",
+    sticker: "Sticker",
+  };
+  return labels[quote.type] ?? "Mensaje";
 }

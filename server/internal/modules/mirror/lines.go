@@ -11,9 +11,15 @@ import (
 
 // Provisioner da de alta y desvincula líneas de WhatsApp.
 type Provisioner interface {
-	CreateInstance(ctx context.Context, name string) error
+	CreateInstance(ctx context.Context, instanceID, name string) (string, error)
 	Logout(ctx context.Context, instance string) error
 	DeleteInstance(ctx context.Context, instance string) error
+}
+
+type QRCache interface {
+	Set(ctx context.Context, instanceName, code string) error
+	Get(ctx context.Context, instanceName string) (string, bool)
+	Clear(ctx context.Context, instanceName string)
 }
 
 // createLine registra la línea y la crea en Evolution, EN ESE ORDEN.
@@ -39,12 +45,24 @@ func (m *Module) createLine(ctx context.Context, ownerLabel, displayName string)
 		return "", "", fmt.Errorf("registrando la línea: %w", err)
 	}
 
-	if err := m.provisioner.CreateInstance(ctx, name); err != nil {
+	qr, err := m.provisioner.CreateInstance(ctx, id, name)
+	if err != nil {
 		// La fila queda en estado 'created'. No se borra: deja constancia del
 		// intento y permite reintentar sin perder el nombre ya reservado.
 		m.log.Error("evolution rechazó la creación de la instancia",
 			"instance", name, "error", err)
 		return id, name, fmt.Errorf("creando la instancia en Evolution: %w", err)
+	}
+	// Evolution entrega el QR por webhook. Algunos provisioners pueden devolver
+	// uno sincrónicamente, pero un valor vacío no debe tapar el 404 temporal que
+	// hace que el frontend siga esperando el primer evento.
+	if qr != "" {
+		if err := m.qr.Set(ctx, name, qr); err != nil {
+			m.log.Warn("no se pudo guardar el primer QR", "instance", name, "error", err)
+		}
+	}
+	if err := m.lines.UpdateConnection(ctx, name, "connecting", ""); err != nil {
+		return id, name, fmt.Errorf("marcando la línea en conexión: %w", err)
 	}
 
 	// A partir de acá empiezan a llegar los qrcode.updated por webhook, que el
@@ -53,11 +71,7 @@ func (m *Module) createLine(ctx context.Context, ownerLabel, displayName string)
 	return id, name, nil
 }
 
-// disconnectLine desvincula el teléfono y desactiva la línea.
-//
-// NO borra la fila. Las conversaciones y mensajes cuelgan de ella con
-// ON DELETE CASCADE, así que borrarla se llevaría puesto el historial —
-// exactamente lo que este panel existe para conservar.
+// disconnectLine desvincula el teléfono y borra la línea con todo su historial.
 func (m *Module) disconnectLine(ctx context.Context, id string) error {
 	name, err := m.lines.NameByID(ctx, id)
 	if err != nil {
@@ -74,10 +88,18 @@ func (m *Module) disconnectLine(ctx context.Context, id string) error {
 	}
 	m.qr.Clear(ctx, name)
 
-	if err := m.lines.Deactivate(ctx, id); err != nil {
-		return fmt.Errorf("desactivando la línea: %w", err)
+	// Los archivos se borran antes que la fila. Si R2 falla, la línea queda
+	// visible y se puede reintentar; los borrados por prefijo son idempotentes.
+	for _, prefix := range []string{name + "/", "outgoing/" + name + "/"} {
+		if err := m.k.Blobs.DeletePrefix(ctx, prefix); err != nil {
+			return fmt.Errorf("borrando los archivos de la línea: %w", err)
+		}
 	}
-	m.log.Info("línea desvinculada", "instance", name)
+
+	if err := m.lines.Delete(ctx, id); err != nil {
+		return fmt.Errorf("borrando la línea: %w", err)
+	}
+	m.log.Info("línea desvinculada y borrada", "instance", name)
 	return nil
 }
 

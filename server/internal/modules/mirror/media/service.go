@@ -10,8 +10,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
 	"mime"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -94,9 +96,15 @@ func (s *Service) process(ctx context.Context, job store.PendingMedia) error {
 		return fmt.Errorf("marcando en proceso: %w", err)
 	}
 
-	data, mimeType, err := s.down.DownloadMedia(ctx, job.InstanceName, job.WAMessageID)
+	data, mimeType := job.Data, job.MimeType
+	var err error
+	if len(data) == 0 && job.SourceURL != "" {
+		data, mimeType, err = downloadSourceURL(ctx, job.SourceURL, mimeType)
+	} else if len(data) == 0 {
+		data, mimeType, err = s.down.DownloadMedia(ctx, job.InstanceName, job.WAMessageID)
+	}
 	if err != nil {
-		return fmt.Errorf("descargando de evolution: %w", err)
+		return fmt.Errorf("descargando media: %w", err)
 	}
 	if mimeType == "" {
 		mimeType = job.MimeType
@@ -110,6 +118,34 @@ func (s *Service) process(ctx context.Context, job store.PendingMedia) error {
 		return fmt.Errorf("subiendo a R2: %w", err)
 	}
 	return s.store.MarkStored(ctx, job.ID, key, digest, int64(len(data)))
+}
+
+func downloadSourceURL(ctx context.Context, sourceURL, fallbackMime string) ([]byte, string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return nil, "", fmt.Errorf("origen devolvió %d", resp.StatusCode)
+	}
+	const maxMediaBytes = 64 << 20
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxMediaBytes+1))
+	if err != nil {
+		return nil, "", err
+	}
+	if len(data) > maxMediaBytes {
+		return nil, "", fmt.Errorf("archivo supera %d bytes", maxMediaBytes)
+	}
+	mimeType := resp.Header.Get("Content-Type")
+	if mimeType == "" {
+		mimeType = fallbackMime
+	}
+	return data, mimeType, nil
 }
 
 // StorageKey construye la ruta en R2:
