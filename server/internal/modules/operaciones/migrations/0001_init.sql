@@ -162,6 +162,10 @@ CREATE TABLE controls (
     item_id    text NOT NULL,
     stage      text NOT NULL CHECK (stage IN ('carga', 'control')),
     closing    text NOT NULL CHECK (closing IN ('derivado', 'accion', 'manual')),
+    -- Qué dato cumple el control, cuando el cierre es derivado. Se guarda el
+    -- dato y no el renglón para que recalcular pregunte por el significado y no
+    -- por la identidad de la fila: renombrar un renglón no rompe el cálculo.
+    derives    text,
     critical   boolean NOT NULL DEFAULT false,
     status     text NOT NULL DEFAULT 'abierto' CHECK (status IN ('abierto', 'cerrado')),
     -- NULL en los derivados: un control que el sistema cierra solo no tiene a

@@ -113,6 +113,7 @@ func materializeChecklist(ctx context.Context, tx pgx.Tx, t store.Trip) error {
 	stages := make([]string, 0, len(items))
 	closings := make([]string, 0, len(items))
 	criticals := make([]bool, 0, len(items))
+	derives := make([]*string, 0, len(items))
 	dues := make([]*time.Time, 0, len(items))
 
 	for _, item := range items {
@@ -120,6 +121,13 @@ func materializeChecklist(ctx context.Context, tx pgx.Tx, t store.Trip) error {
 		stages = append(stages, string(item.Stage))
 		closings = append(closings, string(item.Closing))
 		criticals = append(criticals, item.Critical)
+
+		if item.Derives != "" {
+			d := string(item.Derives)
+			derives = append(derives, &d)
+		} else {
+			derives = append(derives, nil)
+		}
 
 		if due, ok := item.DueAt(t.CreatedAt, t.DepartAt, t.ReturnAt); ok {
 			d := due
@@ -130,13 +138,13 @@ func materializeChecklist(ctx context.Context, tx pgx.Tx, t store.Trip) error {
 	}
 
 	_, err := tx.Exec(ctx,
-		`INSERT INTO controls (trip_id, item_id, stage, closing, critical, due_at)
-		 SELECT $1, item_id, stage, closing, critical, due_at
-		   FROM unnest($2::text[], $3::text[], $4::text[], $5::bool[], $6::date[])
-		        AS t(item_id, stage, closing, critical, due_at)`,
-		t.ID, ids, stages, closings, criticals, dues)
+		`INSERT INTO controls (trip_id, item_id, stage, closing, critical, derives, due_at)
+		 SELECT $1, item_id, stage, closing, critical, derives, due_at
+		   FROM unnest($2::text[], $3::text[], $4::text[], $5::bool[], $6::text[], $7::date[])
+		        AS t(item_id, stage, closing, critical, derives, due_at)`,
+		t.ID, ids, stages, closings, criticals, derives, dues)
 	if err != nil {
 		return fmt.Errorf("materializando los controles: %w", err)
 	}
-	return nil
+	return refreshDerived(ctx, tx, t.ID)
 }
