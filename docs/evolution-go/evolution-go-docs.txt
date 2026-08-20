@@ -1,0 +1,721 @@
+EVOLUTION GO - WEBHOOKS DOCS
+
+Configuration
+Webhooks
+Webhooks allow Evolution Go to send real-time notifications to your application when events occur on WhatsApp, such as receiving messages, connection updates, calls, and more.
+​
+Quick Start
+Follow these steps to configure and receive webhooks from Evolution Go.
+​
+Prerequisites
+Before configuring webhooks, you need:
+Evolution Go installed and running — see the installation guide
+An instance created — see Getting Started
+Your API Key (GLOBAL_API_KEY configured in .env)
+An accessible URL to receive events
+For quick testing, use webhook.site to generate a temporary URL and view received events in real-time. For local development, use ngrok to expose your local server to the internet.
+​
+Step 1: Connect the instance with webhook
+Configure the webhook when connecting your instance by sending a request to the connection endpoint.
+​
+Method
+POST {BASE_URL}/instance/connect
+​
+Header
+Key	Value	Description
+Content-Type	application/json	Content type
+apikey	YOUR_GLOBAL_API_KEY	Global API key configured in .env
+instanceId	249aad2e-68f9-464f-bc84-aca560c38f0e	UUID of the instance you want to connect
+The API Key is the value of the GLOBAL_API_KEY variable configured in the Evolution Go .env file. Never expose this key publicly. See more details in Getting Started.
+​
+Body
+{
+  "webhookUrl": "https://webhook.site/your-unique-id",
+  "subscribe": ["ALL"],
+  "immediate": true
+}
+​
+cURL Example
+curl -X POST 'http://localhost:8080/instance/connect' \
+  -H 'Content-Type: application/json' \
+  -H 'apikey: YOUR_GLOBAL_API_KEY' \
+  -H 'instanceId: 249aad2e-68f9-464f-bc84-aca560c38f0e' \
+  -d '{
+    "webhookUrl": "https://webhook.site/your-unique-id",
+    "subscribe": ["ALL"],
+    "immediate": true
+  }'
+​
+JavaScript Example
+const response = await fetch('http://localhost:8080/instance/connect', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'apikey': 'YOUR_GLOBAL_API_KEY',
+    'instanceId': '249aad2e-68f9-464f-bc84-aca560c38f0e'
+  },
+  body: JSON.stringify({
+    webhookUrl: 'https://webhook.site/your-unique-id',
+    subscribe: ['ALL'],
+    immediate: true
+  })
+});
+
+const data = await response.json();
+console.log(data);
+​
+Python Example
+import requests
+
+response = requests.post(
+    'http://localhost:8080/instance/connect',
+    headers={
+        'Content-Type': 'application/json',
+        'apikey': 'YOUR_GLOBAL_API_KEY',
+        'instanceId': '249aad2e-68f9-464f-bc84-aca560c38f0e'
+    },
+    json={
+        'webhookUrl': 'https://webhook.site/your-unique-id',
+        'subscribe': ['ALL'],
+        'immediate': True
+    }
+)
+
+print(response.json())
+​
+Step 2: Pair with WhatsApp
+After connecting, you will receive a QRCode event on your webhook with the QR Code image in base64:
+Open WhatsApp on your phone
+Go to Settings > Linked Devices > Link a Device
+Scan the QR Code received on your webhook (decode the qrcode base64 field to display the image)
+If you prefer to use Pairing Code instead of QR Code, send the phone field in the body:
+{
+  "webhookUrl": "https://webhook.site/your-unique-id",
+  "subscribe": ["ALL"],
+  "phone": "5511999999999"
+}
+​
+Step 3: Confirm the connection
+After successful pairing, you will receive a sequence of events: PairSuccess → Connected → OfflineSyncCompleted. If you received these 3 events, your webhook is correctly configured.
+​
+Step 4: Receive messages
+From now on, every message received on WhatsApp will be sent as a Message event to your URL.
+User sends message → WhatsApp → Evolution Go → HTTP POST → Your Webhook
+​
+Processing on your server
+
+Node.js (Express)
+
+Python (Flask)
+const express = require('express');
+const app = express();
+app.use(express.json());
+
+app.post('/webhook', (req, res) => {
+  const { event, data, instanceId } = req.body;
+
+  switch (event) {
+    case 'Message':
+      const sender = data.Info.PushName || data.Info.Sender;
+      const text = data.Message.conversation;
+      console.log(`[${instanceId}] ${sender}: ${text}`);
+      break;
+    case 'Connected':
+      console.log(`Instance ${instanceId} connected!`);
+      break;
+    case 'QRCode':
+      console.log(`QR Code received for ${instanceId}`);
+      break;
+    default:
+      console.log(`Event: ${event}`);
+  }
+
+  res.status(200).json({ received: true });
+});
+
+app.listen(3000, () => console.log('Webhook running on port 3000'));
+Your endpoint must respond with an HTTP 2xx status (200-299) within 30 seconds. Otherwise, Evolution Go will retry up to 5 times with a 30-second interval between each attempt.
+​
+Detailed Configuration
+Webhook configuration is done when connecting an instance, through the POST /instance/connect endpoint.
+​
+Instance Webhook
+When connecting an instance, you can set the webhook URL and the events you want to receive:
+POST /instance/connect
+{
+  "webhookUrl": "https://your-domain.com/webhook",
+  "subscribe": [
+    "MESSAGE",
+    "SEND_MESSAGE",
+    "CONNECTION",
+    "QRCODE"
+  ],
+  "immediate": true,
+  "phone": "5511999999999"
+}
+​
+Parameters
+Parameter	Type	Required	Description
+webhookUrl	string	No	URL that will receive events via HTTP POST
+subscribe	string[]	No	List of event types to receive. If empty, only receives MESSAGE
+immediate	boolean	No	Connect immediately without waiting for QR Code
+phone	string	No	Phone number for pairing
+rabbitmqEnable	string	No	"enabled" to activate RabbitMQ delivery
+websocketEnable	string	No	"enabled" to activate WebSocket delivery
+natsEnable	string	No	"enabled" to activate NATS delivery
+​
+Global Webhook
+You can set a global webhook via environment variable. It will receive events from all instances, in addition to each instance’s individual webhooks.
+.env
+# Global webhook URL (receives events from all instances)
+WEBHOOK_URL=https://your-domain.com/webhook/global
+
+# Include media files in webhook payload (default: true)
+WEBHOOK_FILES=true
+When configured, both webhooks are triggered: the global one (defined by WEBHOOK_URL) and the instance one (defined in webhookUrl). This allows having a centralized monitoring system alongside instance-specific integrations.
+​
+Event Types
+When configuring the webhook, you can subscribe to the following event types:
+Event Type	Description	Included Events
+ALL	Receives all available events	All below
+MESSAGE	Received messages	Message
+SEND_MESSAGE	Sent messages	SendMessage
+READ_RECEIPT	Read confirmations	Receipt (Read, ReadSelf, Delivered)
+PRESENCE	Online/offline presence status	Presence
+HISTORY_SYNC	History synchronization	HistorySync
+CHAT_PRESENCE	Chat presence (typing, recording)	ChatPresence, Archive
+CALL	Call events	CallOffer, CallRelayLatency, CallTerminate
+CONNECTION	Connection status	Connected, PairSuccess, LoggedOut, OfflineSyncCompleted
+LABEL	Label management	LabelEdit, LabelAssociationChat, LabelAssociationMessage
+CONTACT	Contact updates	Contact, PushName
+GROUP	Group events	GroupInfo, JoinedGroup
+NEWSLETTER	Channel/newsletter events	NewsletterJoin, NewsletterLeave
+QRCODE	QR Code events	QRCode, QRTimeout, QRSuccess
+Use "ALL" in the subscribe list to receive all events without needing to list each one individually.
+​
+Payload Structure
+All webhooks are sent as HTTP POST requests with Content-Type: application/json. The base payload structure is:
+{
+  "event": "EventName",
+  "data": { ... },
+  "instanceId": "instance-uuid",
+  "instanceToken": "instance_token"
+}
+Field	Type	Description
+event	string	Name of the event that occurred
+data	object	Event-specific data (varies by event)
+instanceId	string	Instance UUID
+instanceToken	string	Instance authentication token
+​
+Event Payloads
+​
+QRCode
+Emitted when a new QR Code is generated for pairing.
+{
+  "event": "QRCode",
+  "data": {
+    "code": "2@DoOPPlssTlSoDDdtPFXDXNp24ImY0bxwSivPLNbNLtCgXOYGFnsCN1Y64QYQB/r5tAmNqt0zhaf3TyOydXGZYGnKqB3UNTPDx1M=,...",
+    "qrcode": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEA..."
+  },
+  "instanceId": "249aad2e-68f9-464f-bc84-aca560c38f0e",
+  "instanceToken": "2ef79c34-b6e1-4969-9e37-12b3d3a9d1062"
+}
+Field	Type	Description
+data.code	string	QR Code pairing code string
+data.qrcode	string	Base64-encoded QR Code image (PNG)
+​
+PairSuccess
+Emitted when device pairing is successfully completed.
+{
+  "event": "PairSuccess",
+  "data": {
+    "BusinessName": "",
+    "ID": "5511918798714:5@s.whatsapp.net",
+    "Platform": "android",
+    "jid": "5511918798714:5@s.whatsapp.net",
+    "pushName": "",
+    "status": "open"
+  },
+  "instanceId": "249aad2e-68f9-464f-bc84-aca560c38f0e",
+  "instanceToken": "2ef79c34-b6e1-4969-9e37-12b3d3a9d1062"
+}
+Field	Type	Description
+data.BusinessName	string	Business name (for Business accounts)
+data.ID	string	Full JID of the paired device
+data.Platform	string	Device platform (android, ios)
+data.jid	string	WhatsApp JID
+data.pushName	string	Profile display name
+data.status	string	Connection status (open)
+​
+Message
+Emitted when a message is received. The payload varies depending on the message type. All message events share the same base structure in data, with the Info object containing metadata and Message containing the content.
+​
+Common Info object fields
+Field	Type	Description
+Info.Chat	string	Chat JID (individual or group)
+Info.Sender	string	Sender JID
+Info.SenderAlt	string	Alternative sender JID (LID)
+Info.IsFromMe	boolean	true if the message was sent by the instance itself
+Info.IsGroup	boolean	true if the message is from a group
+Info.ID	string	Unique message ID
+Info.Type	string	Message type (text, media, etc.)
+Info.PushName	string	Sender display name
+Info.Timestamp	string	Message date/time (ISO 8601)
+Info.MediaType	string	Media type (image, video, audio, document)
+Info.VerifiedName	object	Verified name information (Business accounts)
+​
+Additional common fields
+Field	Type	Description
+IsEphemeral	boolean	Ephemeral/disappearing message
+IsViewOnce	boolean	View once message
+IsViewOnceV2	boolean	View once v2 message
+IsViewOnceV2Extension	boolean	View once v2 extension
+IsDocumentWithCaption	boolean	Document with caption
+IsLottieSticker	boolean	Animated Lottie sticker
+IsEdit	boolean	Edited message
+​
+Text
+{
+  "event": "Message",
+  "data": {
+    "Info": {
+      "Chat": "557499879409@s.whatsapp.net",
+      "Sender": "557499879409:38@s.whatsapp.net",
+      "SenderAlt": "123234343434@lid",
+      "IsFromMe": false,
+      "IsGroup": false,
+      "ID": "3EB0C05FF2D3A0068B2A2D",
+      "Type": "text",
+      "PushName": "Davidson Gomes",
+      "Timestamp": "2024-10-10T17:17:44-03:00",
+      "MediaType": "",
+      "VerifiedName": {
+        "Certificate": {
+          "details": "CJOzjf3Oh/LGQBIGc21iOndhIg5EYXZpZHNvbiBHb21lcw==",
+          "signature": "KjXTl5LfeToLO6bFflbHyiBQe7a1zly4Wdhhf2XPU1Lq8tj9p03hvYUjbs+M0ChWBQhjy/NBq7+nYCKQlLP3Bw=="
+        },
+        "Details": {
+          "serial": 4651594154187643283,
+          "issuer": "smb:wa",
+          "verifiedName": "Davidson Gomes"
+        }
+      }
+    },
+    "Message": {
+      "conversation": "oi",
+      "messageContextInfo": {
+        "deviceListMetadata": {
+          "senderKeyHash": "jS2BFebH+KJxzA==",
+          "senderTimestamp": 1728407293
+        },
+        "deviceListMetadataVersion": 2
+      }
+    },
+    "IsEphemeral": false,
+    "IsViewOnce": false,
+    "IsEdit": false
+  },
+  "instanceId": "249aad2e-68f9-464f-bc84-aca560c38f0e",
+  "instanceToken": "2ef79c34-b6e1-4969-9e37-12b3d3a9d1062"
+}
+​
+Image
+When WEBHOOK_FILES=true (default), the base64 field contains the encoded image. If MinIO/S3 is configured, mediaUrl is added instead of base64.
+{
+  "event": "Message",
+  "data": {
+    "Info": {
+      "Chat": "557499879409@s.whatsapp.net",
+      "Sender": "557499879409:45@s.whatsapp.net",
+      "IsFromMe": false,
+      "IsGroup": false,
+      "ID": "3EB0546D154AB4C90A11E1",
+      "Type": "media",
+      "PushName": "Davidson Gomes",
+      "Timestamp": "2024-10-23T09:15:41-03:00",
+      "MediaType": "image"
+    },
+    "Message": {
+      "imageMessage": {
+        "url": "https://mmg.whatsapp.net/v/...",
+        "mimetype": "image/jpeg",
+        "fileSha256": "...",
+        "fileLength": 82247,
+        "height": 1600,
+        "width": 1200,
+        "mediaKey": "...",
+        "fileEncSha256": "...",
+        "directPath": "/v/...",
+        "mediaKeyTimestamp": 1729685741
+      },
+      "base64": "/9j/4AAQSkZJRgABAQAAAQABAAD/..."
+    },
+    "IsEphemeral": false,
+    "IsViewOnce": false,
+    "IsEdit": false
+  },
+  "instanceId": "249aad2e-68f9-464f-bc84-aca560c38f0e",
+  "instanceToken": "2ef79c34-b6e1-4969-9e37-12b3d3a9d1062"
+}
+​
+Video
+{
+  "event": "Message",
+  "data": {
+    "Info": {
+      "Chat": "557499879409@s.whatsapp.net",
+      "Sender": "557499879409:45@s.whatsapp.net",
+      "IsFromMe": false,
+      "IsGroup": false,
+      "ID": "3EB0A1B2C3D4E5F6071234",
+      "Type": "media",
+      "PushName": "Davidson Gomes",
+      "Timestamp": "2024-10-23T09:20:00-03:00",
+      "MediaType": "video"
+    },
+    "Message": {
+      "videoMessage": {
+        "url": "https://mmg.whatsapp.net/v/...",
+        "mimetype": "video/mp4",
+        "fileSha256": "...",
+        "fileLength": 1048576,
+        "seconds": 15,
+        "mediaKey": "...",
+        "fileEncSha256": "...",
+        "directPath": "/v/...",
+        "mediaKeyTimestamp": 1729685741
+      },
+      "base64": "AAAAIGZ0eXBpc29tAAACAGlzb21pc28y..."
+    },
+    "IsEphemeral": false,
+    "IsViewOnce": false,
+    "IsEdit": false
+  },
+  "instanceId": "249aad2e-68f9-464f-bc84-aca560c38f0e",
+  "instanceToken": "2ef79c34-b6e1-4969-9e37-12b3d3a9d1062"
+}
+​
+Audio
+{
+  "event": "Message",
+  "data": {
+    "Info": {
+      "Chat": "557499879409@s.whatsapp.net",
+      "Sender": "557499879409:45@s.whatsapp.net",
+      "IsFromMe": false,
+      "IsGroup": false,
+      "ID": "3EB0F1E2D3C4B5A6091234",
+      "Type": "media",
+      "PushName": "Davidson Gomes",
+      "Timestamp": "2024-10-23T09:25:00-03:00",
+      "MediaType": "audio"
+    },
+    "Message": {
+      "audioMessage": {
+        "url": "https://mmg.whatsapp.net/v/...",
+        "mimetype": "audio/ogg; codecs=opus",
+        "fileSha256": "...",
+        "fileLength": 25600,
+        "seconds": 5,
+        "ptt": true,
+        "mediaKey": "...",
+        "fileEncSha256": "...",
+        "directPath": "/v/...",
+        "mediaKeyTimestamp": 1729685741,
+        "waveform": "AAAAAAAAAAAAAAAA..."
+      },
+      "base64": "T2dnUwACAAAAAAAAAAA..."
+    },
+    "IsEphemeral": false,
+    "IsViewOnce": false,
+    "IsEdit": false
+  },
+  "instanceId": "249aad2e-68f9-464f-bc84-aca560c38f0e",
+  "instanceToken": "2ef79c34-b6e1-4969-9e37-12b3d3a9d1062"
+}
+​
+Document
+{
+  "event": "Message",
+  "data": {
+    "Info": {
+      "Chat": "557499879409@s.whatsapp.net",
+      "Sender": "557499879409:45@s.whatsapp.net",
+      "IsFromMe": false,
+      "IsGroup": false,
+      "ID": "3EB0D1C2B3A4E5F6071234",
+      "Type": "media",
+      "PushName": "Davidson Gomes",
+      "Timestamp": "2024-10-23T09:30:00-03:00",
+      "MediaType": "document"
+    },
+    "Message": {
+      "documentMessage": {
+        "url": "https://mmg.whatsapp.net/v/...",
+        "mimetype": "application/pdf",
+        "title": "document.pdf",
+        "fileSha256": "...",
+        "fileLength": 512000,
+        "fileName": "document.pdf",
+        "mediaKey": "...",
+        "fileEncSha256": "...",
+        "directPath": "/v/...",
+        "mediaKeyTimestamp": 1729685741
+      },
+      "base64": "JVBERi0xLjQKJeLj..."
+    },
+    "IsDocumentWithCaption": false,
+    "IsEphemeral": false,
+    "IsViewOnce": false,
+    "IsEdit": false
+  },
+  "instanceId": "249aad2e-68f9-464f-bc84-aca560c38f0e",
+  "instanceToken": "2ef79c34-b6e1-4969-9e37-12b3d3a9d1062"
+}
+When WEBHOOK_FILES=true (default), messages with media include the file content as base64 within the Message object. If MinIO/S3 is configured, the mediaUrl field is added instead of base64.
+​
+Receipt
+Emitted for read and delivery confirmations. The state field at root level indicates the type: Read, ReadSelf, or Delivered.
+{
+  "event": "Receipt",
+  "state": "Read",
+  "data": {
+    "Chat": "557499879409@s.whatsapp.net",
+    "Sender": "5511918798714:5@s.whatsapp.net",
+    "IsFromMe": false,
+    "IsGroup": false,
+    "MessageIDs": ["3EB0C05FF2D3A0068B2A2D"],
+    "Timestamp": "2024-10-10T17:18:00-03:00",
+    "Type": "read"
+  },
+  "instanceId": "249aad2e-68f9-464f-bc84-aca560c38f0e",
+  "instanceToken": "2ef79c34-b6e1-4969-9e37-12b3d3a9d1062"
+}
+Field	Type	Description
+state	string	Confirmation type: Read, ReadSelf, Delivered
+data.Chat	string	Chat JID
+data.Sender	string	Sender JID
+data.MessageIDs	string[]	List of confirmed message IDs
+data.Timestamp	string	Confirmation date/time (ISO 8601)
+​
+Connected
+Emitted when the instance successfully connects to WhatsApp.
+{
+  "event": "Connected",
+  "data": {
+    "status": "open",
+    "jid": "5511918798714:5@s.whatsapp.net",
+    "pushName": "Davidson Gomes"
+  },
+  "instanceId": "249aad2e-68f9-464f-bc84-aca560c38f0e",
+  "instanceToken": "2ef79c34-b6e1-4969-9e37-12b3d3a9d1062"
+}
+​
+LoggedOut
+Emitted when the instance is disconnected from WhatsApp.
+{
+  "event": "LoggedOut",
+  "data": {
+    "Reason": "logged_out"
+  },
+  "instanceId": "249aad2e-68f9-464f-bc84-aca560c38f0e",
+  "instanceToken": "2ef79c34-b6e1-4969-9e37-12b3d3a9d1062"
+}
+​
+OfflineSyncCompleted
+Emitted when the offline message synchronization is completed after reconnection.
+{
+  "event": "OfflineSyncCompleted",
+  "data": {
+    "Count": 42
+  },
+  "instanceId": "249aad2e-68f9-464f-bc84-aca560c38f0e",
+  "instanceToken": "2ef79c34-b6e1-4969-9e37-12b3d3a9d1062"
+}
+Field	Type	Description
+data.Count	int	Number of messages synced offline
+​
+CallOffer
+Emitted when a call is received.
+{
+  "event": "CallOffer",
+  "data": {
+    "From": "557499879409@s.whatsapp.net",
+    "Timestamp": "2024-10-10T17:20:00-03:00",
+    "CallCreator": "557499879409@s.whatsapp.net",
+    "CallID": "A1B2C3D4E5F6",
+    "RemotePlatform": "android",
+    "RemoteVersion": "2.24.10.12"
+  },
+  "instanceId": "249aad2e-68f9-464f-bc84-aca560c38f0e",
+  "instanceToken": "2ef79c34-b6e1-4969-9e37-12b3d3a9d1062"
+}
+Field	Type	Description
+data.From	string	JID of the caller
+data.Timestamp	string	Call date/time (ISO 8601)
+data.CallCreator	string	JID of the call creator
+data.CallID	string	Unique call ID
+data.RemotePlatform	string	Caller’s platform (android, ios)
+data.RemoteVersion	string	Caller’s WhatsApp version
+​
+CallRelayLatency
+Emitted with latency information during an ongoing call.
+{
+  "event": "CallRelayLatency",
+  "data": {
+    "From": "557499879409@s.whatsapp.net",
+    "Timestamp": "2024-10-10T17:20:05-03:00",
+    "CallCreator": "557499879409@s.whatsapp.net",
+    "CallID": "A1B2C3D4E5F6"
+  },
+  "instanceId": "249aad2e-68f9-464f-bc84-aca560c38f0e",
+  "instanceToken": "2ef79c34-b6e1-4969-9e37-12b3d3a9d1062"
+}
+​
+CallTerminate
+Emitted when a call is ended.
+{
+  "event": "CallTerminate",
+  "data": {
+    "From": "557499879409@s.whatsapp.net",
+    "Timestamp": "2024-10-10T17:21:00-03:00",
+    "CallCreator": "557499879409@s.whatsapp.net",
+    "CallID": "A1B2C3D4E5F6",
+    "Reason": "busy"
+  },
+  "instanceId": "249aad2e-68f9-464f-bc84-aca560c38f0e",
+  "instanceToken": "2ef79c34-b6e1-4969-9e37-12b3d3a9d1062"
+}
+Field	Type	Description
+data.Reason	string	Termination reason (busy, timeout, etc.)
+​
+JoinedGroup
+Emitted when the instance joins a group.
+{
+  "event": "JoinedGroup",
+  "data": {
+    "Reason": "invite",
+    "JID": "120363012345678901@g.us",
+    "GroupName": {
+      "Name": "Evolution Team",
+      "NameSetAt": "2024-10-01T10:00:00-03:00"
+    },
+    "GroupCreated": "2024-10-01T10:00:00-03:00",
+    "Participants": [
+      {
+        "JID": "5511918798714@s.whatsapp.net",
+        "IsAdmin": true,
+        "IsSuperAdmin": true
+      }
+    ]
+  },
+  "instanceId": "249aad2e-68f9-464f-bc84-aca560c38f0e",
+  "instanceToken": "2ef79c34-b6e1-4969-9e37-12b3d3a9d1062"
+}
+Field	Type	Description
+data.Reason	string	Reason for joining (invite, etc.)
+data.JID	string	Group JID
+data.GroupName	object	Group name information
+data.Participants	array	List of participants with roles
+​
+GroupInfo
+Emitted when group information is updated (name, description, participants, etc.).
+{
+  "event": "GroupInfo",
+  "data": {
+    "JID": "120363012345678901@g.us",
+    "Sender": "557499879409@s.whatsapp.net",
+    "Timestamp": "2024-10-10T17:25:00-03:00",
+    "Name": {
+      "Name": "Evolution Team - New Name",
+      "NameSetAt": "2024-10-10T17:25:00-03:00",
+      "NameSetBy": "557499879409@s.whatsapp.net"
+    },
+    "Join": [],
+    "Leave": [],
+    "Promote": [],
+    "Demote": []
+  },
+  "instanceId": "249aad2e-68f9-464f-bc84-aca560c38f0e",
+  "instanceToken": "2ef79c34-b6e1-4969-9e37-12b3d3a9d1062"
+}
+Field	Type	Description
+data.JID	string	Group JID
+data.Sender	string	JID of who made the change
+data.Timestamp	string	Change date/time (ISO 8601)
+data.Name	object	New group name (if changed)
+data.Topic	object	New group description (if changed)
+data.Join	array	JIDs of users who joined the group
+data.Leave	array	JIDs of users who left the group
+data.Promote	array	JIDs of users promoted to admin
+data.Demote	array	JIDs of users demoted from admin
+​
+NewsletterJoin
+Emitted when the instance joins a channel/newsletter.
+{
+  "event": "NewsletterJoin",
+  "data": {
+    "id": "120363123456789012@newsletter",
+    "state": {
+      "type": "ACTIVE"
+    },
+    "thread_metadata": {
+      "creation_time": "1696118400",
+      "invite": "ABC123DEF456",
+      "name": {
+        "text": "Evolution Go News",
+        "id": "1234567890"
+      },
+      "description": {
+        "text": "Evolution Go official channel"
+      },
+      "subscribers_count": 1500,
+      "verification": "VERIFIED",
+      "picture": {
+        "url": "https://pps.whatsapp.net/v/..."
+      }
+    },
+    "viewer_metadata": {
+      "mute": "OFF",
+      "role": "SUBSCRIBER"
+    }
+  },
+  "instanceId": "249aad2e-68f9-464f-bc84-aca560c38f0e",
+  "instanceToken": "2ef79c34-b6e1-4969-9e37-12b3d3a9d1062"
+}
+​
+Retry Policy
+Evolution Go has an automatic retry system to ensure webhook delivery:
+Setting	Value
+Maximum retries	5
+Interval between retries	30 seconds
+HTTP Method	POST
+Content-Type	application/json
+Expected response	HTTP status 2xx
+If all 5 attempts fail, the event is discarded and an error log is recorded.
+Make sure your webhook endpoint responds with an HTTP 2xx status (200-299) to confirm receipt. Any response outside this range will be treated as a failure and will trigger a retry.
+​
+Alternative Delivery Channels
+In addition to HTTP webhooks, Evolution Go supports other event delivery channels:
+RabbitMQ / AMQP
+Send via AMQP queues. Configure with rabbitmqEnable: "enabled" on instance connection and the AMQP_URL, AMQP_GLOBAL_ENABLED, and AMQP_GLOBAL_EVENTS variables.
+NATS
+Send via NATS messaging. Configure with natsEnable: "enabled" on connection and the NATS_URL, NATS_GLOBAL_ENABLED, and NATS_GLOBAL_EVENTS variables.
+WebSocket
+Receive events in real-time via WebSocket. Configure with websocketEnable: "enabled" on instance connection.
+Multiple channels can be activated simultaneously. For example, you can receive events via HTTP webhook and RabbitMQ at the same time.
+​
+Environment Variables
+All environment variables related to events and webhooks:
+Variable	Description	Default
+WEBHOOK_URL	Global webhook URL	-
+WEBHOOK_FILES	Include media files in payloads	true
+AMQP_URL	RabbitMQ connection URL	-
+AMQP_GLOBAL_ENABLED	Enable global RabbitMQ queues	false
+AMQP_GLOBAL_EVENTS	Events for global queues (comma-separated)	-
+AMQP_SPECIFIC_EVENTS	Events for specific queues (comma-separated)	-
+NATS_URL	NATS connection URL	-
+NATS_GLOBAL_ENABLED	Enable global NATS	false
+NATS_GLOBAL_EVENTS	Events for global NATS (comma-separated)	-
+EVENT_IGNORE_GROUP	Ignore group events	false
+EVENT_IGNORE_STATUS	Ignore status/stories events	false

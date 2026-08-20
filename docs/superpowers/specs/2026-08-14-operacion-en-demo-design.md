@@ -204,5 +204,5 @@ con su evidencia enlazada.
 Al cierre: `npm test`, `npm run typecheck` y `npm run build`, más inspección
 visual de `/mirror?demo=1` sin scroll horizontal de página.
 
-Queda pendiente de arreglo un defecto previo: `MirrorScreen.demo.test.tsx` falla
-con `document is not defined` por falta de entorno jsdom en la corrida.
+Las pruebas se corren con `npm test`, que ya fija el entorno jsdom. Invocar
+`vitest` directamente sin ese entorno falla con `document is not defined`.
