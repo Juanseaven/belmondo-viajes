@@ -176,6 +176,11 @@ services:
       # Solo se usan si `users` está vacía. Ver .env.example.
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+
+      # Requisitos de viaje. Ver .env.example.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      REQUISITOS_CONTACTO: ${REQUISITOS_CONTACTO:-}
+      REQUISITOS_PASSPORT_INDEX: ${REQUISITOS_PASSPORT_INDEX:-true}
     volumes:
       - blobs:/data/blobs
     networks:

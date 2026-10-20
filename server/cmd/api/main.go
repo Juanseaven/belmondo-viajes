@@ -33,6 +33,7 @@ import (
 	"github.com/juanseaven/viajes-crm/server/internal/modules"
 	"github.com/juanseaven/viajes-crm/server/internal/modules/mirror"
 	"github.com/juanseaven/viajes-crm/server/internal/modules/operaciones"
+	"github.com/juanseaven/viajes-crm/server/internal/modules/requisitos"
 )
 
 func main() {
@@ -93,8 +94,10 @@ func run() error {
 	// --- Módulos --------------------------------------------------------------
 	// Esta lista ES el sistema: migraciones, rutas y ciclo de vida se derivan de
 	// recorrerla. Para sumar un módulo, se añade aquí.
+	reqs := requisitos.New(k)
 	registry := modules.NewRegistry(log,
 		mirror.New(k),
+		reqs,
 		operaciones.New(k),
 	)
 

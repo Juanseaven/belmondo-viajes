@@ -1,0 +1,399 @@
+Passport,Destination,Requirement
+AR,AL,90
+AR,DZ,visa required
+AR,AD,90
+AR,AO,30
+AR,AG,180
+AR,AR,-1
+AR,AM,180
+AR,AU,e-visa
+AR,AT,90
+AR,AZ,e-visa
+AR,BS,90
+AR,BH,visa on arrival
+AR,BD,visa on arrival
+AR,BB,90
+AR,BY,90
+AR,BE,90
+AR,BZ,90
+AR,BJ,e-visa
+AR,BT,e-visa
+AR,BO,90
+AR,BA,90
+AR,BW,90
+AR,BR,90
+AR,BN,visa required
+AR,BG,90
+AR,BF,e-visa
+AR,BI,visa on arrival
+AR,KH,visa on arrival
+AR,CM,e-visa
+AR,CA,visa required
+AR,CV,visa on arrival
+AR,CF,visa required
+AR,TD,e-visa
+AR,CL,90
+AR,CN,30
+AR,CO,90
+AR,KM,visa on arrival
+AR,CG,visa required
+AR,CD,e-visa
+AR,CR,180
+AR,CI,eta
+AR,HR,90
+AR,CU,e-visa
+AR,CY,90
+AR,CZ,90
+AR,DK,90
+AR,DJ,visa on arrival
+AR,DM,180
+AR,DO,30
+AR,EC,90
+AR,EG,visa on arrival
+AR,SV,180
+AR,GQ,e-visa
+AR,ER,visa required
+AR,EE,90
+AR,SZ,30
+AR,ET,visa on arrival
+AR,FJ,120
+AR,FI,90
+AR,FR,90
+AR,GA,e-visa
+AR,GM,visa required
+AR,GE,360
+AR,DE,90
+AR,GH,visa required
+AR,GR,90
+AR,GD,30
+AR,GT,90
+AR,GN,e-visa
+AR,GW,visa on arrival
+AR,GY,90
+AR,HT,90
+AR,HN,90
+AR,HK,90
+AR,HU,90
+AR,IS,90
+AR,IN,e-visa
+AR,ID,visa on arrival
+AR,IR,visa on arrival
+AR,IQ,e-visa
+AR,IE,90
+AR,IL,eta
+AR,IT,90
+AR,JM,30
+AR,JP,90
+AR,JO,visa on arrival
+AR,KZ,30
+AR,KE,eta
+AR,KI,90
+AR,XK,90
+AR,KW,visa required
+AR,KG,60
+AR,LA,visa on arrival
+AR,LV,90
+AR,LB,visa on arrival
+AR,LS,visa required
+AR,LR,e-visa
+AR,LY,e-visa
+AR,LI,90
+AR,LT,90
+AR,LU,90
+AR,MO,30
+AR,MG,visa on arrival
+AR,MW,visa on arrival
+AR,MY,90
+AR,MV,visa on arrival
+AR,ML,visa required
+AR,MT,90
+AR,MH,visa on arrival
+AR,MR,e-visa
+AR,MU,90
+AR,MX,180
+AR,FM,30
+AR,MD,90
+AR,MC,90
+AR,MN,90
+AR,ME,90
+AR,MA,90
+AR,MZ,visa on arrival
+AR,MM,e-visa
+AR,NA,visa on arrival
+AR,NR,visa required
+AR,NP,visa on arrival
+AR,NL,90
+AR,NZ,eta
+AR,NI,90
+AR,NE,visa required
+AR,NG,e-visa
+AR,KP,visa required
+AR,MK,90
+AR,NO,90
+AR,OM,visa on arrival
+AR,PK,e-visa
+AR,PW,visa on arrival
+AR,PS,visa free
+AR,PA,90
+AR,PG,eta
+AR,PY,90
+AR,PE,180
+AR,PH,30
+AR,PL,90
+AR,PT,90
+AR,QA,visa on arrival
+AR,RO,90
+AR,RU,90
+AR,RW,visa on arrival
+AR,KN,eta
+AR,LC,42
+AR,WS,visa on arrival
+AR,SM,90
+AR,ST,e-visa
+AR,SA,e-visa
+AR,SN,visa on arrival
+AR,RS,90
+AR,SC,90
+AR,SL,e-visa
+AR,SG,30
+AR,SK,90
+AR,SI,90
+AR,SB,visa on arrival
+AR,SO,e-visa
+AR,ZA,90
+AR,KR,eta
+AR,SS,e-visa
+AR,ES,90
+AR,LK,visa on arrival
+AR,VC,90
+AR,SD,visa required
+AR,SR,180
+AR,SE,90
+AR,CH,90
+AR,SY,e-visa
+AR,TW,visa required
+AR,TJ,30
+AR,TZ,visa on arrival
+AR,TH,90
+AR,TL,visa on arrival
+AR,TG,e-visa
+AR,TO,visa required
+AR,TT,90
+AR,TN,90
+AR,TM,visa required
+AR,TV,visa on arrival
+AR,TR,90
+AR,UG,e-visa
+AR,UA,90
+AR,AE,90
+AR,GB,eta
+AR,US,visa required
+AR,UY,90
+AR,UZ,30
+AR,VU,120
+AR,VA,90
+AR,VE,90
+AR,VN,e-visa
+AR,YE,visa required
+AR,ZM,90
+AR,ZW,visa on arrival
+AR,AF,visa required
+IT,AL,90
+IT,DZ,visa required
+IT,AD,visa free
+IT,AO,30
+IT,AG,180
+IT,AR,90
+IT,AM,180
+IT,AU,eta
+IT,AT,visa free
+IT,AZ,e-visa
+IT,BS,240
+IT,BH,visa on arrival
+IT,BD,visa on arrival
+IT,BB,90
+IT,BY,30
+IT,BE,visa free
+IT,BZ,visa free
+IT,BJ,e-visa
+IT,BT,e-visa
+IT,BO,90
+IT,BA,90
+IT,BW,90
+IT,BR,90
+IT,BN,90
+IT,BG,visa free
+IT,BF,e-visa
+IT,BI,visa on arrival
+IT,KH,visa on arrival
+IT,CM,e-visa
+IT,CA,eta
+IT,CV,30
+IT,CF,visa required
+IT,TD,e-visa
+IT,CL,90
+IT,CN,30
+IT,CO,90
+IT,KM,visa on arrival
+IT,CG,visa required
+IT,CD,e-visa
+IT,CR,180
+IT,CI,eta
+IT,HR,visa free
+IT,CU,e-visa
+IT,CY,visa free
+IT,CZ,visa free
+IT,DK,visa free
+IT,DJ,visa on arrival
+IT,DM,180
+IT,DO,30
+IT,EC,90
+IT,EG,visa on arrival
+IT,SV,180
+IT,GQ,e-visa
+IT,ER,visa required
+IT,EE,visa free
+IT,SZ,30
+IT,ET,visa on arrival
+IT,FJ,120
+IT,FI,visa free
+IT,FR,visa free
+IT,GA,e-visa
+IT,GM,90
+IT,GE,360
+IT,DE,visa free
+IT,GH,visa required
+IT,GR,visa free
+IT,GD,90
+IT,GT,90
+IT,GN,e-visa
+IT,GW,visa on arrival
+IT,GY,90
+IT,HT,90
+IT,HN,90
+IT,HK,90
+IT,HU,visa free
+IT,IS,visa free
+IT,IN,e-visa
+IT,ID,visa on arrival
+IT,IR,visa on arrival
+IT,IQ,e-visa
+IT,IE,visa free
+IT,IL,eta
+IT,IT,-1
+IT,JM,90
+IT,JP,90
+IT,JO,visa on arrival
+IT,KZ,30
+IT,KE,eta
+IT,KI,90
+IT,XK,90
+IT,KW,visa on arrival
+IT,KG,60
+IT,LA,visa on arrival
+IT,LV,visa free
+IT,LB,visa on arrival
+IT,LS,14
+IT,LR,visa required
+IT,LY,e-visa
+IT,LI,visa free
+IT,LT,visa free
+IT,LU,visa free
+IT,MO,90
+IT,MG,visa on arrival
+IT,MW,30
+IT,MY,90
+IT,MV,visa on arrival
+IT,ML,visa required
+IT,MT,visa free
+IT,MH,90
+IT,MR,e-visa
+IT,MU,90
+IT,MX,180
+IT,FM,90
+IT,MD,90
+IT,MC,visa free
+IT,MN,30
+IT,ME,90
+IT,MA,90
+IT,MZ,30
+IT,MM,e-visa
+IT,NA,visa on arrival
+IT,NR,visa required
+IT,NP,visa on arrival
+IT,NL,visa free
+IT,NZ,eta
+IT,NI,90
+IT,NE,visa required
+IT,NG,e-visa
+IT,KP,visa required
+IT,MK,90
+IT,NO,visa free
+IT,OM,visa on arrival
+IT,PK,e-visa
+IT,PW,90
+IT,PS,visa free
+IT,PA,90
+IT,PG,eta
+IT,PY,90
+IT,PE,90
+IT,PH,30
+IT,PL,visa free
+IT,PT,visa free
+IT,QA,visa on arrival
+IT,RO,visa free
+IT,RU,e-visa
+IT,RW,visa on arrival
+IT,KN,eta
+IT,LC,90
+IT,WS,90
+IT,SM,visa free
+IT,ST,15
+IT,SA,visa on arrival
+IT,SN,90
+IT,RS,90
+IT,SC,90
+IT,SL,visa on arrival
+IT,SG,90
+IT,SK,visa free
+IT,SI,visa free
+IT,SB,90
+IT,SO,e-visa
+IT,ZA,90
+IT,KR,90
+IT,SS,e-visa
+IT,ES,visa free
+IT,LK,visa on arrival
+IT,VC,90
+IT,SD,visa required
+IT,SR,eta
+IT,SE,visa free
+IT,CH,visa free
+IT,SY,e-visa
+IT,TW,90
+IT,TJ,30
+IT,TZ,visa on arrival
+IT,TH,60
+IT,TL,90
+IT,TG,e-visa
+IT,TO,90
+IT,TT,90
+IT,TN,90
+IT,TM,visa required
+IT,TV,90
+IT,TR,90
+IT,UG,e-visa
+IT,UA,90
+IT,AE,90
+IT,GB,eta
+IT,US,eta
+IT,UY,90
+IT,UZ,30
+IT,VU,120
+IT,VA,visa free
+IT,VE,90
+IT,VN,45
+IT,YE,visa required
+IT,ZM,90
+IT,ZW,visa on arrival
+IT,AF,visa required

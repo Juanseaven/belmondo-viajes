@@ -63,6 +63,16 @@ type Config struct {
 	// crear usuarios exige ya ser admin.
 	SeedAdminEmail    string
 	SeedAdminPassword string
+
+	// Requisitos de viaje. Sin clave de Anthropic el módulo arranca igual: las
+	// reglas nuevas quedan sin fuentes y todo cuenta como «verificar».
+	AnthropicAPIKey string
+	// RequisitosContact va en el User-Agent de las consultas a Wikipedia, que
+	// pide un contacto a quien la lee de forma automatizada.
+	RequisitosContact string
+	// PassportIndexEnabled enciende la segunda opinión sobre la visa. Se apaga
+	// si sus datos quedan viejos y solo generan conflictos.
+	PassportIndexEnabled bool
 }
 
 func Load() (*Config, error) {
@@ -103,6 +113,10 @@ func Load() (*Config, error) {
 
 		SeedAdminEmail:    os.Getenv("SEED_ADMIN_EMAIL"),
 		SeedAdminPassword: os.Getenv("SEED_ADMIN_PASSWORD"),
+
+		AnthropicAPIKey:      os.Getenv("ANTHROPIC_API_KEY"),
+		RequisitosContact:    os.Getenv("REQUISITOS_CONTACTO"),
+		PassportIndexEnabled: envBool("REQUISITOS_PASSPORT_INDEX", true),
 	}
 
 	// Si WEBHOOK_API_KEY no se define, se usa la de Evolution: es la que esa
@@ -171,6 +185,15 @@ func envInt(key string, fallback int) int {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			return n
+		}
+	}
+	return fallback
+}
+
+func envBool(key string, fallback bool) bool {
+	if v := os.Getenv(key); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
 		}
 	}
 	return fallback
