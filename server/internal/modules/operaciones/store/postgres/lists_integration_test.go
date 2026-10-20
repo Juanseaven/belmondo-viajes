@@ -47,7 +47,13 @@ func (f *listFixture) trip(t *testing.T, name, destination string, depart *time.
 	if err != nil {
 		t.Fatalf("alta de %s: %v", name, err)
 	}
-	if _, err := f.pool.Exec(f.ctx, `UPDATE controls SET status = 'cerrado' WHERE trip_id = $1`, trip.ID); err != nil {
+	// El control de documentos sigue al dato aunque sea por acción: sin
+	// pasajeros, el próximo recálculo lo reabriría. Se le quita el dato para que
+	// solo cuente lo que cada test abre a mano.
+	if _, err := f.pool.Exec(f.ctx,
+		`UPDATE controls SET status = 'cerrado',
+		        derives = CASE WHEN closing = 'derivado' THEN derives END
+		  WHERE trip_id = $1`, trip.ID); err != nil {
 		t.Fatalf("cerrando controles: %v", err)
 	}
 	return trip

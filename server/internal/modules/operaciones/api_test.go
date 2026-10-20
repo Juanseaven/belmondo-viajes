@@ -193,7 +193,8 @@ func TestNombreYMigracionesDelModuloSonEstables(t *testing.T) {
 		t.Fatalf("nombre = %q", m.Name())
 	}
 	entries, err := fs.ReadDir(m.Migrations(), ".")
-	if err != nil || len(entries) != 2 || entries[0].Name() != "0001_init.sql" || entries[1].Name() != "0002_trip_drafts.sql" {
+	if err != nil || len(entries) != 3 || entries[0].Name() != "0001_init.sql" || entries[1].Name() != "0002_trip_drafts.sql" ||
+		entries[2].Name() != "0003_documentos_vigentes.sql" {
 		t.Fatalf("migraciones = %v, err = %v", entries, err)
 	}
 }

@@ -142,16 +142,18 @@ function ControlRow({ control, onRun, onClose, onReopen }: { control: Control; o
       </span>
       {!done && control.closing === "accion" && <Button size="sm" variant="outline" onClick={() => onRun(control)}>{control.actionLabel || "Hacer ahora"}</Button>}
       {!done && control.closing === "manual" && <Button size="sm" variant="outline" onClick={() => onClose(control)}>Confirmar</Button>}
-      {done && control.closing !== "derivado" && <Button size="sm" variant="ghost" onClick={() => onReopen(control)}>Reabrir</Button>}
+      {/* Sin prueba, el cierre fue del dato: lo gobierna el dato, no una persona. */}
+      {done && control.closing !== "derivado" && control.evidence.length > 0 && <Button size="sm" variant="ghost" onClick={() => onReopen(control)}>Reabrir</Button>}
     </li>
   );
 }
 
 /** Todo dice quién y cuándo: nadie se acuerda de un viaje que no vendió. */
 function closedBy(control: Control) {
-  if (control.closing === "derivado") return "Dato cargado";
   const last = [...control.evidence].sort((a, b) => b.closedAt.localeCompare(a.closedAt))[0];
-  if (!last) return "Cerrado";
+  // Un derivado, o uno por acción que el dato cerró antes de que hiciera falta
+  // avisar: no hubo persona ni mensaje.
+  if (control.closing === "derivado" || !last) return "Dato cargado";
   return `Cerrado${last.closedByName ? ` por ${last.closedByName}` : ""} · ${shortInstant(last.closedAt)}`;
 }
 

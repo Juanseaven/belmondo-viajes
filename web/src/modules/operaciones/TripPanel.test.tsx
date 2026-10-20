@@ -197,3 +197,15 @@ it("un monto ilegible no se guarda y dice por qué", () => {
   expect(screen.getByRole("alert").textContent).toContain("Total USD");
   expect(onSavePayment).not.toHaveBeenCalled();
 });
+
+it("un control por acción que cerró el dato lo dice y no se reabre a mano", () => {
+  const byData: TripDetail = { ...trip, controls: [{
+    id: "doc", itemId: "control-vto-doc", stage: "control", closing: "accion", title: "Vencimiento de DNI o pasaporte",
+    actionLabel: "Avisar al pasajero", critical: true, status: "cerrado", dueAt: "2026-08-27", evidence: [],
+  }] };
+  render(<TripPanel trip={byData} {...noop} />);
+  fireEvent.click(screen.getByRole("tab", { name: "Controles" }));
+
+  expect(screen.getByText("Dato cargado")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Reabrir" })).toBeNull();
+});

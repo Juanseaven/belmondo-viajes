@@ -58,6 +58,10 @@ const (
 	DerivaTotalArs         DerivedField = "pago.total_ars"
 	DerivaCambio           DerivedField = "pago.cambio"
 	DerivaMetodoPago       DerivedField = "pago.metodo"
+	// DerivaDocumentosVigentes: todos los pasajeros tienen un documento que
+	// vence después del regreso. Lo usa un control por acción, no un derivado:
+	// el dato lo cierra, pero si falta, el aviso al pasajero también.
+	DerivaDocumentosVigentes DerivedField = "pasajero.documentos_vigentes"
 )
 
 // ControlStatus es el estado de la copia que cada viaje guarda de un renglón.

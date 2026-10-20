@@ -200,6 +200,14 @@ El control del documento tiene un comportamiento propio que sale gratis de tener
 el dato: si algún pasajero tiene un documento que vence **antes de la fecha de
 regreso**, el control se marca crítico solo, sin que nadie lo mire.
 
+**Corrección (2026-10-20).** Lo de arriba no alcanzaba: el control era solo «por
+acción» y nunca miraba los documentos, así que un pasaporte vigente hasta 2028
+seguía dando la alerta. Ahora sigue al dato además de cerrarse por acción: se
+cierra solo cuando todos los pasajeros tienen un documento que vence después del
+regreso, y queda abierto si falta un vencimiento o alguno no llega. Mandar el
+aviso lo sigue cerrando, y ese cierre —que tiene el mensaje como prueba— no se
+deshace aunque el documento siga por vencer (migración `0003`).
+
 ## Qué se ve en pantalla
 
 Todo pasa donde ya trabajan. No hay pantalla nueva, ni menú nuevo, ni lugar al

@@ -19,7 +19,9 @@ type ChecklistItem struct {
 	// la agencia expuesta. Es lo que el chip de la bandeja muestra primero.
 	Critical bool
 
-	// Derives dice qué dato cumple el control, cuando el cierre es derivado.
+	// Derives dice qué dato cumple el control. En un derivado es la única forma
+	// de cerrarlo; en uno por acción es un atajo: si el dato ya está, no hay a
+	// quién avisar.
 	Derives DerivedField
 
 	// ActionLabel y Message son el botón y el texto que precarga, cuando el
@@ -247,8 +249,11 @@ var control = []ChecklistItem{
 	},
 	{
 		ID: "control-vto-doc", Stage: StageControl, Title: "Vencimiento de DNI o pasaporte",
-		Task:    "Avisar que el documento vence",
-		Closing: ClosingAccion, Critical: true, base: antesDeSalida, days: 60,
+		Task: "Revisar el vencimiento de los documentos",
+		// Se cierra solo si todos los documentos llegan al regreso. Si falta un
+		// vencimiento o alguno no llega, queda abierto hasta cargarlo o avisar.
+		Closing: ClosingAccion, Derives: DerivaDocumentosVigentes,
+		Critical: true, base: antesDeSalida, days: 60,
 		ActionLabel: "Avisar al pasajero",
 		Message:     "{pax}, un aviso importante: hay un documento que vence antes del regreso del viaje y hay que renovarlo. ¿Querés que te pase los turnos disponibles?",
 	},

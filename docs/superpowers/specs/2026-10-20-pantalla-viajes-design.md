@@ -135,7 +135,7 @@ abiertos.
 | control-vto-alojamiento | Registrar el vencimiento del alojamiento |
 | control-checkin | Agendar el check in del vuelo de ida |
 | control-checkout | Agendar el check in del vuelo de vuelta |
-| control-vto-doc | Avisar que el documento vence |
+| control-vto-doc | Revisar el vencimiento de los documentos |
 | control-flight-plus | Enviar la Flight Plus |
 | control-asistencia | Emitir la asistencia médica |
 | control-no-reembolsable | Informar el monto no reembolsable |

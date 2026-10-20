@@ -238,3 +238,59 @@ func seedMessage(t *testing.T, ctx context.Context, p *pgxpool.Pool, convID, ins
 	}
 	return id
 }
+
+// El control del documento mira los vencimientos cargados. Antes era solo «por
+// acción» y no miraba nada: un pasaporte vigente hasta 2028 seguía dando la
+// alerta de vencido hasta que alguien mandara un aviso que no hacía falta.
+//
+// Se cierra solo cuando todos los pasajeros tienen un documento que llega al
+// regreso. Un aviso mandado lo cierra igual, y ese cierre —que tiene prueba— no
+// se deshace aunque el documento siga por vencer.
+func TestElControlDelDocumentoMiraLosVencimientos(t *testing.T) {
+	ctx, pool := testDB(t)
+	s := New(pool)
+	f := escenario(t, ctx, pool, s) // vuelve el 2026-12-24
+
+	if got := estado(t, ctx, pool, f.trip, "control-vto-doc"); got != "abierto" {
+		t.Fatalf("sin pasajeros: %s, se esperaba abierto", got)
+	}
+
+	vigente := "2028-05-01"
+	ana, err := s.AddPassenger(ctx, store.NewPassenger{TripID: f.trip, FirstName: "Ana", LastName: "Pérez",
+		Kind: "adulto", DocumentType: "DNI", DocumentExpiresAt: ptrTime(fecha(vigente)), CreatedBy: f.user})
+	if err != nil {
+		t.Fatalf("pasajero: %v", err)
+	}
+	if got := estado(t, ctx, pool, f.trip, "control-vto-doc"); got != "cerrado" {
+		t.Fatalf("documento vigente hasta después del regreso: %s, se esperaba cerrado", got)
+	}
+
+	tomas, err := s.AddPassenger(ctx, store.NewPassenger{TripID: f.trip, FirstName: "Tomás", LastName: "Pérez",
+		Kind: "menor", CreatedBy: f.user})
+	if err != nil {
+		t.Fatalf("segundo pasajero: %v", err)
+	}
+	if got := estado(t, ctx, pool, f.trip, "control-vto-doc"); got != "abierto" {
+		t.Fatalf("un pasajero sin vencimiento cargado: %s, se esperaba abierto", got)
+	}
+
+	vence := "2026-12-20"
+	if _, err := s.UpdatePassenger(ctx, tomas.ID, store.PassengerPatch{DocumentExpiresAt: &vence}); err != nil {
+		t.Fatalf("vencimiento: %v", err)
+	}
+	if got := estado(t, ctx, pool, f.trip, "control-vto-doc"); got != "abierto" {
+		t.Fatalf("un documento que vence antes del regreso: %s, se esperaba abierto", got)
+	}
+
+	mensaje := seedMessage(t, ctx, pool, f.conversation, f.instance, f.contact, f.user)
+	if err := s.CloseControl(ctx, store.CloseControl{ControlID: control(t, ctx, pool, f.trip, "control-vto-doc"),
+		UserID: f.user, MessageID: mensaje}); err != nil {
+		t.Fatalf("cerrando con el aviso: %v", err)
+	}
+	if _, err := s.UpdatePassenger(ctx, ana.ID, store.PassengerPatch{DocumentNumber: &vigente}); err != nil {
+		t.Fatalf("otra edición: %v", err)
+	}
+	if got := estado(t, ctx, pool, f.trip, "control-vto-doc"); got != "cerrado" {
+		t.Fatalf("cerrado con el aviso como prueba: %s, no debería reabrirse solo", got)
+	}
+}
