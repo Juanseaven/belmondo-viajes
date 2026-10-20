@@ -36,6 +36,7 @@ type repository interface {
 	UpdateCustomer(context.Context, string, store.CustomerPatch) (store.Customer, error)
 	LinkContact(context.Context, string, string, string) error
 	Inbox(context.Context, []string) ([]store.InboxItem, error)
+	Sellers(context.Context) ([]store.Seller, error)
 }
 
 type Module struct {
@@ -84,6 +85,7 @@ func (m *Module) Mount(r modules.Router) {
 	r.Authed("PATCH /clientes/{id}", handler(m.updateCustomer))
 	r.Authed("POST /clientes/{id}/contactos", handler(m.linkContact))
 	r.Authed("GET /bandeja", handler(m.inbox))
+	r.Authed("GET /vendedores", handler(m.sellers))
 }
 
 func (m *Module) Start(context.Context) error    { return nil }

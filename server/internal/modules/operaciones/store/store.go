@@ -124,6 +124,13 @@ type Payment struct {
 	UpdatedBy        string     `json:"-"`
 }
 
+// Seller es un usuario al que se le puede asignar un viaje. Se lee de la tabla
+// users del kernel; operaciones nunca la escribe.
+type Seller struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 type Customer struct {
 	ID             string    `json:"id"`
 	Name           string    `json:"name"`

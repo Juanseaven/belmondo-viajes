@@ -323,6 +323,18 @@ func (m *Module) inbox(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
+// sellers alimenta el selector de vendedor. Lo sirve operaciones y no el kernel
+// porque /api/users es de administración: listar quién vende no tiene por qué
+// exigir rol admin.
+func (m *Module) sellers(w http.ResponseWriter, r *http.Request) {
+	items, err := m.repo.Sellers(r.Context())
+	if err != nil {
+		m.storeError(w, "listando vendedores", err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
 func (m *Module) storeError(w http.ResponseWriter, action string, err error) {
 	switch {
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, store.ErrControlInexistente):

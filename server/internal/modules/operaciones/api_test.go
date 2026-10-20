@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +20,7 @@ type fakeRepo struct {
 	created store.NewTrip
 	trip    store.Trip
 	inbox   []store.InboxItem
+	sellers []store.Seller
 }
 
 func (f *fakeRepo) CreateTrip(_ context.Context, n store.NewTrip) (store.Trip, error) {
@@ -56,6 +58,7 @@ func (f *fakeRepo) LinkContact(context.Context, string, string, string) error { 
 func (f *fakeRepo) Inbox(context.Context, []string) ([]store.InboxItem, error) {
 	return f.inbox, nil
 }
+func (f *fakeRepo) Sellers(context.Context) ([]store.Seller, error) { return f.sellers, nil }
 
 type routeRecorder struct{ patterns []string }
 
@@ -84,6 +87,7 @@ func TestModuloMontaTodoElContratoAutenticado(t *testing.T) {
 		"POST /viajes/{id}/pasajeros", "PATCH /pasajeros/{id}", "DELETE /pasajeros/{id}",
 		"PUT /viajes/{id}/pago", "POST /controles/{id}/cerrar", "POST /controles/{id}/reabrir",
 		"GET /clientes/{id}", "PATCH /clientes/{id}", "POST /clientes/{id}/contactos", "GET /bandeja",
+		"GET /vendedores",
 	}
 	if len(routes.patterns) != len(want) {
 		t.Fatalf("rutas = %v", routes.patterns)
@@ -154,6 +158,21 @@ func TestAltaHTTPRechazaFechasInvalidasAntesDelStore(t *testing.T) {
 	}
 	if !repo.created.DepartAt.IsZero() || len(events) != 0 {
 		t.Fatalf("se escribió o emitió con entrada inválida: %#v %v", repo.created, events)
+	}
+}
+
+func TestVendedoresHTTPDevuelveLaListaParaElSelector(t *testing.T) {
+	repo := &fakeRepo{sellers: []store.Seller{{ID: "u-1", Name: "Ana Gil"}}}
+	m := testModule(repo, &[]string{})
+	rec := httptest.NewRecorder()
+
+	m.sellers(rec, httptest.NewRequest(http.MethodGet, "/vendedores", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if body := strings.TrimSpace(rec.Body.String()); body != `{"items":[{"id":"u-1","name":"Ana Gil"}]}` {
+		t.Fatalf("body = %q", body)
 	}
 }
 

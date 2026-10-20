@@ -49,6 +49,11 @@ func (s *Store) UpdatePassenger(ctx context.Context, passengerID string, patch s
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	if patch.IsHolder != nil && *patch.IsHolder {
+		if err := releaseHolder(ctx, tx, passengerID); err != nil {
+			return store.Passenger{}, err
+		}
+	}
 	var p store.Passenger
 	err = tx.QueryRow(ctx,
 		`UPDATE passengers SET
@@ -95,6 +100,22 @@ func (s *Store) DeletePassenger(ctx context.Context, passengerID string) error {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// releaseHolder le quita la titularidad a quien la tenga en el viaje del
+// pasajero que la recibe. Solo la usa la edición: marcar como titular a alguien
+// ya cargado es una corrección explícita. El alta, en cambio, sigue chocando con
+// el índice: un pasajero nuevo no desplaza en silencio al titular registrado.
+func releaseHolder(ctx context.Context, tx pgx.Tx, newHolderID string) error {
+	_, err := tx.Exec(ctx,
+		`UPDATE passengers SET is_holder = false
+		  WHERE is_holder AND id <> $1
+		    AND trip_id = (SELECT trip_id FROM passengers WHERE id = $1)`,
+		newHolderID)
+	if err != nil {
+		return fmt.Errorf("liberando la titularidad: %w", err)
+	}
+	return nil
 }
 
 func writeError(action string, err error) error {

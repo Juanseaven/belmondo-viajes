@@ -24,7 +24,10 @@ func (s *Store) PutPayment(ctx context.Context, p store.Payment) (store.Payment,
 		   total_usd = excluded.total_usd, rate = excluded.rate,
 		   total_ars = excluded.total_ars, method = excluded.method,
 		   deposit_usd = excluded.deposit_usd, deposit_due_at = excluded.deposit_due_at,
-		   deposit_paid_at = excluded.deposit_paid_at,
+		   -- La seña se cobró la primera vez que se marcó: volver a guardar el
+		   -- pago no la refecha. Solo desmarcarla la borra.
+		   deposit_paid_at = CASE WHEN excluded.deposit_paid_at IS NULL THEN NULL
+		                          ELSE coalesce(payments.deposit_paid_at, excluded.deposit_paid_at) END,
 		   non_refundable_usd = excluded.non_refundable_usd, updated_by = excluded.updated_by
 		 RETURNING trip_id, total_usd, rate, total_ars, coalesce(method, ''),
 		           deposit_usd, deposit_due_at, deposit_paid_at, non_refundable_usd`,

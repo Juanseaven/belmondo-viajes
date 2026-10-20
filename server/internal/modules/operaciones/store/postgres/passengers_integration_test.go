@@ -115,3 +115,48 @@ func TestEditarPasajeroActualizaLosDatosYElTitularDerivado(t *testing.T) {
 		t.Errorf("titular editado dejó el control %s, se esperaba cerrado", got)
 	}
 }
+
+// Un viaje tiene un solo titular, y el índice parcial lo garantiza. Pero marcar
+// como titular a un pasajero ya cargado es corregir quién es, no un conflicto:
+// si el store devolviera 409, la ficha obligaría a desmarcar uno y marcar el
+// otro en dos pasos. (El alta sí choca: ver TestPasajerosRechazanUnSegundoTitular.)
+func TestMarcarOtroTitularLeTransfiereLaTitularidad(t *testing.T) {
+	ctx, pool := testDB(t)
+	s := New(pool)
+	user := seedUser(t, ctx, pool, "titular@agencia.test")
+	contact := seedContact(t, ctx, pool, "5491100000106@s.whatsapp.net", "Pablo Ruiz")
+	trip, err := s.CreateTrip(ctx, store.NewTrip{ContactID: contact, CreatedBy: user})
+	if err != nil {
+		t.Fatalf("alta del viaje: %v", err)
+	}
+	first, err := s.AddPassenger(ctx, store.NewPassenger{TripID: trip.ID, FirstName: "Pablo",
+		LastName: "Ruiz", Kind: "adulto", IsHolder: true, CreatedBy: user})
+	if err != nil {
+		t.Fatalf("primer pasajero: %v", err)
+	}
+	second, err := s.AddPassenger(ctx, store.NewPassenger{TripID: trip.ID, FirstName: "Clara",
+		LastName: "Ruiz", Kind: "adulto", CreatedBy: user})
+	if err != nil {
+		t.Fatalf("segundo pasajero: %v", err)
+	}
+
+	holder := true
+	updated, err := s.UpdatePassenger(ctx, second.ID, store.PassengerPatch{IsHolder: &holder})
+	if err != nil {
+		t.Fatalf("marcar titular: %v", err)
+	}
+	if !updated.IsHolder {
+		t.Fatalf("el pasajero marcado no quedó titular")
+	}
+	var firstIsHolder bool
+	if err := pool.QueryRow(ctx, `SELECT is_holder FROM passengers WHERE id = $1`, first.ID).
+		Scan(&firstIsHolder); err != nil {
+		t.Fatalf("leyendo el primer pasajero: %v", err)
+	}
+	if firstIsHolder {
+		t.Errorf("el titular anterior siguió siéndolo")
+	}
+	if got := estado(t, ctx, pool, trip.ID, "control-titular"); got != "cerrado" {
+		t.Errorf("el control del titular quedó %s", got)
+	}
+}
