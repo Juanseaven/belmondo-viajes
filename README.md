@@ -189,6 +189,18 @@ y la borra al terminar. Eso es lo que permite que `go test ./...` corra los
 paquetes en paralelo, que es su comportamiento por defecto — compartiendo una
 sola base se pisan al limpiar el esquema y fallan de forma intermitente.
 
+Con Docker Desktop en Windows, la base de test tiene que ir **sin fsync**. Cada
+test recrea el esquema entero, y con fsync cada DDL espera al disco virtual:
+15 segundos por test, y el paquete de operaciones supera los 10 minutos que
+`go test` da antes de abortar. Sin fsync, toda la suite tarda medio minuto:
+
+```bash
+docker run -d --rm --name wm-testdb -p 55432:5432 -e POSTGRES_PASSWORD=test \
+  postgres:16-alpine -c fsync=off -c synchronous_commit=off -c full_page_writes=off
+TEST_DATABASE_URL='postgres://postgres:test@localhost:55432/postgres?sslmode=disable' \
+  go test ./...
+```
+
 ```bash
 cd web
 npm install
