@@ -1,17 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, ChevronDown, Plus, X } from "lucide-react";
+import { Check, ChevronDown, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { NewPassenger, PaymentInput } from "./api";
+import { CountrySelect } from "./countries";
 import { CustomerForm } from "./CustomerForm";
 import { dayOf, shortDate, shortInstant, today } from "./format";
-import { PassengersTab, type PassengerPatch } from "./PassengersTab";
+import { PassengersTab, type DocumentActions, type PassengerPatch } from "./PassengersTab";
 import { PaymentTab } from "./PaymentTab";
-import type { Control, CustomerUpdate, Passenger, Seller, TripDetail, TripStatus, TripSummary, TripUpdate } from "./types";
+import { RequirementsTab } from "./RequirementsTab";
+import type { Control, Country, CustomerUpdate, Passenger, Requirement, Seller, Stop, TripDetail, TripStatus, TripSummary, TripUpdate } from "./types";
 import { nextControl } from "./types";
 
-type Tab = "resumen" | "pasajeros" | "pagos" | "controles";
+type Tab = "resumen" | "pasajeros" | "requisitos" | "pagos" | "controles";
 
 const STATUSES: { value: TripStatus; label: string }[] = [
   { value: "consulta", label: "Consulta" },
@@ -21,8 +23,10 @@ const STATUSES: { value: TripStatus; label: string }[] = [
   { value: "cerrado", label: "Cerrado" },
 ];
 
-export interface TripPanelProps {
+export interface TripPanelProps extends DocumentActions {
   trip: TripDetail;
+  /** El catálogo de países, para elegirlos por nombre. */
+  countries?: Country[];
   /** Los viajes del contacto. Con más de uno, el encabezado deja cambiar. */
   trips?: TripSummary[];
   sellers?: Seller[];
@@ -39,12 +43,14 @@ export interface TripPanelProps {
   onDeletePassenger?: (passenger: Passenger) => Promise<void>;
   onSavePayment: (input: PaymentInput) => Promise<void> | void;
   onUpdateCustomer?: (input: CustomerUpdate) => Promise<void>;
+  onSaveItinerary?: (itinerary: Stop[]) => Promise<void>;
+  onConfirmRequirement?: (requirement: Requirement) => Promise<void>;
 }
 
 export function TripPanel({
-  trip, trips, sellers, collapsed, onClose, onSelectTrip, onNewTrip, onUpdateTrip,
+  trip, trips, sellers, countries = [], collapsed, onClose, onSelectTrip, onNewTrip, onUpdateTrip,
   onRunControl, onCloseControl, onReopenControl, onAddPassenger, onUpdatePassenger,
-  onDeletePassenger, onSavePayment, onUpdateCustomer,
+  onDeletePassenger, onSavePayment, onUpdateCustomer, onSaveItinerary, onConfirmRequirement, ...documentActions
 }: TripPanelProps) {
   const [tab, setTab] = useState<Tab>("resumen");
   const [showRest, setShowRest] = useState(false);
@@ -74,16 +80,18 @@ export function TripPanel({
       </header>
       <TripHeadFields trip={trip} sellers={sellers} onUpdateTrip={onUpdateTrip} />
       <div className="detail-tabs operation-tabs" role="tablist" aria-label="Secciones del viaje">
-        {(["resumen", "pasajeros", "pagos", "controles"] as Tab[]).map((value) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>{value[0].toUpperCase() + value.slice(1)}</button>)}
+        {(["resumen", "pasajeros", "requisitos", "pagos", "controles"] as Tab[]).map((value) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>{value[0].toUpperCase() + value.slice(1)}</button>)}
       </div>
       <div className="trip-panel-body">
         {tab === "resumen" && <>
           <section className="trip-next"><h3>Lo que sigue</h3>{next ? <ul><ControlRow control={next} onRun={onRunControl} onClose={onCloseControl} onReopen={onReopenControl} /></ul> : <p>Este viaje no tiene controles pendientes.</p>}
           {rest.length > 0 && <><button type="button" className="trip-rest-trigger" aria-expanded={showRest} onClick={() => setShowRest((value) => !value)}><ChevronDown aria-hidden />Ver {rest.length} {rest.length === 1 ? "control restante" : "controles restantes"}</button>{showRest && <ul>{rest.map((control) => <ControlRow key={control.id} control={control} onRun={onRunControl} onClose={onCloseControl} onReopen={onReopenControl} />)}</ul>}</>}</section>
           <section className="detail-section"><h3>Viaje</h3><TripDetailsForm trip={trip} onSave={onUpdateTrip} /></section>
+          <section className="detail-section"><h3>Países del viaje</h3><ItineraryEditor itinerary={trip.itinerary ?? []} countries={countries} onSave={onSaveItinerary} /></section>
           <section className="detail-section"><h3>Cliente</h3><CustomerForm customer={trip.customer} onSave={onUpdateCustomer} /><p className="trip-note">Cliente desde {shortDate(trip.customer.customerSince)}</p></section>
         </>}
-        {tab === "pasajeros" && <PassengersTab trip={trip} onAddPassenger={onAddPassenger} onUpdatePassenger={onUpdatePassenger} onDeletePassenger={onDeletePassenger} />}
+        {tab === "pasajeros" && <PassengersTab trip={trip} countries={countries} onAddPassenger={onAddPassenger} onUpdatePassenger={onUpdatePassenger} onDeletePassenger={onDeletePassenger} {...documentActions} />}
+        {tab === "requisitos" && <RequirementsTab trip={trip} countries={countries} onConfirm={onConfirmRequirement} />}
         {tab === "pagos" && <PaymentTab payment={trip.payment} onSave={onSavePayment} />}
         {tab === "controles" && <section className="detail-section"><h3>Todos los controles</h3><ul className="trip-controls">{trip.controls.map((control) => <ControlRow key={control.id} control={control} onRun={onRunControl} onClose={onCloseControl} onReopen={onReopenControl} />)}</ul></section>}
       </div>
@@ -200,4 +208,68 @@ function TripDetailsForm({ trip, onSave }: { trip: TripDetail; onSave?: (input: 
     {error && <p className="trip-form-error" role="alert">{error}</p>}
     <Button size="sm" type="submit" disabled={saving || !onSave || !dirty}>{saving ? "Guardando…" : "Guardar viaje"}</Button>
   </form>;
+}
+
+/**
+ * Los países por los que pasa el viaje, cada uno destino o escala. Es lo que se
+ * evalúa: el destino de arriba es el nombre que se muestra. Se guarda entero.
+ */
+function ItineraryEditor({ itinerary, countries, onSave }: { itinerary: Stop[]; countries: Country[]; onSave?: (itinerary: Stop[]) => Promise<void> }) {
+  const fromTrip = () => itinerary.map((stop) => ({ ...stop, arriveAt: dayOf(stop.arriveAt), leaveAt: dayOf(stop.leaveAt) }));
+  const [stops, setStops] = useState(fromTrip);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string>();
+  const key = JSON.stringify(itinerary);
+
+  useEffect(() => { setStops(fromTrip()); }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const set = (index: number, patch: Partial<Stop>) =>
+    setStops((current) => current.map((stop, i) => (i === index ? { ...stop, ...patch } : stop)));
+  const dirty = JSON.stringify(stops) !== JSON.stringify(fromTrip());
+
+  return (
+    <form className="trip-details-form itinerary-form" onSubmit={async (event) => {
+      event.preventDefault();
+      if (!onSave) return;
+      setSaving(true);
+      setError(undefined);
+      try {
+        await onSave(stops.filter((stop) => stop.country).map((stop) => ({
+          country: stop.country, role: stop.role,
+          ...(stop.arriveAt ? { arriveAt: stop.arriveAt } : {}),
+          ...(stop.leaveAt ? { leaveAt: stop.leaveAt } : {}),
+        })));
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "No se pudieron guardar los países");
+      } finally {
+        setSaving(false);
+      }
+    }}>
+      {stops.length === 0 && <p className="trip-note">Sin países cargados: con ellos se buscan los requisitos de entrada.</p>}
+      {stops.map((stop, index) => {
+        const label = `País ${index + 1}`;
+        return (
+          <div key={index} className="itinerary-stop">
+            <div className="trip-date-fields">
+              <CountrySelect label={label} value={stop.country} countries={countries} onChange={(code) => set(index, { country: code })} />
+              <select aria-label={`Rol de ${label}`} value={stop.role} onChange={(event) => set(index, { role: event.target.value as Stop["role"] })}>
+                <option value="destino">Destino</option>
+                <option value="escala">Escala</option>
+              </select>
+            </div>
+            <div className="trip-date-fields">
+              <label>Llega<input type="date" aria-label={`Llega a ${label}`} value={stop.arriveAt ?? ""} onChange={(event) => set(index, { arriveAt: event.target.value })} /></label>
+              <label>Sale<input type="date" aria-label={`Sale de ${label}`} value={stop.leaveAt ?? ""} onChange={(event) => set(index, { leaveAt: event.target.value })} /></label>
+            </div>
+            <Button size="sm" type="button" variant="ghost" aria-label={`Quitar ${label}`} onClick={() => setStops((current) => current.filter((_, i) => i !== index))}><Trash2 />Quitar</Button>
+          </div>
+        );
+      })}
+      {error && <p className="trip-form-error" role="alert">{error}</p>}
+      <div className="trip-form-actions">
+        <Button size="sm" type="button" variant="outline" onClick={() => setStops((current) => [...current, { country: "", role: "destino", arriveAt: "", leaveAt: "" }])}><Plus />Agregar país</Button>
+        <Button size="sm" type="submit" disabled={saving || !onSave || !dirty}>{saving ? "Guardando…" : "Guardar países"}</Button>
+      </div>
+    </form>
+  );
 }

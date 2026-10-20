@@ -11,7 +11,7 @@ vi.mock("./api", async (importOriginal) => {
 });
 
 const summary = { id: "trip-1", number: 1, customerId: "customer-1", status: "cotizado" as const, destination: "Salta", departAt: "2026-10-01", returnAt: "2026-10-05", createdAt: "2026-08-20", passengerCount: 0 };
-const detail = { ...summary, customer: { id: "customer-1", name: "Ana", customerSince: "2026-08-20", contactIds: ["contact-1"] }, passengers: [], payment: null, controls: [] };
+const detail = { ...summary, customer: { id: "customer-1", name: "Ana", customerSince: "2026-08-20", contactIds: ["contact-1"] }, passengers: [], payment: null, controls: [], itinerary: [], requirements: [] };
 
 function Harness() {
   const trips = useTrips(["contact-1", "contact-2"], "contact-1");

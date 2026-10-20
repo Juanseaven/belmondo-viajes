@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { operacionesApi, type NewPassenger } from "./api";
 import { NewTripPanel } from "./NewTripPanel";
 import { TripPanel } from "./TripPanel";
-import type { Control, Seller } from "./types";
+import type { Control, Country, Seller } from "./types";
 import type { useTrips } from "./useTrips";
 
 type TripSeed = { destination?: string; departAt?: string; returnAt?: string };
@@ -29,6 +29,7 @@ interface TripSidebarProps {
  */
 export function TripSidebar({ contactId, contactName, trips, collapsed, onClose, onRunControl }: TripSidebarProps) {
   const [sellers, setSellers] = useState<Seller[]>([]);
+  const [countries, setCountries] = useState<Country[]>([]);
   const [creating, setCreating] = useState(false);
   const active = trips.active;
 
@@ -37,6 +38,14 @@ export function TripSidebar({ contactId, contactName, trips, collapsed, onClose,
     operacionesApi.sellers()
       .then((response) => { if (current) setSellers(response.items); })
       .catch(() => { if (current) setSellers([]); });
+    return () => { current = false; };
+  }, []);
+
+  useEffect(() => {
+    let current = true;
+    Promise.resolve(operacionesApi.countries())
+      .then((response) => { if (current && response) setCountries(response.items); })
+      .catch(() => { if (current) setCountries([]); });
     return () => { current = false; };
   }, []);
 
@@ -81,6 +90,7 @@ export function TripSidebar({ contactId, contactName, trips, collapsed, onClose,
       trip={active}
       trips={trips.contactTrips}
       sellers={sellers}
+      countries={countries}
       collapsed={collapsed}
       onClose={onClose}
       onSelectTrip={trips.select}
@@ -94,6 +104,13 @@ export function TripSidebar({ contactId, contactName, trips, collapsed, onClose,
       onDeletePassenger={async (passenger) => { await after(operacionesApi.deletePassenger(passenger.id)); }}
       onSavePayment={async (input) => { await after(operacionesApi.putPayment(active.id, input)); }}
       onUpdateCustomer={async (input) => { await after(operacionesApi.updateCustomer(active.customer.id, input)); }}
+      onSaveItinerary={async (itinerary) => { await after(operacionesApi.putItinerary(active.id, itinerary)); }}
+      onAddDocument={async (passengerId, input) => { await after(operacionesApi.addDocument(passengerId, input)); }}
+      onUpdateDocument={async (id, input) => { await after(operacionesApi.updateDocument(id, input)); }}
+      onDeleteDocument={async (document) => { await after(operacionesApi.deleteDocument(document.id)); }}
+      onAddPermit={async (passengerId, input) => { await after(operacionesApi.addPermit(passengerId, input)); }}
+      onDeletePermit={async (permit) => { await after(operacionesApi.deletePermit(permit.id)); }}
+      onConfirmRequirement={async (requirement) => { await after(operacionesApi.confirmRequirement(active.id, requirement)); }}
     />
   );
 }

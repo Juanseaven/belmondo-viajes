@@ -42,11 +42,69 @@ export interface Passenger {
   tripId: string;
   firstName: string;
   lastName: string;
+  /** Con fecha de nacimiento, lo dice la fecha a la salida; sin ella, se elige. */
   kind: "adulto" | "menor";
   isHolder: boolean;
-  documentType?: "DNI" | "Pasaporte";
-  documentNumber?: string;
-  documentExpiresAt?: string;
+  birthDate?: string;
+  residenceCountry: string;
+  /** Con qué documento viaja en este viaje: define la nacionalidad que se evalúa. */
+  travelDocumentId?: string;
+  documents: TravelDocument[];
+  permits: Permit[];
+}
+
+/** Un DNI o pasaporte. La nacionalidad es la del país que lo emitió. */
+export interface TravelDocument {
+  id: string;
+  passengerId: string;
+  type: "DNI" | "Pasaporte";
+  country: string;
+  number?: string;
+  issuedAt?: string;
+  expiresAt?: string;
+}
+
+export type PermitKind = "visa" | "autorizacion_electronica" | "residencia";
+
+/** Una visa, autorización electrónica o residencia que el pasajero ya tiene. */
+export interface Permit {
+  id: string;
+  passengerId: string;
+  kind: PermitKind;
+  country: string;
+  label?: string;
+  validFrom?: string;
+  expiresAt?: string;
+}
+
+/** Un país del itinerario. Sin fechas, la estadía es la del viaje. */
+export interface Stop {
+  country: string;
+  role: "destino" | "escala";
+  arriveAt?: string;
+  leaveAt?: string;
+}
+
+export interface Country { code: string; name: string }
+
+export interface Citation { source: string; quote?: string; url?: string; revision?: string }
+
+/** Una línea del panel de requisitos: qué cumple, qué falta y qué verificar. */
+export interface Requirement {
+  /** Vacío: es del viaje (falta el itinerario). */
+  passengerId?: string;
+  /** Vacío: no es de un país (la autorización de menor). */
+  country?: string;
+  role?: "destino" | "escala" | "";
+  key: string;
+  status: "cumple" | "falta" | "verificar";
+  text: string;
+  confirmable: boolean;
+  confirmed?: boolean;
+  missingData?: boolean;
+  sources?: Citation[];
+  confirmedByName?: string;
+  confirmedAt?: string;
 }
 
 export interface Payment {
@@ -80,6 +138,8 @@ export interface Control extends ControlSummary {
 
 export interface TripDetail extends TripSummary {
   customer: Customer;
+  itinerary: Stop[];
+  requirements: Requirement[];
   passengers: Passenger[];
   payment: Payment | null;
   controls: Control[];

@@ -11,6 +11,7 @@ const trip: TripDetail = {
   destination: "Iguazú", departAt: "2026-09-12T00:00:00Z", returnAt: "2026-09-15T00:00:00Z",
   createdAt: "2026-08-20T12:00:00Z", passengerCount: 0,
   customer: { id: "customer-1", name: "Ana Pérez", customerSince: "2026-08-20", contactIds: ["contact-1"] },
+  itinerary: [], requirements: [],
   passengers: [], payment: null,
   controls: [
     { id: "normal", itemId: "normal", stage: "carga", closing: "manual", title: "Revisar nombres", critical: false, status: "abierto", dueAt: "2026-08-19", evidence: [] },
@@ -69,13 +70,20 @@ const noop = {
   onAddPassenger: vi.fn(), onSavePayment: vi.fn(),
 };
 
+const pasaporte = { id: "d-1", passengerId: "p-1", type: "Pasaporte" as const, country: "AR", number: "AAA111", expiresAt: "2026-09-13" };
+
 const withPassenger: TripDetail = {
   ...trip,
   passengers: [{
-    id: "p-1", tripId: "trip-1", firstName: "Ana", lastName: "Pérez", kind: "adulto",
-    isHolder: true, documentType: "Pasaporte", documentNumber: "AAA111", documentExpiresAt: "2026-09-13",
+    id: "p-1", tripId: "trip-1", firstName: "Ana", lastName: "Pérez", kind: "adulto", isHolder: true,
+    residenceCountry: "AR", travelDocumentId: "d-1", documents: [pasaporte], permits: [],
   }],
 };
+
+const countries = [
+  { code: "AR", name: "Argentina" }, { code: "ES", name: "España" }, { code: "IT", name: "Italia" },
+  { code: "US", name: "Estados Unidos" }, { code: "PA", name: "Panamá" },
+];
 
 it("las fechas se leen en castellano, no en ISO", () => {
   render(<TripPanel trip={trip} {...noop} />);
@@ -137,15 +145,99 @@ it("un documento que vence antes del regreso lo explica", () => {
 });
 
 it("el documento del pasajero se completa después", async () => {
+  const onUpdateDocument = vi.fn().mockResolvedValue(undefined);
+  render(<TripPanel trip={withPassenger} countries={countries} onUpdatePassenger={vi.fn()} onUpdateDocument={onUpdateDocument} {...noop} />);
+  fireEvent.click(screen.getByRole("tab", { name: "Pasajeros" }));
+  fireEvent.click(screen.getByRole("button", { name: "Editar Pérez, Ana" }));
+  fireEvent.click(screen.getByRole("button", { name: "Editar Pasaporte AAA111" }));
+
+  fireEvent.change(screen.getByLabelText("Vence"), { target: { value: "2030-01-01" } });
+  fireEvent.click(screen.getByRole("button", { name: "Guardar documento" }));
+
+  await waitFor(() => expect(onUpdateDocument).toHaveBeenCalledWith("d-1", { expiresAt: "2030-01-01" }));
+});
+
+it("un pasajero con doble nacionalidad carga su otro pasaporte y elige con cuál viaja", async () => {
+  const onAddDocument = vi.fn().mockResolvedValue(undefined);
   const onUpdatePassenger = vi.fn().mockResolvedValue(undefined);
-  render(<TripPanel trip={withPassenger} onUpdatePassenger={onUpdatePassenger} {...noop} />);
+  const trip2: TripDetail = { ...withPassenger, passengers: [{ ...withPassenger.passengers[0], documents: [pasaporte,
+    { id: "d-2", passengerId: "p-1", type: "Pasaporte", country: "IT", number: "YA222", expiresAt: "2031-05-01" }] }] };
+  render(<TripPanel trip={trip2} countries={countries} onUpdatePassenger={onUpdatePassenger} onAddDocument={onAddDocument} {...noop} />);
   fireEvent.click(screen.getByRole("tab", { name: "Pasajeros" }));
   fireEvent.click(screen.getByRole("button", { name: "Editar Pérez, Ana" }));
 
-  fireEvent.change(screen.getByLabelText("Vence"), { target: { value: "2030-01-01" } });
+  fireEvent.click(screen.getByLabelText("Viaja con Pasaporte YA222"));
+  await waitFor(() => expect(onUpdatePassenger).toHaveBeenCalledWith("p-1", { travelDocumentId: "d-2" }));
+
+  fireEvent.click(screen.getByRole("button", { name: "Agregar documento" }));
+  fireEvent.change(screen.getByLabelText("Tipo"), { target: { value: "Pasaporte" } });
+  fireEvent.change(screen.getByLabelText("País del documento"), { target: { value: "ES" } });
+  fireEvent.change(screen.getByLabelText("Número"), { target: { value: "PAE123" } });
+  fireEvent.change(screen.getByLabelText("Emitido"), { target: { value: "2022-03-01" } });
+  fireEvent.change(screen.getByLabelText("Vence"), { target: { value: "2032-03-01" } });
+  fireEvent.click(screen.getByRole("button", { name: "Guardar documento" }));
+
+  await waitFor(() => expect(onAddDocument).toHaveBeenCalledWith("p-1", {
+    type: "Pasaporte", country: "ES", number: "PAE123", issuedAt: "2022-03-01", expiresAt: "2032-03-01",
+  }));
+});
+
+it("las visas que ya tiene se cargan con su país y vencimiento", async () => {
+  const onAddPermit = vi.fn().mockResolvedValue(undefined);
+  render(<TripPanel trip={withPassenger} countries={countries} onUpdatePassenger={vi.fn()} onAddPermit={onAddPermit} {...noop} />);
+  fireEvent.click(screen.getByRole("tab", { name: "Pasajeros" }));
+  fireEvent.click(screen.getByRole("button", { name: "Editar Pérez, Ana" }));
+
+  fireEvent.click(screen.getByRole("button", { name: "Agregar visa o autorización" }));
+  fireEvent.change(screen.getByLabelText("Qué es"), { target: { value: "visa" } });
+  fireEvent.change(screen.getByLabelText("País que la otorgó"), { target: { value: "US" } });
+  fireEvent.change(screen.getByLabelText("Detalle"), { target: { value: "B1/B2" } });
+  fireEvent.change(screen.getByLabelText("Vence la visa"), { target: { value: "2032-01-10" } });
+  fireEvent.click(screen.getByRole("button", { name: "Guardar visa" }));
+
+  await waitFor(() => expect(onAddPermit).toHaveBeenCalledWith("p-1", {
+    kind: "visa", country: "US", label: "B1/B2", expiresAt: "2032-01-10",
+  }));
+});
+
+it("la fecha de nacimiento y la residencia se cargan en el pasajero", async () => {
+  const onUpdatePassenger = vi.fn().mockResolvedValue(undefined);
+  render(<TripPanel trip={withPassenger} countries={countries} onUpdatePassenger={onUpdatePassenger} {...noop} />);
+  fireEvent.click(screen.getByRole("tab", { name: "Pasajeros" }));
+  fireEvent.click(screen.getByRole("button", { name: "Editar Pérez, Ana" }));
+
+  fireEvent.change(screen.getByLabelText("Nacimiento"), { target: { value: "2010-04-02" } });
+  fireEvent.change(screen.getByLabelText("Residencia"), { target: { value: "ES" } });
   fireEvent.click(screen.getByRole("button", { name: "Guardar pasajero" }));
 
-  await waitFor(() => expect(onUpdatePassenger).toHaveBeenCalledWith("p-1", { documentExpiresAt: "2030-01-01" }));
+  await waitFor(() => expect(onUpdatePassenger).toHaveBeenCalledWith("p-1", { birthDate: "2010-04-02", residenceCountry: "ES" }));
+});
+
+it("el itinerario se carga por país, como destino o escala", async () => {
+  const onSaveItinerary = vi.fn().mockResolvedValue(undefined);
+  render(<TripPanel trip={trip} countries={countries} onSaveItinerary={onSaveItinerary} {...noop} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Agregar país" }));
+  fireEvent.change(screen.getByLabelText("País 1"), { target: { value: "ES" } });
+  fireEvent.click(screen.getByRole("button", { name: "Agregar país" }));
+  fireEvent.change(screen.getByLabelText("País 2"), { target: { value: "PA" } });
+  fireEvent.change(screen.getByLabelText("Rol de País 2"), { target: { value: "escala" } });
+  fireEvent.click(screen.getByRole("button", { name: "Guardar países" }));
+
+  await waitFor(() => expect(onSaveItinerary).toHaveBeenCalledWith([
+    { country: "ES", role: "destino" }, { country: "PA", role: "escala" },
+  ]));
+});
+
+it("los requisitos tienen su pestaña", () => {
+  const conRequisitos: TripDetail = { ...withPassenger, itinerary: [{ country: "ES", role: "destino" }], requirements: [
+    { passengerId: "p-1", country: "ES", key: "vigencia", status: "falta", confirmable: false,
+      text: "El Pasaporte vence el 13/09/2026 y España pide que dure hasta el 15/12/2026" },
+  ] };
+  render(<TripPanel trip={conRequisitos} countries={countries} {...noop} />);
+  fireEvent.click(screen.getByRole("tab", { name: "Requisitos" }));
+
+  expect(screen.getByText(/España pide que dure hasta el 15\/12\/2026/)).toBeTruthy();
 });
 
 it("quitar un pasajero no pregunta: ofrece deshacer", async () => {
@@ -160,8 +252,8 @@ it("quitar un pasajero no pregunta: ofrece deshacer", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "Deshacer" }));
 
   await waitFor(() => expect(onAddPassenger).toHaveBeenCalledWith({
-    firstName: "Ana", lastName: "Pérez", kind: "adulto", isHolder: true,
-    documentType: "Pasaporte", documentNumber: "AAA111", documentExpiresAt: "2026-09-13",
+    firstName: "Ana", lastName: "Pérez", kind: "adulto", isHolder: true, residenceCountry: "AR",
+    documentType: "Pasaporte", documentCountry: "AR", documentNumber: "AAA111", documentExpiresAt: "2026-09-13",
   }));
 });
 

@@ -4,7 +4,7 @@ Panel de administración de una agencia de viajes, organizado en módulos. Se
 construye de a poco: cada herramienta que la agencia necesita entra como un
 módulo nuevo, sin tocar los que ya están.
 
-Hoy hay dos:
+Hoy hay tres:
 
 - **mirror**, el espejo de WhatsApp. Refleja en tiempo real todas las líneas de
   la agencia en una bandeja compartida, filtrable por número, con envío desde el
@@ -12,6 +12,11 @@ Hoy hay dos:
 - **operaciones**, los clientes y viajes de la agencia. La ficha de cada viaje
   vive al lado de la conversación del cliente, y la pantalla **Viajes** junta lo
   que hay que hacer hoy (Pendientes) y la consulta de todos los viajes.
+- **requisitos**, las reglas de entrada de cada país para cada nacionalidad.
+  Salen solas de Wikipedia y Passport Index (Claude lee Wikipedia y cada dato
+  lleva su cita); nadie las carga ni las aprueba. Operaciones las cruza con los
+  documentos y visas de cada pasajero y dice qué cumple, qué falta y qué hay
+  que verificar.
 
 Documentos de diseño:
 
@@ -19,6 +24,7 @@ Documentos de diseño:
 - Módulo mirror: [docs/superpowers/specs/2026-08-01-panel-espejo-whatsapp-design.md](docs/superpowers/specs/2026-08-01-panel-espejo-whatsapp-design.md)
 - Módulo operaciones: [docs/superpowers/specs/2026-08-20-modulo-operaciones-design.md](docs/superpowers/specs/2026-08-20-modulo-operaciones-design.md)
 - Pantalla de Viajes: [docs/superpowers/specs/2026-10-20-pantalla-viajes-design.md](docs/superpowers/specs/2026-10-20-pantalla-viajes-design.md)
+- Requisitos de viaje: [docs/superpowers/specs/2026-10-20-requisitos-de-viaje-design.md](docs/superpowers/specs/2026-10-20-requisitos-de-viaje-design.md)
 
 ## Estado
 
@@ -30,6 +36,8 @@ Documentos de diseño:
 | mirror — escritura | Funciona: enviar texto y adjuntos, alta y desvinculación de línea con QR desde el panel |
 | operaciones — ficha | Funciona: viaje, pasajeros, pago, cliente, estado y vendedor junto al chat; 31 controles con cierre derivado, por acción o manual |
 | operaciones — Viajes | Funciona: Pendientes (atrasado, esta semana, salen pronto) y Todos los viajes con búsqueda, filtros y orden |
+| requisitos | Funciona: reglas por nacionalidad y país desde Wikipedia (con espera de 72 horas) y Passport Index; extracción con Claude citada y verificada; revisión semanal. Necesita `ANTHROPIC_API_KEY` y `REQUISITOS_CONTACTO` |
+| operaciones — requisitos | Funciona: itinerario, documentos y visas por pasajero; requisitos por pasajero y país con estado cumple, falta o verificar; confirmaciones; «Requisitos migratorios» y el aviso al cliente salen de eso |
 | Frontend | Login, shell con menú por módulos, bandeja del espejo, ficha del viaje y pantalla de Viajes |
 
 ### API del módulo mirror

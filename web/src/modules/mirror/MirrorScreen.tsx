@@ -233,7 +233,9 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
         if (actionDraft?.waMessageId && p.waMessageId === actionDraft.waMessageId) {
           const controlID = actionDraft.controlId;
           setActionDraft(undefined);
-          void operacionesApi.closeControl(controlID, p.messageId).then(trips.reload);
+          // Puede negarse a cerrar —«Requisitos migratorios» con algo por
+          // verificar—: el mensaje ya salió y la ficha muestra qué falta.
+          void operacionesApi.closeControl(controlID, p.messageId).catch(() => undefined).then(trips.reload);
         }
       }
       if (ev.type === "conversation.read") {
@@ -396,7 +398,7 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
               if (definitiveID) {
                 const controlID = actionDraft.controlId;
                 setActionDraft(undefined);
-                void operacionesApi.closeControl(controlID, definitiveID).then(trips.reload);
+                void operacionesApi.closeControl(controlID, definitiveID).catch(() => undefined).then(trips.reload);
                 return;
               }
               setActionDraft({ ...actionDraft, waMessageId: message.waMessageId });

@@ -9,21 +9,22 @@ import type { useTrips } from "./useTrips";
 vi.mock("./api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api")>();
   return { ...actual, operacionesApi: {
-    ...actual.operacionesApi, sellers: vi.fn(), createTrip: vi.fn(), deletePassenger: vi.fn(), updateCustomer: vi.fn(),
+    ...actual.operacionesApi, sellers: vi.fn(), countries: vi.fn(), createTrip: vi.fn(), deletePassenger: vi.fn(), updateCustomer: vi.fn(),
   } };
 });
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 beforeEach(() => {
   vi.mocked(operacionesApi.sellers).mockResolvedValue({ items: [{ id: "u-1", name: "Ana Gil" }] });
+  vi.mocked(operacionesApi.countries).mockResolvedValue({ items: [{ code: "AR", name: "Argentina" }] });
 });
 
 const active: TripDetail = {
   id: "trip-1", number: 10482, customerId: "customer-1", status: "cotizado", destination: "Iguazú",
   createdAt: "2026-08-20T12:00:00Z", passengerCount: 1,
   customer: { id: "customer-1", name: "Ana Pérez", customerSince: "2026-08-20", contactIds: ["contact-1"] },
-  passengers: [{ id: "p-1", tripId: "trip-1", firstName: "Ana", lastName: "Pérez", kind: "adulto", isHolder: true }],
-  payment: null, controls: [],
+  passengers: [{ id: "p-1", tripId: "trip-1", firstName: "Ana", lastName: "Pérez", kind: "adulto", isHolder: true, residenceCountry: "AR", documents: [], permits: [] }],
+  payment: null, controls: [], itinerary: [], requirements: [],
 };
 
 function tripsState(overrides: Partial<ReturnType<typeof useTrips>> = {}): ReturnType<typeof useTrips> {
