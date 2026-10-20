@@ -82,8 +82,11 @@ func (r *Refresher) Refresh(ctx context.Context, pair domain.Pair) error {
 	switch {
 	case !ok:
 		// Wikipedia no respondió o no tiene el país: sigue lo que había.
-	case !stable && existing.WikiFields != nil:
-		// La fila cambió hace menos de 72 horas: sigue el texto aceptado.
+	case !stable:
+		// La fila cambió hace menos de 72 horas: sigue el texto aceptado. Una
+		// regla nueva no usa ninguna de las dos versiones —la de hace 72 horas
+		// puede ser justo la vandalizada que después se revirtió— y espera en
+		// verificar a que la fila se estabilice.
 		if next.PendingSince == nil {
 			next.PendingSince = &now
 		}
@@ -102,11 +105,6 @@ func (r *Refresher) Refresh(ctx context.Context, pair domain.Pair) error {
 		wikiFields = &fields
 		next.WikiHash, next.WikiRevision, next.WikiURL = hash(text), rev.ID, rev.URL
 		next.PendingSince = nil
-		if !stable {
-			// Una regla nueva con la fila en movimiento usó el texto de hace 72
-			// horas; queda en espera hasta que se estabilice.
-			next.PendingSince = &now
-		}
 	}
 
 	if wikiFields == nil {
@@ -141,8 +139,8 @@ func (r *Refresher) save(ctx context.Context, before, next store.StoredRule,
 }
 
 // wikiText devuelve el recorte de Wikipedia que se puede usar. Es estable si
-// la fila es idéntica hoy y hace 72 horas. Si no lo es, devuelve el recorte de
-// hace 72 horas, que es el que sobrevivió.
+// la fila es idéntica hoy y hace 72 horas; si no lo es, no devuelve texto y
+// avisa que la fila está en movimiento.
 func (r *Refresher) wikiText(ctx context.Context, pair domain.Pair, now time.Time) (string, fuentes.Revision, bool, bool) {
 	nationality, ok := domain.CountryByCode(pair.Nationality)
 	if !ok || nationality.VisaPage == "" {
@@ -170,8 +168,8 @@ func (r *Refresher) wikiText(ctx context.Context, pair domain.Pair, now time.Tim
 	switch {
 	case curOK && oldOK && curText == oldText:
 		return curText, cur, true, true
-	case oldOK:
-		return oldText, old, false, true
+	case curOK || oldOK:
+		return "", fuentes.Revision{}, false, true
 	default:
 		return "", fuentes.Revision{}, false, false
 	}

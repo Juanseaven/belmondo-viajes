@@ -214,9 +214,10 @@ func TestUnCambioRecienteNoSeUsaHastaQueSobreviva72Horas(t *testing.T) {
 	}
 }
 
-// En una regla nueva, si la fila cambió hace poco, se usa el texto de hace 72
-// horas.
-func TestUnaReglaNuevaConCambioRecienteUsaElTextoViejo(t *testing.T) {
+// En una regla nueva, si la fila cambió hace poco, no se usa ninguna de las dos
+// versiones: la de hace 72 horas puede ser justo la vandalizada que después se
+// revirtió. La regla espera a que la fila se estabilice, en verificar.
+func TestUnaReglaNuevaConLaFilaEnMovimientoEsperaEnVerificar(t *testing.T) {
 	e := nuevoEscenario(t)
 	e.wiki.now = strings.Replace(e.wiki.old, "{{no|Visa required}}<ref>{{Timatic|nationality=AR|destination=CA}}",
 		"{{yes|Visa not required}}<ref>{{Timatic|nationality=AR|destination=CA}}", 1)
@@ -224,12 +225,15 @@ func TestUnaReglaNuevaConCambioRecienteUsaElTextoViejo(t *testing.T) {
 	if err := e.r.Refresh(context.Background(), canada); err != nil {
 		t.Fatalf("refresco: %v", err)
 	}
-	if e.claude.calls != 1 || !strings.Contains(e.claude.texts[0], "{{no|Visa required}}") {
-		t.Fatalf("se extrajo del texto equivocado: %v", e.claude.texts)
+	if e.claude.calls != 0 {
+		t.Fatalf("extracciones = %d: una fila en movimiento no se extrae", e.claude.calls)
 	}
 	got := e.rule(canada)
-	if got.WikiRevision != "100" || got.PendingSince == nil {
-		t.Errorf("regla = %+v", got)
+	if got.Status != domain.RuleSinFuentes || got.PendingSince == nil {
+		t.Errorf("regla = %+v, debería esperar en verificar y revisarse cada día", got)
+	}
+	if !got.Effective().Visa.Verify {
+		t.Errorf("mientras espera, todo cuenta como verificar")
 	}
 }
 

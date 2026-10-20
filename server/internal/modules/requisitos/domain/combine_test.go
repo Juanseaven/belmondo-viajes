@@ -73,6 +73,63 @@ func TestLasCitasFallidasSiempreTiranHaciaLoMasExigente(t *testing.T) {
 	}
 }
 
+// Que la cita aparezca no alcanza: tiene que decir lo que se extrajo. Una cita
+// cualquiera de la fila no puede sostener «no requiere visa».
+func TestLaCitaTieneQueDecirLoQueSeExtrajo(t *testing.T) {
+	ex := Extraction{
+		Visa:           Extracted[Visa]{Value: ptr(VisaNoRequiere), Quote: "{{flag|Canada}}"},
+		EstadiaMaxDias: Extracted[int]{Value: ptr(90), Quote: "Visa required"},
+		Documento:      Extracted[Documento]{Value: ptr(DocumentoDNIOPasaporte), Quote: "Visa required"},
+		Exenciones: []ExencionCitada{
+			// El país de la exención tiene que estar en la cita.
+			{Exencion: Exencion{PermitCountry: "GB", Visa: VisaAutorizacionElectronica},
+				Quote: "who hold a valid United States non-immigrant visa can enter Canada"},
+			// Y tiene que existir.
+			{Exencion: Exencion{PermitCountry: "ZZ", Visa: VisaAutorizacionElectronica},
+				Quote: "who hold a valid United States non-immigrant visa can enter Canada"},
+		},
+	}
+
+	got := FromWikipedia(ex, filaCanada, wiki)
+
+	if !got.Visa.Verify || !strings.Contains(got.Visa.Reason, "no sostiene") {
+		t.Errorf("visa = %+v, la cita no dice «no requiere visa»", got.Visa)
+	}
+	if !got.EstadiaMaxDias.Verify {
+		t.Errorf("estadía = %+v, la cita no tiene el número", got.EstadiaMaxDias)
+	}
+	if got.Documento.Value != nil {
+		t.Errorf("documento = %+v, la cita no habla del DNI", got.Documento)
+	}
+	if len(*got.Exenciones.Value) != 0 {
+		t.Errorf("exenciones = %+v, ninguna está sostenida por su cita", got.Exenciones)
+	}
+}
+
+func TestLasCitasQueSostienenCadaCategoria(t *testing.T) {
+	casos := map[Visa]string{
+		VisaNoRequiere:              "{{yes|Visa not required}}",
+		VisaConsular:                "{{no|Visa required}}",
+		VisaALaLlegada:              "{{Optional|Visa on arrival}}",
+		VisaElectronica:             "{{Optional|eVisa}}",
+		VisaAutorizacionElectronica: "{{Optional|Electronic Travel Authorization}}",
+		VisaNoAdmitido:              "{{no|Admission refused}}",
+	}
+	for visa, quote := range casos {
+		got := FromWikipedia(Extraction{Visa: Extracted[Visa]{Value: ptr(visa), Quote: quote}}, quote, wiki)
+		if got.Visa.Verify {
+			t.Errorf("%s con %q debería valer: %+v", visa, quote, got.Visa)
+		}
+	}
+	// «Visa required» no sostiene «no requiere», aunque «Visa not required» lo
+	// contenga casi entero.
+	got := FromWikipedia(Extraction{Visa: Extracted[Visa]{Value: ptr(VisaConsular), Quote: "Visa not required"}},
+		"Visa not required", wiki)
+	if !got.Visa.Verify {
+		t.Errorf("«Visa not required» no sostiene visa consular: %+v", got.Visa)
+	}
+}
+
 func TestLoQueWikipediaNoDiceQuedaEnVerificarSiEsExigible(t *testing.T) {
 	got := FromWikipedia(Extraction{}, filaCanada, wiki)
 

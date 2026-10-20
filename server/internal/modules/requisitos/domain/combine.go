@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -35,14 +36,21 @@ type VacunaCitada struct {
 }
 
 const (
-	noLoDice      = "Wikipedia no lo dice"
-	citaInventada = "la cita no aparece en Wikipedia"
+	noLoDice       = "Wikipedia no lo dice"
+	citaInventada  = "la cita no aparece en Wikipedia"
+	citaNoSostiene = "la cita no sostiene el valor"
 )
 
 // FromWikipedia convierte una extracción en campos, creyéndole solo a lo que
-// tiene una cita que aparece literalmente en el texto (sin contar espacios ni
-// mayúsculas). Cuando una cita falla, el campo tira hacia lo más exigente: una
-// exención inventada se descarta; una vacuna dudosa queda en verificar.
+// tiene una cita que (1) aparece literalmente en el texto, sin contar espacios
+// ni mayúsculas, y (2) dice lo que se extrajo: «no requiere visa» necesita una
+// cita con «not required», una estadía de 90 días una cita con el 90, una
+// exención una cita que nombre al país del permiso.
+//
+// El texto sale de una página que cualquiera puede editar, y quien lo lee es un
+// modelo: que la cita exista no prueba que sostenga el valor. Cuando una cita
+// falla, el campo tira hacia lo más exigente: una exención o un DNI sin
+// sostén se descartan; lo demás queda en verificar.
 func FromWikipedia(ex Extraction, text string, base Citation) Fields {
 	haystack := normalize(text)
 	cited := func(quote string) bool {
@@ -54,53 +62,66 @@ func FromWikipedia(ex Extraction, text string, base Citation) Fields {
 		c.Source, c.Quote = SourceWikipedia, quote
 		return c
 	}
+	// check devuelve "" si la cita vale, o el motivo por el que no.
+	check := func(quote string, supports bool) string {
+		switch {
+		case !cited(quote):
+			return citaInventada
+		case !supports:
+			return citaNoSostiene
+		}
+		return ""
+	}
 
 	var f Fields
-	switch {
-	case ex.Visa.Value == nil:
+	if ex.Visa.Value == nil {
 		f.Visa = verify[Visa](noLoDice)
-	case !cited(ex.Visa.Quote):
-		f.Visa = verify[Visa](citaInventada)
-	default:
+	} else if reason := check(ex.Visa.Quote, matches(ex.Visa.Quote, visaKeywords[*ex.Visa.Value])); reason != "" {
+		f.Visa = verify[Visa](reason)
+	} else {
 		f.Visa = known(*ex.Visa.Value, cite(ex.Visa.Quote))
 	}
 
-	// Que alcance el DNI facilita el viaje: sin cita, no vale.
-	if ex.Documento.Value != nil && cited(ex.Documento.Quote) {
-		f.Documento = known(*ex.Documento.Value, cite(ex.Documento.Quote))
+	// Que alcance el DNI facilita el viaje: sin una cita que hable del
+	// documento de identidad, no vale.
+	if d := ex.Documento.Value; d != nil {
+		supports := *d == DocumentoPasaporte || matches(ex.Documento.Quote, idCardKeywords)
+		if check(ex.Documento.Quote, supports) == "" {
+			f.Documento = known(*d, cite(ex.Documento.Quote))
+		}
 	}
 
-	switch {
-	case ex.EstadiaMaxDias.Value == nil:
+	if v := ex.EstadiaMaxDias.Value; v == nil {
 		f.EstadiaMaxDias = Field[int]{Reason: noLoDice}
-	case !cited(ex.EstadiaMaxDias.Quote):
-		f.EstadiaMaxDias = verify[int](citaInventada)
-	default:
-		f.EstadiaMaxDias = known(*ex.EstadiaMaxDias.Value, cite(ex.EstadiaMaxDias.Quote))
+	} else if reason := check(ex.EstadiaMaxDias.Quote, hasNumber(ex.EstadiaMaxDias.Quote, *v)); reason != "" {
+		f.EstadiaMaxDias = verify[int](reason)
+	} else {
+		f.EstadiaMaxDias = known(*v, cite(ex.EstadiaMaxDias.Quote))
 	}
 
-	switch {
-	case ex.Vigencia.Value == nil:
+	if v := ex.Vigencia.Value; v == nil {
 		f.Vigencia = verify[Vigencia]("Wikipedia no dice la vigencia del pasaporte")
-	case !cited(ex.Vigencia.Quote):
-		f.Vigencia = verify[Vigencia](citaInventada)
-	default:
-		f.Vigencia = known(*ex.Vigencia.Value, cite(ex.Vigencia.Quote))
+	} else if reason := check(ex.Vigencia.Quote, hasNumber(ex.Vigencia.Quote, v.Amount) &&
+		matches(ex.Vigencia.Quote, unitKeywords[v.Unit])); reason != "" {
+		f.Vigencia = verify[Vigencia](reason)
+	} else {
+		f.Vigencia = known(*v, cite(ex.Vigencia.Quote))
 	}
 
-	switch {
-	case ex.EmisionMaxAnios.Value == nil:
+	if v := ex.EmisionMaxAnios.Value; v == nil {
 		f.EmisionMaxAnios = Field[int]{}
-	case !cited(ex.EmisionMaxAnios.Quote):
-		f.EmisionMaxAnios = verify[int](citaInventada)
-	default:
-		f.EmisionMaxAnios = known(*ex.EmisionMaxAnios.Value, cite(ex.EmisionMaxAnios.Quote))
+	} else if reason := check(ex.EmisionMaxAnios.Quote, hasNumber(ex.EmisionMaxAnios.Quote, *v) &&
+		matches(ex.EmisionMaxAnios.Quote, unitKeywords["anios"])); reason != "" {
+		f.EmisionMaxAnios = verify[int](reason)
+	} else {
+		f.EmisionMaxAnios = known(*v, cite(ex.EmisionMaxAnios.Quote))
 	}
 
 	exenciones := []Exencion{}
 	var exSources []Citation
 	for _, e := range ex.Exenciones {
-		if cited(e.Quote) {
+		country, ok := CountryByCode(e.PermitCountry)
+		if ok && check(e.Quote, namesCountry(e.Quote, country)) == "" {
 			exenciones = append(exenciones, e.Exencion)
 			exSources = append(exSources, cite(e.Quote))
 		}
@@ -110,8 +131,8 @@ func FromWikipedia(ex Extraction, text string, base Citation) Fields {
 	vacunas := []Vacuna{}
 	var vacSources []Citation
 	for _, v := range ex.Vacunas {
-		if !cited(v.Quote) {
-			f.Vacunas = verify[[]Vacuna](citaInventada)
+		if reason := check(v.Quote, matches(v.Quote, scopeKeywords[v.Scope])); reason != "" {
+			f.Vacunas = verify[[]Vacuna](reason)
 			return f
 		}
 		vacunas = append(vacunas, v.Vacuna)
@@ -119,6 +140,48 @@ func FromWikipedia(ex Extraction, text string, base Citation) Fields {
 	}
 	f.Vacunas = known(vacunas, vacSources...)
 	return f
+}
+
+// Las palabras que una cita tiene que tener para sostener cada valor. Son
+// expresiones regulares sin distinguir mayúsculas.
+var visaKeywords = map[Visa]*regexp.Regexp{
+	VisaNoRequiere:              regexp.MustCompile(`(?i)not required|visa[- ]free|freedom of movement|free movement|visa waiver`),
+	VisaALaLlegada:              regexp.MustCompile(`(?i)on arrival`),
+	VisaAutorizacionElectronica: regexp.MustCompile(`(?i)\b(k-)?eta\b|\besta\b|\betias\b|travel authori[sz]ation`),
+	VisaElectronica:             regexp.MustCompile(`(?i)\be-?visa\b|online visa|electronic visa`),
+	VisaConsular:                regexp.MustCompile(`(?i)visa required`),
+	VisaNoAdmitido:              regexp.MustCompile(`(?i)refused|banned|not allowed|no admission|prohibited`),
+}
+
+var idCardKeywords = regexp.MustCompile(`(?i)id card|identity card|identity document|national id|documento nacional`)
+
+var unitKeywords = map[string]*regexp.Regexp{
+	"meses": regexp.MustCompile(`(?i)month`),
+	"dias":  regexp.MustCompile(`(?i)day`),
+	"anios": regexp.MustCompile(`(?i)year`),
+}
+
+var scopeKeywords = map[string]*regexp.Regexp{
+	VacunaParaTodos:       regexp.MustCompile(`(?i)all countries|\byes\b|required`),
+	VacunaDesdePaisRiesgo: regexp.MustCompile(`(?i)risk`),
+}
+
+func matches(quote string, re *regexp.Regexp) bool { return re != nil && re.MatchString(quote) }
+
+func hasNumber(quote string, n int) bool {
+	return regexp.MustCompile(`(^|\D)` + strconv.Itoa(n) + `(\D|$)`).MatchString(quote)
+}
+
+// namesCountry dice si la cita nombra al país: por alguno de sus nombres en
+// Wikipedia, sin distinguir mayúsculas, o por su código ISO tal cual («US»).
+func namesCountry(quote string, c Country) bool {
+	lower := strings.ToLower(quote)
+	for _, name := range c.WikiNames {
+		if strings.Contains(lower, strings.ToLower(name)) {
+			return true
+		}
+	}
+	return regexp.MustCompile(`\b` + c.Code + `\b`).MatchString(quote)
 }
 
 func normalize(s string) string { return strings.ToLower(strings.Join(strings.Fields(s), " ")) }

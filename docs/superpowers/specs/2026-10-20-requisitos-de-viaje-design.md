@@ -184,8 +184,11 @@ se suelen revertir en horas. Por eso el texto de una fila (o sección) se usa
 solo si es **idéntico en la revisión actual y en la que estaba vigente hace 72
 horas** (la API de MediaWiki da la revisión vigente a una fecha). Si difieren,
 la regla sigue con el último texto aceptado y esa fila se vuelve a mirar cada
-día hasta que se estabilice. En una regla nueva, si difieren, se usa el texto de
-hace 72 horas.
+día hasta que se estabilice. En una regla nueva, si difieren, no se usa ninguna
+de las dos versiones: la de hace 72 horas puede ser justo la vandalizada que
+después se revirtió. La regla queda sin fuentes (todo en `verificar`) y se
+revisa cada día hasta que la fila se estabilice. (Corrección posterior a la
+aprobación, a partir de una revisión de seguridad.)
 
 **2. Passport Index, la segunda opinión.** La matriz que publica el repositorio
 [imorte/passport-index-data](https://github.com/imorte/passport-index-data)
@@ -245,8 +248,14 @@ deja en `verificar`; no adivina.
   sigue como estaba (o queda `sin_fuentes` si es nueva) y se reintenta en la
   próxima pasada.
 - **Comprobación de citas en código:** cada cita tiene que aparecer literalmente
-  en el texto de la fuente. Si no aparece, ese campo pasa a `verificar`. Así una
-  cita inventada nunca sostiene un valor.
+  en el texto de la fuente **y decir lo que se extrajo**: «no requiere visa»
+  necesita una cita con «not required» o «visa free»; una estadía de 90 días,
+  una cita con el 90; una exención, una cita que nombre al país del permiso
+  (que además tiene que existir en el catálogo). Si no, ese campo pasa a
+  `verificar` (o se descarta, si facilitaba el viaje). Así ni una cita inventada
+  ni una cita real que no viene al caso sostienen un valor.
+- El prompt aclara que el texto de Wikipedia es un dato y que no hay que seguir
+  instrucciones que aparezcan adentro.
 - Las constantes del código no pasan por Claude.
 
 ### Cuándo coinciden
