@@ -58,7 +58,7 @@ func TestItinerarioHTTPTraduceLosPaisesYEmite(t *testing.T) {
 		repo.itinerary[1].ArriveAt != nil {
 		t.Fatalf("itinerario = %#v", repo.itinerary)
 	}
-	if len(events) != 1 || events[0] != "trip.updated" {
+	if len(events) != 2 || events[0] != "trip.updated" || events[1] != "requirements.changed" {
 		t.Fatalf("eventos = %v", events)
 	}
 }
@@ -111,7 +111,7 @@ func TestDocumentoHTTPCargaElDocumentoDelPasajero(t *testing.T) {
 		d.ExpiresAt == nil || d.ExpiresAt.Format("2006-01-02") != "2030-05-01" {
 		t.Fatalf("documento = %#v", d)
 	}
-	if len(events) != 1 || events[0] != "passenger.changed" {
+	if len(events) != 2 || events[0] != "passenger.changed" || events[1] != "requirements.changed" {
 		t.Fatalf("eventos = %v", events)
 	}
 }
@@ -145,7 +145,8 @@ func TestDocumentoHTTPEditaYBorra(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("borrado: status = %d", rec.Code)
 	}
-	if len(events) != 2 || events[0] != "passenger.changed" || events[1] != "passenger.changed" {
+	if len(events) != 4 || events[0] != "passenger.changed" || events[2] != "passenger.changed" ||
+		events[3] != "requirements.changed" {
 		t.Fatalf("eventos = %v", events)
 	}
 }
@@ -167,7 +168,7 @@ func TestPermisoHTTPCargaLaVisaDelPasajero(t *testing.T) {
 		pm.ValidFrom == nil || pm.ExpiresAt == nil || pm.ExpiresAt.Format("2006-01-02") != "2032-01-10" {
 		t.Fatalf("permiso = %#v", pm)
 	}
-	if len(events) != 1 || events[0] != "passenger.changed" {
+	if len(events) != 2 || events[0] != "passenger.changed" || events[1] != "requirements.changed" {
 		t.Fatalf("eventos = %v", events)
 	}
 }

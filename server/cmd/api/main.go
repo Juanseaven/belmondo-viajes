@@ -94,11 +94,15 @@ func run() error {
 	// --- Módulos --------------------------------------------------------------
 	// Esta lista ES el sistema: migraciones, rutas y ciclo de vida se derivan de
 	// recorrerla. Para sumar un módulo, se añade aquí.
+	// requisitos no conoce a operaciones: le avisa los cambios de reglas por un
+	// gancho, y así el grafo de imports sigue siendo acíclico.
 	reqs := requisitos.New(k)
+	ops := operaciones.New(k, reqs)
+	reqs.OnChange(ops.OnRulesChanged)
 	registry := modules.NewRegistry(log,
 		mirror.New(k),
 		reqs,
-		operaciones.New(k),
+		ops,
 	)
 
 	// --- Esquema --------------------------------------------------------------

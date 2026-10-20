@@ -185,6 +185,7 @@ func (m *Module) createTrip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m.emit("trip.created", map[string]any{"tripId": trip.ID, "contactIds": []string{body.ContactID}})
+	m.afterChange(r.Context(), trip.ID)
 	httpx.JSON(w, http.StatusCreated, trip)
 }
 
@@ -194,6 +195,7 @@ func (m *Module) getTrip(w http.ResponseWriter, r *http.Request) {
 		m.storeError(w, "leyendo el viaje", err)
 		return
 	}
+	withNotice(&detail)
 	httpx.JSON(w, http.StatusOK, detail)
 }
 
@@ -231,6 +233,7 @@ func (m *Module) updateTrip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m.emit("trip.updated", map[string]any{"tripId": trip.ID})
+	m.afterChange(r.Context(), trip.ID)
 	httpx.JSON(w, http.StatusOK, trip)
 }
 
@@ -272,6 +275,7 @@ func (m *Module) addPassenger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m.emit("passenger.changed", map[string]any{"tripId": passenger.TripID, "passengerId": passenger.ID})
+	m.afterChange(r.Context(), passenger.TripID)
 	httpx.JSON(w, http.StatusCreated, passenger)
 }
 
@@ -286,16 +290,19 @@ func (m *Module) updatePassenger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m.emit("passenger.changed", map[string]any{"tripId": passenger.TripID, "passengerId": passenger.ID})
+	m.afterChange(r.Context(), passenger.TripID)
 	httpx.JSON(w, http.StatusOK, passenger)
 }
 
 func (m *Module) deletePassenger(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := m.repo.DeletePassenger(r.Context(), id); err != nil {
+	tripID, err := m.repo.DeletePassenger(r.Context(), id)
+	if err != nil {
 		m.storeError(w, "borrando el pasajero", err)
 		return
 	}
-	m.emit("passenger.changed", map[string]any{"passengerId": id})
+	m.emit("passenger.changed", map[string]any{"tripId": tripID, "passengerId": id})
+	m.afterChange(r.Context(), tripID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -443,7 +450,8 @@ func (m *Module) storeError(w http.ResponseWriter, action string, err error) {
 		httpx.NotFound(w, "no encontrado")
 	case errors.Is(err, store.ErrConflict):
 		httpx.Error(w, http.StatusConflict, httpx.CodeConflict, err.Error())
-	case errors.Is(err, store.ErrBadCursor), errors.Is(err, store.ErrInvalid):
+	case errors.Is(err, store.ErrBadCursor), errors.Is(err, store.ErrInvalid),
+		errors.Is(err, store.ErrQuedaPorVerificar), errors.Is(err, store.ErrNoConfirmable):
 		httpx.BadRequest(w, err.Error())
 	case errors.Is(err, store.ErrEvidenciaRequerida), errors.Is(err, store.ErrEvidenciaAjena),
 		errors.Is(err, store.ErrDerivadoNoSeCierraAMano):

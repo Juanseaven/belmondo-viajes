@@ -16,8 +16,10 @@ import (
 	"github.com/juanseaven/viajes-crm/server/internal/kernel/ws"
 	"github.com/juanseaven/viajes-crm/server/internal/modules"
 	"github.com/juanseaven/viajes-crm/server/internal/modules/operaciones/domain"
+	"github.com/juanseaven/viajes-crm/server/internal/modules/operaciones/evaluacion"
 	"github.com/juanseaven/viajes-crm/server/internal/modules/operaciones/store"
 	"github.com/juanseaven/viajes-crm/server/internal/modules/operaciones/store/postgres"
+	reglas "github.com/juanseaven/viajes-crm/server/internal/modules/requisitos/domain"
 )
 
 const Name = domain.ModuleName
@@ -32,7 +34,7 @@ type repository interface {
 	TripDetail(context.Context, string) (store.TripDetailData, error)
 	AddPassenger(context.Context, store.NewPassenger) (store.Passenger, error)
 	UpdatePassenger(context.Context, string, store.PassengerPatch) (store.Passenger, error)
-	DeletePassenger(context.Context, string) error
+	DeletePassenger(context.Context, string) (string, error)
 	PutPayment(context.Context, store.Payment) (store.Payment, error)
 	CloseControl(context.Context, store.CloseControl) error
 	ReopenControl(context.Context, string) error
@@ -50,17 +52,25 @@ type repository interface {
 	AddPermit(context.Context, store.NewPermit) (store.Permit, error)
 	UpdatePermit(context.Context, string, store.PermitPatch) (store.Permit, error)
 	DeletePermit(context.Context, string) (string, error)
+	EvaluationInput(context.Context, string) (store.EvaluationInput, error)
+	SaveRequirements(context.Context, string, []evaluacion.Requirement) error
+	Confirm(context.Context, store.NewConfirmation) error
+	OpenTripsUsing(context.Context, []reglas.Pair) ([]string, error)
+	OpenTrips(context.Context) ([]string, error)
 }
 
 type Module struct {
 	repo  repository
+	rules ruleSource
 	log   *slog.Logger
 	emit  func(string, map[string]any)
 	clock func() time.Time
 }
 
-func New(k *kernel.Kernel) *Module {
-	m := &Module{repo: postgres.New(k.DB), log: k.Log.With("module", Name), clock: time.Now}
+// New construye el módulo. rules es el módulo requisitos; sin él, los
+// requisitos de todos los viajes quedan en «verificar».
+func New(k *kernel.Kernel, rules ruleSource) *Module {
+	m := &Module{repo: postgres.New(k.DB), rules: rules, log: k.Log.With("module", Name), clock: time.Now}
 	m.emit = func(eventType string, payload map[string]any) {
 		raw, err := jsonBytes(payload)
 		if err != nil {
@@ -108,7 +118,14 @@ func (m *Module) Mount(r modules.Router) {
 	r.Authed("POST /pasajeros/{id}/permisos", handler(m.addPermit))
 	r.Authed("PATCH /permisos/{id}", handler(m.updatePermit))
 	r.Authed("DELETE /permisos/{id}", handler(m.deletePermit))
+	r.Authed("POST /viajes/{id}/requisitos/confirmar", handler(m.confirmRequirement))
 }
 
-func (m *Module) Start(context.Context) error    { return nil }
+// Start evalúa en segundo plano los viajes abiertos: los que existían antes de
+// los requisitos y los que cambiaron con el servidor apagado.
+func (m *Module) Start(ctx context.Context) error {
+	go m.evaluateOpenTrips(ctx)
+	return nil
+}
+
 func (m *Module) Shutdown(context.Context) error { return nil }

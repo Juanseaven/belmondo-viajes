@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/juanseaven/viajes-crm/server/internal/modules"
+	"github.com/juanseaven/viajes-crm/server/internal/modules/operaciones/evaluacion"
 	"github.com/juanseaven/viajes-crm/server/internal/modules/operaciones/store"
+	reglas "github.com/juanseaven/viajes-crm/server/internal/modules/requisitos/domain"
 )
 
 type fakeRepo struct {
@@ -53,7 +55,16 @@ func (f *fakeRepo) UpdatePassenger(_ context.Context, _ string, patch store.Pass
 	f.passengerPatch = patch
 	return store.Passenger{}, f.err
 }
-func (f *fakeRepo) DeletePassenger(context.Context, string) error { return nil }
+func (f *fakeRepo) DeletePassenger(context.Context, string) (string, error) { return "trip-1", nil }
+func (f *fakeRepo) EvaluationInput(context.Context, string) (store.EvaluationInput, error) {
+	return store.EvaluationInput{}, nil
+}
+func (f *fakeRepo) SaveRequirements(context.Context, string, []evaluacion.Requirement) error {
+	return nil
+}
+func (f *fakeRepo) Confirm(context.Context, store.NewConfirmation) error            { return nil }
+func (f *fakeRepo) OpenTripsUsing(context.Context, []reglas.Pair) ([]string, error) { return nil, nil }
+func (f *fakeRepo) OpenTrips(context.Context) ([]string, error)                     { return nil, nil }
 func (f *fakeRepo) PutPayment(context.Context, store.Payment) (store.Payment, error) {
 	return store.Payment{}, nil
 }
@@ -110,6 +121,7 @@ func TestModuloMontaTodoElContratoAutenticado(t *testing.T) {
 		"PUT /viajes/{id}/itinerario",
 		"POST /pasajeros/{id}/documentos", "PATCH /documentos/{id}", "DELETE /documentos/{id}",
 		"POST /pasajeros/{id}/permisos", "PATCH /permisos/{id}", "DELETE /permisos/{id}",
+		"POST /viajes/{id}/requisitos/confirmar",
 	}
 	if len(routes.patterns) != len(want) {
 		t.Fatalf("rutas = %v", routes.patterns)
@@ -138,7 +150,7 @@ func TestAltaHTTPTraduceLasTresEntradasYEmiteDespuesDeGuardar(t *testing.T) {
 		repo.created.DepartAt.Format("2006-01-02") != "2026-09-12" {
 		t.Fatalf("alta traducida: %#v", repo.created)
 	}
-	if len(events) != 1 || events[0] != "trip.created" {
+	if len(events) != 2 || events[0] != "trip.created" || events[1] != "requirements.changed" {
 		t.Fatalf("eventos = %v", events)
 	}
 }
@@ -160,7 +172,7 @@ func TestAltaHTTPPermiteCrearUnBorradorSinDatosDeViaje(t *testing.T) {
 		!repo.created.DepartAt.IsZero() || !repo.created.ReturnAt.IsZero() {
 		t.Fatalf("borrador traducido: %#v", repo.created)
 	}
-	if len(events) != 1 || events[0] != "trip.created" {
+	if len(events) != 2 || events[0] != "trip.created" || events[1] != "requirements.changed" {
 		t.Fatalf("eventos = %v", events)
 	}
 }
@@ -204,9 +216,9 @@ func TestNombreYMigracionesDelModuloSonEstables(t *testing.T) {
 		t.Fatalf("nombre = %q", m.Name())
 	}
 	entries, err := fs.ReadDir(m.Migrations(), ".")
-	if err != nil || len(entries) != 5 || entries[0].Name() != "0001_init.sql" || entries[1].Name() != "0002_trip_drafts.sql" ||
+	if err != nil || len(entries) != 6 || entries[0].Name() != "0001_init.sql" || entries[1].Name() != "0002_trip_drafts.sql" ||
 		entries[2].Name() != "0003_documentos_vigentes.sql" || entries[3].Name() != "0004_estado_consulta.sql" ||
-		entries[4].Name() != "0005_viajeros.sql" {
+		entries[4].Name() != "0005_viajeros.sql" || entries[5].Name() != "0006_requisitos.sql" {
 		t.Fatalf("migraciones = %v, err = %v", entries, err)
 	}
 }

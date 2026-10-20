@@ -47,6 +47,9 @@ func (s *Store) TripDetail(ctx context.Context, tripID string) (store.TripDetail
 	if d.Passengers, err = readPassengers(ctx, s.pool, tripID); err != nil {
 		return store.TripDetailData{}, err
 	}
+	if d.Requirements, err = readRequirements(ctx, s.pool, tripID); err != nil {
+		return store.TripDetailData{}, err
+	}
 
 	var payment store.Payment
 	err = s.pool.QueryRow(ctx,

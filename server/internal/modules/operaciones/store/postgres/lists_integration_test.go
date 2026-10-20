@@ -98,7 +98,7 @@ func TestPendientesAgrupaPorUrgencia(t *testing.T) {
 
 	got := f.pending(t)
 
-	if row := got[atrasado.ID]; row.Group != domain.GroupAtrasado || row.Task == nil || row.Task.Task != "Avisar si necesita visa o vacuna" {
+	if row := got[atrasado.ID]; row.Group != domain.GroupAtrasado || row.Task == nil || row.Task.Task != "Avisar los requisitos migratorios" {
 		t.Errorf("atrasado = %#v", row)
 	}
 	if row := got[semana.ID]; row.Group != domain.GroupSemana {
@@ -256,7 +256,7 @@ func TestListadoCombinaFiltros(t *testing.T) {
 		}
 	}
 	page, _ := f.s.ListTrips(f.ctx, store.TripFilter{LateOnly: true, Today: listToday, Limit: 50})
-	if len(page.Items) == 1 && (page.Items[0].Next == nil || page.Items[0].Next.Task != "Avisar si necesita visa o vacuna") {
+	if len(page.Items) == 1 && (page.Items[0].Next == nil || page.Items[0].Next.Task != "Avisar los requisitos migratorios") {
 		t.Errorf("lo que sigue = %#v", page.Items[0].Next)
 	}
 }

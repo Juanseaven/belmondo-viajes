@@ -23,11 +23,12 @@ func (s *Store) CloseControl(ctx context.Context, c store.CloseControl) error {
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var closing domain.Closing
-	var customerID string
+	var customerID, tripID string
+	var derives *string
 	err = tx.QueryRow(ctx,
-		`SELECT c.closing, t.customer_id
+		`SELECT c.closing, t.customer_id, t.id, c.derives
 		   FROM controls c JOIN trips t ON t.id = c.trip_id
-		  WHERE c.id = $1 FOR UPDATE OF c`, c.ControlID).Scan(&closing, &customerID)
+		  WHERE c.id = $1 FOR UPDATE OF c`, c.ControlID).Scan(&closing, &customerID, &tripID, &derives)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return store.ErrControlInexistente
 	}
@@ -48,15 +49,24 @@ func (s *Store) CloseControl(ctx context.Context, c store.CloseControl) error {
 		}
 	}
 
+	// El aviso de requisitos migratorios guarda qué avisó: con eso, un
+	// requisito nuevo reabre el control. Y no cierra con algo por verificar.
+	var notified []byte
+	if derives != nil && *derives == string(domain.DerivaRequisitos) {
+		if notified, err = notifiedRequirements(ctx, tx, tripID); err != nil {
+			return err
+		}
+	}
+
 	if _, err := tx.Exec(ctx,
 		`UPDATE controls SET status = 'cerrado' WHERE id = $1`, c.ControlID); err != nil {
 		return fmt.Errorf("cerrando el control: %w", err)
 	}
 
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO control_evidence (control_id, closed_by, message_id)
-		 VALUES ($1, $2, nullif($3, '')::uuid)`,
-		c.ControlID, c.UserID, c.MessageID); err != nil {
+		`INSERT INTO control_evidence (control_id, closed_by, message_id, notified)
+		 VALUES ($1, $2, nullif($3, '')::uuid, $4)`,
+		c.ControlID, c.UserID, c.MessageID, notified); err != nil {
 		return fmt.Errorf("guardando la evidencia: %w", err)
 	}
 

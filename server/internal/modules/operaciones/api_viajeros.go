@@ -62,6 +62,7 @@ func (m *Module) putItinerary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m.emit("trip.updated", map[string]any{"tripId": tripID})
+	m.afterChange(r.Context(), tripID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -90,6 +91,7 @@ func (m *Module) addDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m.emit("passenger.changed", map[string]any{"tripId": d.TripID, "passengerId": d.PassengerID})
+	m.afterChange(r.Context(), d.TripID)
 	httpx.JSON(w, http.StatusCreated, d)
 }
 
@@ -104,6 +106,7 @@ func (m *Module) updateDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m.emit("passenger.changed", map[string]any{"tripId": d.TripID, "passengerId": d.PassengerID})
+	m.afterChange(r.Context(), d.TripID)
 	httpx.JSON(w, http.StatusOK, d)
 }
 
@@ -114,6 +117,7 @@ func (m *Module) deleteDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m.emit("passenger.changed", map[string]any{"tripId": tripID})
+	m.afterChange(r.Context(), tripID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -142,6 +146,7 @@ func (m *Module) addPermit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m.emit("passenger.changed", map[string]any{"tripId": pm.TripID, "passengerId": pm.PassengerID})
+	m.afterChange(r.Context(), pm.TripID)
 	httpx.JSON(w, http.StatusCreated, pm)
 }
 
@@ -156,6 +161,7 @@ func (m *Module) updatePermit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m.emit("passenger.changed", map[string]any{"tripId": pm.TripID, "passengerId": pm.PassengerID})
+	m.afterChange(r.Context(), pm.TripID)
 	httpx.JSON(w, http.StatusOK, pm)
 }
 
@@ -166,5 +172,6 @@ func (m *Module) deletePermit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m.emit("passenger.changed", map[string]any{"tripId": tripID})
+	m.afterChange(r.Context(), tripID)
 	w.WriteHeader(http.StatusNoContent)
 }

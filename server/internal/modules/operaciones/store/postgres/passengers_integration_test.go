@@ -36,7 +36,7 @@ func TestPasajerosCierranYReabrenLosDerivados(t *testing.T) {
 		}
 	}
 
-	if err := s.DeletePassenger(ctx, passenger.ID); err != nil {
+	if _, err := s.DeletePassenger(ctx, passenger.ID); err != nil {
 		t.Fatalf("baja del pasajero: %v", err)
 	}
 	for _, id := range []string{"carga-nombres", "carga-apellidos", "control-titular"} {
@@ -49,7 +49,7 @@ func TestPasajerosCierranYReabrenLosDerivados(t *testing.T) {
 func TestBorrarPasajeroInexistenteDevuelveNotFound(t *testing.T) {
 	ctx, pool := testDB(t)
 	s := New(pool)
-	err := s.DeletePassenger(ctx, "00000000-0000-0000-0000-000000000099")
+	_, err := s.DeletePassenger(ctx, "00000000-0000-0000-0000-000000000099")
 	if !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("error = %v, se esperaba ErrNotFound", err)
 	}

@@ -44,7 +44,12 @@ func refreshDerived(ctx context.Context, q execer, tripID string) error {
 //
 // Los documentos «llegan al regreso» si el documento con el que viaja cada
 // pasajero vence después de la fecha de regreso, o de la de salida mientras no
-// haya regreso.
+// haya regreso, y además cumple la vigencia y la antigüedad que piden los
+// países del itinerario. Donde la regla no sabe la vigencia, queda el criterio
+// del regreso.
+//
+// Los requisitos migratorios están al día si todos los evaluados cumplen,
+// salvo vigencia y antigüedad, que son del control del documento.
 const sqlRefreshDerived = `
 WITH datos AS (
     SELECT t.id AS trip_id,
@@ -62,8 +67,15 @@ WITH datos AS (
                               LEFT JOIN passenger_documents d ON d.id = p.travel_document_id
                              WHERE p.trip_id = t.id
                                AND (d.expires_at IS NULL
-                                    OR d.expires_at < coalesce(t.return_at, t.depart_at))))
-                                                                          AS documentos,
+                                    OR d.expires_at < coalesce(t.return_at, t.depart_at)))
+            AND NOT EXISTS (SELECT 1 FROM trip_requirements r
+                             WHERE r.trip_id = t.id AND r.key IN ('vigencia', 'antiguedad')
+                               AND r.status = 'falta'))                   AS documentos,
+           (EXISTS (SELECT 1 FROM trip_requirements r
+                     WHERE r.trip_id = t.id AND r.key NOT IN ('vigencia', 'antiguedad'))
+            AND NOT EXISTS (SELECT 1 FROM trip_requirements r
+                             WHERE r.trip_id = t.id AND r.key NOT IN ('vigencia', 'antiguedad')
+                               AND r.status <> 'cumple'))                 AS requisitos,
            (coalesce(btrim(cu.email), '') <> ''
             AND coalesce(btrim(cu.phone_number), '') <> '')               AS contacto,
            pa.total_usd IS NOT NULL                                       AS total_usd,
@@ -86,6 +98,7 @@ evaluado AS (
              WHEN 'pasajero.apellido'            THEN d.apellido
              WHEN 'pasajero.titular'             THEN d.titular
              WHEN 'pasajero.documentos_vigentes' THEN d.documentos
+             WHEN 'pasajero.requisitos'          THEN d.requisitos
              WHEN 'cliente.mail_y_telefono'      THEN d.contacto
              WHEN 'pago.total_usd'               THEN d.total_usd
              WHEN 'pago.total_ars'               THEN d.total_ars
@@ -93,7 +106,20 @@ evaluado AS (
              WHEN 'pago.metodo'                  THEN d.metodo
              ELSE false
            END AS cumplido,
-           EXISTS (SELECT 1 FROM control_evidence e WHERE e.control_id = c.id) AS con_prueba,
+           CASE WHEN c.derives = 'pasajero.requisitos' THEN coalesce((
+                  -- El aviso de requisitos prueba lo que avisó: si aparece un
+                  -- requisito pendiente que no estaba, ya no lo cubre. Las
+                  -- evidencias anteriores a la migración 0006 no guardaron qué
+                  -- avisaron y siguen valiendo como antes.
+                  SELECT e.notified IS NULL OR NOT EXISTS (
+                           SELECT 1 FROM trip_requirements r
+                            WHERE r.trip_id = c.trip_id AND r.status <> 'cumple'
+                              AND r.key NOT IN ('vigencia', 'antiguedad')
+                              AND NOT e.notified @> jsonb_build_array(` + requirementID + `))
+                    FROM control_evidence e WHERE e.control_id = c.id
+                   ORDER BY e.closed_at DESC LIMIT 1), false)
+                ELSE EXISTS (SELECT 1 FROM control_evidence e WHERE e.control_id = c.id)
+           END AS con_prueba,
            c.status AS actual
       FROM controls c
       JOIN datos d ON d.trip_id = c.trip_id

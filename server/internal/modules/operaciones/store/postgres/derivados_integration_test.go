@@ -139,8 +139,8 @@ func TestRecalcularNoTocaLosQueNoSonDerivados(t *testing.T) {
 
 	if _, err := pool.Exec(ctx,
 		`UPDATE controls SET status = 'cerrado'
-		  WHERE trip_id = $1 AND item_id = 'control-visa'`, viaje.ID); err != nil {
-		t.Fatalf("cerrando el control de visa: %v", err)
+		  WHERE trip_id = $1 AND item_id = 'control-no-reembolsable'`, viaje.ID); err != nil {
+		t.Fatalf("cerrando el control del monto no reembolsable: %v", err)
 	}
 
 	for i := 0; i < 2; i++ {
@@ -149,8 +149,8 @@ func TestRecalcularNoTocaLosQueNoSonDerivados(t *testing.T) {
 		}
 	}
 
-	if estado(t, ctx, pool, viaje.ID, "control-visa") != "cerrado" {
-		t.Error("control-visa: recalcular derivados no puede reabrir un control por acción")
+	if estado(t, ctx, pool, viaje.ID, "control-no-reembolsable") != "cerrado" {
+		t.Error("control-no-reembolsable: recalcular derivados no puede reabrir un control por acción")
 	}
 }
 

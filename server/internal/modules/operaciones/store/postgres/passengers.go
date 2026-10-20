@@ -109,10 +109,11 @@ func (s *Store) UpdatePassenger(ctx context.Context, passengerID string, patch s
 	return p, nil
 }
 
-func (s *Store) DeletePassenger(ctx context.Context, passengerID string) error {
+// DeletePassenger borra un pasajero y devuelve su viaje.
+func (s *Store) DeletePassenger(ctx context.Context, passengerID string) (string, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -120,12 +121,12 @@ func (s *Store) DeletePassenger(ctx context.Context, passengerID string) error {
 	err = tx.QueryRow(ctx,
 		`DELETE FROM passengers WHERE id = $1 RETURNING trip_id`, passengerID).Scan(&tripID)
 	if err != nil {
-		return writeError("borrando el pasajero", err)
+		return "", writeError("borrando el pasajero", err)
 	}
 	if err := refreshDerived(ctx, tx, tripID); err != nil {
-		return err
+		return "", err
 	}
-	return tx.Commit(ctx)
+	return tripID, tx.Commit(ctx)
 }
 
 // releaseHolder le quita la titularidad a quien la tenga en el viaje del

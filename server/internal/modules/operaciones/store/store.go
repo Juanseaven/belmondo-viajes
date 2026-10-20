@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/juanseaven/viajes-crm/server/internal/modules/operaciones/domain"
+	"github.com/juanseaven/viajes-crm/server/internal/modules/operaciones/evaluacion"
 )
 
 // Los errores que el módulo distingue al cerrar un control. Cada uno existe
@@ -32,6 +33,14 @@ var (
 	// ErrInvalid: el dato no respeta las reglas del esquema (un país que no es
 	// un código ISO, un rol desconocido, fechas al revés).
 	ErrInvalid = errors.New("operaciones: dato inválido")
+
+	// ErrQuedaPorVerificar: el aviso de requisitos migratorios prueba que se le
+	// avisó al cliente, no que la agencia verificó. Con algo en «verificar», el
+	// mensaje se manda igual pero el control sigue abierto.
+	ErrQuedaPorVerificar = errors.New("operaciones: quedan requisitos por verificar; el control sigue abierto")
+
+	// ErrNoConfirmable: un dato que falta no se confirma, se carga.
+	ErrNoConfirmable = errors.New("operaciones: ese requisito no se confirma; hay que cargar el dato")
 )
 
 // CloseControl es la orden de cerrar un renglón.
@@ -185,6 +194,30 @@ type PermitPatch struct {
 	ExpiresAt *string
 }
 
+// TripRequirement es un requisito evaluado, con quién lo confirmó si se
+// confirmó.
+type TripRequirement struct {
+	evaluacion.Requirement
+	ConfirmedByName string     `json:"confirmedByName,omitempty"`
+	ConfirmedAt     *time.Time `json:"confirmedAt,omitempty"`
+}
+
+// NewConfirmation es la orden de confirmar un requisito: «lo revisé y cumple».
+type NewConfirmation struct {
+	TripID      string
+	PassengerID string
+	Country     string
+	Key         string
+	UserID      string
+	MessageID   string
+}
+
+// EvaluationInput es lo que la evaluación necesita de un viaje.
+type EvaluationInput struct {
+	Trip          evaluacion.Trip
+	Confirmations []evaluacion.Confirmation
+}
+
 // Stop es un país del itinerario. Sin fechas, la estadía es la del viaje.
 type Stop struct {
 	Country  string     `json:"country"`
@@ -274,11 +307,12 @@ type TripSummary struct {
 
 type TripDetailData struct {
 	Trip
-	Customer   Customer    `json:"customer"`
-	Itinerary  []Stop      `json:"itinerary"`
-	Passengers []Passenger `json:"passengers"`
-	Payment    *Payment    `json:"payment,omitempty"`
-	Controls   []Control   `json:"controls"`
+	Customer     Customer          `json:"customer"`
+	Itinerary    []Stop            `json:"itinerary"`
+	Requirements []TripRequirement `json:"requirements"`
+	Passengers   []Passenger       `json:"passengers"`
+	Payment      *Payment          `json:"payment,omitempty"`
+	Controls     []Control         `json:"controls"`
 }
 
 // TripRow es un viaje como se ve en una lista: lo justo para leerlo de un

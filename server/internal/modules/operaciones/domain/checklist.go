@@ -199,10 +199,14 @@ var control = []ChecklistItem{
 		Prompt: "¿El equipaje incluido es el que cotizaste?",
 	},
 	{
-		ID: "control-visa", Stage: StageControl, Title: "Aviso al pax si requiere visa o vacuna",
-		Task:    "Avisar si necesita visa o vacuna",
-		Closing: ClosingAccion, Critical: true, base: antesDeSalida, days: 45,
-		ActionLabel: "Avisar por visa o vacuna",
+		// La planilla decía «Aviso al pax si requiere visa o vacuna». Ahora el
+		// sistema sabe qué requiere: se cierra solo cuando todo cumple, y el
+		// aviso lleva lo que falta de cada pasajero (el mensaje de acá es el de
+		// respaldo; la ficha arma el real con los requisitos evaluados).
+		ID: "control-visa", Stage: StageControl, Title: "Requisitos migratorios",
+		Task:    "Avisar los requisitos migratorios",
+		Closing: ClosingAccion, Derives: DerivaRequisitos, Critical: true, base: antesDeSalida, days: 45,
+		ActionLabel: "Avisar los requisitos",
 		Message:     "{pax}, te confirmo los requisitos migratorios del destino para que los tengas presentes antes de viajar.",
 	},
 	{

@@ -62,6 +62,10 @@ const (
 	// vence después del regreso. Lo usa un control por acción, no un derivado:
 	// el dato lo cierra, pero si falta, el aviso al pasajero también.
 	DerivaDocumentosVigentes DerivedField = "pasajero.documentos_vigentes"
+	// DerivaRequisitos: todos los requisitos de entrada evaluados de todos los
+	// pasajeros cumplen, salvo vigencia y antigüedad del documento, que son de
+	// DerivaDocumentosVigentes.
+	DerivaRequisitos DerivedField = "pasajero.requisitos"
 )
 
 // ControlStatus es el estado de la copia que cada viaje guarda de un renglón.
