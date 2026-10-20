@@ -1,8 +1,11 @@
 // Package modules define el contrato que cumple toda funcionalidad del sistema.
 //
-// La regla que gobierna la arquitectura: el kernel no conoce a ningún módulo y
-// los módulos no se conocen entre sí. Este paquete es la única pieza que ambas
-// mitades comparten, y a propósito no importa nada del proyecto.
+// La regla que gobierna la arquitectura: el kernel no conoce a ningún módulo.
+// Un módulo sí puede leer tablas públicas de otro y declarar claves foráneas
+// hacia ellas, siempre en una sola dirección; nunca escribe tablas ajenas. Las
+// dependencias se pasan a mano al construir el sistema y el grafo debe seguir
+// siendo acíclico. Este paquete es la única pieza que el kernel y los módulos
+// comparten, y a propósito no importa nada del proyecto.
 //
 // Agregar un módulo al sistema es escribir una implementación de Module y añadir
 // una línea en cmd/api/main.go.

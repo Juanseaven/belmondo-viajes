@@ -26,6 +26,8 @@ var (
 	ErrDerivadoNoSeCierraAMano = errors.New("operaciones: un control derivado lo cierra el dato")
 
 	ErrControlInexistente = errors.New("operaciones: el control no existe")
+	ErrNotFound           = errors.New("operaciones: no existe")
+	ErrConflict           = errors.New("operaciones: conflicto")
 )
 
 // CloseControl es la orden de cerrar un renglón.
@@ -54,15 +56,144 @@ type NewTrip struct {
 
 // Trip es el expediente tal como sale de la base.
 type Trip struct {
-	ID           string
-	Number       int64
-	CustomerID   string
-	Status       domain.TripStatus
-	Destination  string
-	DepartAt     time.Time
-	ReturnAt     time.Time
-	SellerUserID string
-	CreatedAt    time.Time
+	ID            string            `json:"id"`
+	Number        int64             `json:"number"`
+	CustomerID    string            `json:"customerId"`
+	Status        domain.TripStatus `json:"status"`
+	Destination   string            `json:"destination"`
+	DepartAt      *time.Time        `json:"departAt,omitempty"`
+	ReturnAt      *time.Time        `json:"returnAt,omitempty"`
+	SellerUserID  string            `json:"sellerUserId,omitempty"`
+	SellerName    string            `json:"sellerName,omitempty"`
+	CreatedByName string            `json:"createdByName,omitempty"`
+	CreatedAt     time.Time         `json:"createdAt"`
+}
+
+type TripPatch struct {
+	Destination  *string
+	DepartAt     *time.Time
+	ReturnAt     *time.Time
+	Status       *domain.TripStatus
+	SellerUserID *string
+}
+
+type NewPassenger struct {
+	TripID            string
+	FirstName         string
+	LastName          string
+	Kind              string
+	IsHolder          bool
+	DocumentType      string
+	DocumentNumber    string
+	DocumentExpiresAt *time.Time
+	CreatedBy         string
+}
+
+type Passenger struct {
+	ID                string     `json:"id"`
+	TripID            string     `json:"tripId"`
+	FirstName         string     `json:"firstName"`
+	LastName          string     `json:"lastName"`
+	Kind              string     `json:"kind"`
+	IsHolder          bool       `json:"isHolder"`
+	DocumentType      string     `json:"documentType,omitempty"`
+	DocumentNumber    string     `json:"documentNumber,omitempty"`
+	DocumentExpiresAt *time.Time `json:"documentExpiresAt,omitempty"`
+}
+
+type PassengerPatch struct {
+	FirstName         *string
+	LastName          *string
+	Kind              *string
+	IsHolder          *bool
+	DocumentType      *string
+	DocumentNumber    *string
+	DocumentExpiresAt *string
+}
+
+type Payment struct {
+	TripID           string     `json:"tripId"`
+	TotalUSD         *float64   `json:"totalUsd,omitempty"`
+	Rate             *float64   `json:"rate,omitempty"`
+	TotalARS         *float64   `json:"totalArs,omitempty"`
+	Method           string     `json:"method,omitempty"`
+	DepositUSD       *float64   `json:"depositUsd,omitempty"`
+	DepositDueAt     *time.Time `json:"depositDueAt,omitempty"`
+	DepositPaidAt    *time.Time `json:"depositPaidAt,omitempty"`
+	NonRefundableUSD *float64   `json:"nonRefundableUsd,omitempty"`
+	UpdatedBy        string     `json:"-"`
+}
+
+type Customer struct {
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	Email          string    `json:"email,omitempty"`
+	PhoneNumber    string    `json:"phoneNumber,omitempty"`
+	DocumentType   string    `json:"documentType,omitempty"`
+	DocumentNumber string    `json:"documentNumber,omitempty"`
+	CustomerSince  time.Time `json:"customerSince"`
+	ContactIDs     []string  `json:"contactIds"`
+}
+
+type CustomerPatch struct {
+	Name           *string
+	Email          *string
+	PhoneNumber    *string
+	DocumentType   *string
+	DocumentNumber *string
+	CustomerSince  *string
+}
+
+type ControlEvidence struct {
+	ID           string    `json:"id"`
+	ClosedBy     string    `json:"closedBy,omitempty"`
+	ClosedByName string    `json:"closedByName,omitempty"`
+	ClosedAt     time.Time `json:"closedAt"`
+	MessageID    string    `json:"messageId,omitempty"`
+}
+
+type Control struct {
+	ID          string               `json:"id"`
+	ItemID      string               `json:"itemId"`
+	Stage       domain.Stage         `json:"stage"`
+	Closing     domain.Closing       `json:"closing"`
+	Title       string               `json:"title"`
+	Prompt      string               `json:"prompt,omitempty"`
+	ActionLabel string               `json:"actionLabel,omitempty"`
+	Message     string               `json:"message,omitempty"`
+	Critical    bool                 `json:"critical"`
+	Status      domain.ControlStatus `json:"status"`
+	DueAt       *time.Time           `json:"dueAt,omitempty"`
+	Evidence    []ControlEvidence    `json:"evidence"`
+}
+
+type ControlSummary struct {
+	ID       string         `json:"id"`
+	ItemID   string         `json:"itemId"`
+	Title    string         `json:"title"`
+	Critical bool           `json:"critical"`
+	DueAt    *time.Time     `json:"dueAt,omitempty"`
+	Closing  domain.Closing `json:"closing"`
+}
+
+type TripSummary struct {
+	Trip
+	PassengerCount int             `json:"passengerCount"`
+	TotalUSD       *float64        `json:"totalUsd,omitempty"`
+	NextControl    *ControlSummary `json:"nextControl,omitempty"`
+}
+
+type TripDetailData struct {
+	Trip
+	Customer   Customer    `json:"customer"`
+	Passengers []Passenger `json:"passengers"`
+	Payment    *Payment    `json:"payment,omitempty"`
+	Controls   []Control   `json:"controls"`
+}
+
+type InboxItem struct {
+	ContactID string       `json:"contactId"`
+	Trip      *TripSummary `json:"trip,omitempty"`
 }
 
 // TripStore es la escritura del expediente.

@@ -44,7 +44,9 @@ func refreshDerived(ctx context.Context, q execer, tripID string) error {
 const sqlRefreshDerived = `
 WITH datos AS (
     SELECT t.id AS trip_id,
-           btrim(t.destination) <> ''                                     AS destino,
+           coalesce(btrim(t.destination), '') <> ''                       AS destino,
+	       t.depart_at IS NOT NULL                                          AS salida,
+	       t.return_at IS NOT NULL                                          AS regreso,
            EXISTS (SELECT 1 FROM passengers p
                     WHERE p.trip_id = t.id AND btrim(p.first_name) <> '') AS nombre,
            EXISTS (SELECT 1 FROM passengers p
@@ -66,8 +68,8 @@ evaluado AS (
     SELECT c.id,
            CASE c.derives
              WHEN 'viaje.destino'           THEN d.destino
-             WHEN 'viaje.salida'            THEN true
-             WHEN 'viaje.regreso'           THEN true
+             WHEN 'viaje.salida'            THEN d.salida
+             WHEN 'viaje.regreso'           THEN d.regreso
              WHEN 'pasajero.nombre'         THEN d.nombre
              WHEN 'pasajero.apellido'       THEN d.apellido
              WHEN 'pasajero.titular'        THEN d.titular

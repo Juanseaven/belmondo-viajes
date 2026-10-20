@@ -55,8 +55,14 @@ func (i ChecklistItem) DueAt(alta, salida, regreso time.Time) (time.Time, bool) 
 	case desdeAlta:
 		return alta.AddDate(0, 0, i.days), true
 	case antesDeSalida:
+		if salida.IsZero() {
+			return time.Time{}, false
+		}
 		return salida.AddDate(0, 0, -i.days), true
 	case antesDeRegreso:
+		if regreso.IsZero() {
+			return time.Time{}, false
+		}
 		return regreso.AddDate(0, 0, -i.days), true
 	default:
 		return time.Time{}, false

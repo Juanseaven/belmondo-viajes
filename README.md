@@ -77,9 +77,12 @@ web/
     app/                   Rutas de Next.js
 ```
 
-**La regla que gobierna todo:** el kernel no conoce a ningún módulo, y los
-módulos no se conocen entre sí. Si algo del kernel necesitara importar un módulo,
-esa pieza no era del kernel.
+**La regla que gobierna todo:** el kernel no conoce a ningún módulo. Los módulos
+sí pueden depender entre sí en una sola dirección: pueden leer tablas que el
+módulo dueño declare públicas y declarar claves foráneas hacia ellas, pero nunca
+escribirlas. El grafo debe ser acíclico y las dependencias se pasan a mano al
+construir. Si algo del kernel necesitara importar un módulo, esa pieza no era del
+kernel.
 
 ## Agregar un módulo
 

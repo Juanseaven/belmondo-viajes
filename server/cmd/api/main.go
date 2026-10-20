@@ -32,6 +32,7 @@ import (
 	"github.com/juanseaven/viajes-crm/server/internal/kernel/ws"
 	"github.com/juanseaven/viajes-crm/server/internal/modules"
 	"github.com/juanseaven/viajes-crm/server/internal/modules/mirror"
+	"github.com/juanseaven/viajes-crm/server/internal/modules/operaciones"
 )
 
 func main() {
@@ -94,6 +95,7 @@ func run() error {
 	// recorrerla. Para sumar un módulo, se añade aquí.
 	registry := modules.NewRegistry(log,
 		mirror.New(k),
+		operaciones.New(k),
 	)
 
 	// --- Esquema --------------------------------------------------------------

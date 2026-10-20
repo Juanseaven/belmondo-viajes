@@ -68,6 +68,16 @@ func TestLosDerivadosNoVencen(t *testing.T) {
 	}
 }
 
+func TestLosControlesDeViajeEsperanHastaTenerSuFechaBase(t *testing.T) {
+	alta := fecha("2026-08-20")
+	for _, id := range []string{"control-visa", "control-checkin", "control-checkout"} {
+		item := renglon(t, id)
+		if due, ok := item.DueAt(alta, time.Time{}, time.Time{}); ok {
+			t.Fatalf("%s calculó %s sin fecha de viaje", id, due.Format("2006-01-02"))
+		}
+	}
+}
+
 // Crítico no es «importante»: es lo que, si falla, arruina el viaje o deja a la
 // agencia expuesta. Un pasaporte vencido no tiene arreglo en el aeropuerto y un
 // nombre mal escrito en un ticket aéreo no se corrige.

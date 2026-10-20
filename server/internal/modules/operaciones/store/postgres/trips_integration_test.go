@@ -113,6 +113,42 @@ func TestAltaCreaElClienteLoVinculaYMaterializaLosControles(t *testing.T) {
 	}
 }
 
+func TestAltaParcialConservaCamposNulosYNoInventaVencimientos(t *testing.T) {
+	ctx, pool := testDB(t)
+	s := New(pool)
+
+	user := seedUser(t, ctx, pool, "borrador@agencia.test")
+	contact := seedContact(t, ctx, pool, "5491100000099@s.whatsapp.net", "Borrador WhatsApp")
+
+	viaje, err := s.CreateTrip(ctx, store.NewTrip{ContactID: contact, CreatedBy: user})
+	if err != nil {
+		t.Fatalf("alta parcial: %v", err)
+	}
+
+	var destination *string
+	var departAt, returnAt *time.Time
+	if err := pool.QueryRow(ctx,
+		`SELECT destination, depart_at, return_at FROM trips WHERE id = $1`, viaje.ID,
+	).Scan(&destination, &departAt, &returnAt); err != nil {
+		t.Fatalf("leyendo borrador: %v", err)
+	}
+	if destination != nil || departAt != nil || returnAt != nil {
+		t.Fatalf("el borrador inventó datos: destino=%v salida=%v regreso=%v", destination, departAt, returnAt)
+	}
+
+	var controlesConFechaDeViaje int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM controls
+		  WHERE trip_id = $1 AND item_id IN ('control-visa', 'control-checkin', 'control-checkout')
+		    AND due_at IS NOT NULL`, viaje.ID,
+	).Scan(&controlesConFechaDeViaje); err != nil {
+		t.Fatalf("contando vencimientos: %v", err)
+	}
+	if controlesConFechaDeViaje != 0 {
+		t.Fatalf("el borrador recibió %d vencimientos sin fechas", controlesConFechaDeViaje)
+	}
+}
+
 // El plazo vive en la plantilla; la fecha se calcula al materializar. Si esto se
 // rompe, el chip de la bandeja ordena mal y lo urgente deja de aparecer primero.
 func TestAltaCalculaLosVencimientosYDejaSinFechaALosDerivados(t *testing.T) {

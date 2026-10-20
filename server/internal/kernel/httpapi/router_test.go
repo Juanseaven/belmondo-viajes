@@ -35,3 +35,16 @@ func TestLoggingMiddlewarePreservaElUpgradeAWebSocket(t *testing.T) {
 	}
 	_ = conn.Close()
 }
+
+func TestCORSAutorizaPUTParaLosUpsertsDeModulos(t *testing.T) {
+	h := withCORS([]string{"https://panel.example"}, http.NotFoundHandler())
+	req := httptest.NewRequest(http.MethodOptions, "/api/operaciones/viajes/1/pago", nil)
+	req.Header.Set("Origin", "https://panel.example")
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Access-Control-Allow-Methods"); !strings.Contains(got, "PUT") {
+		t.Fatalf("métodos CORS = %q, falta PUT", got)
+	}
+}

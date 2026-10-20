@@ -37,8 +37,9 @@ func (s *Store) CreateTrip(ctx context.Context, n store.NewTrip) (store.Trip, er
 	err = tx.QueryRow(ctx,
 		`INSERT INTO trips (customer_id, destination, depart_at, return_at,
 		                    seller_user_id, created_by)
-		 VALUES ($1, $2, $3, $4, $5, $5)
-		 RETURNING id, number, customer_id, status, destination, depart_at,
+		 VALUES ($1, nullif(btrim($2), ''), nullif($3, '0001-01-01'::date),
+		         nullif($4, '0001-01-01'::date), $5, $5)
+		 RETURNING id, number, customer_id, status, coalesce(destination, ''), depart_at,
 		           return_at, created_at`,
 		customerID, n.Destination, n.DepartAt, n.ReturnAt, n.CreatedBy,
 	).Scan(&t.ID, &t.Number, &t.CustomerID, &t.Status, &t.Destination,
@@ -52,6 +53,61 @@ func (s *Store) CreateTrip(ctx context.Context, n store.NewTrip) (store.Trip, er
 		return store.Trip{}, err
 	}
 
+	if err := tx.Commit(ctx); err != nil {
+		return store.Trip{}, err
+	}
+	return t, nil
+}
+
+func (s *Store) UpdateTrip(ctx context.Context, tripID string, patch store.TripPatch) (store.Trip, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return store.Trip{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var t store.Trip
+	err = tx.QueryRow(ctx,
+		`UPDATE trips SET
+		   destination = coalesce($2, destination),
+		   depart_at = coalesce($3, depart_at),
+		   return_at = coalesce($4, return_at),
+		   status = coalesce($5, status),
+		   seller_user_id = CASE WHEN $6::text IS NULL THEN seller_user_id ELSE nullif($6, '')::uuid END
+		 WHERE id = $1
+		 RETURNING id, number, customer_id, status, coalesce(destination, ''), depart_at, return_at,
+		           coalesce(seller_user_id::text, ''), created_at`,
+		tripID, patch.Destination, patch.DepartAt, patch.ReturnAt, patch.Status,
+		patch.SellerUserID,
+	).Scan(&t.ID, &t.Number, &t.CustomerID, &t.Status, &t.Destination, &t.DepartAt,
+		&t.ReturnAt, &t.SellerUserID, &t.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return store.Trip{}, store.ErrNotFound
+	}
+	if err != nil {
+		return store.Trip{}, fmt.Errorf("actualizando el viaje: %w", err)
+	}
+
+	ids := make([]string, 0)
+	dues := make([]time.Time, 0)
+	for _, item := range domain.Checklist() {
+		if item.Stage != domain.StageControl {
+			continue
+		}
+		if due, ok := item.DueAt(t.CreatedAt, valueOrZero(t.DepartAt), valueOrZero(t.ReturnAt)); ok {
+			ids = append(ids, item.ID)
+			dues = append(dues, due)
+		}
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE controls c SET due_at = d.due_at
+		   FROM unnest($2::text[], $3::date[]) AS d(item_id, due_at)
+		  WHERE c.trip_id = $1 AND c.item_id = d.item_id`, tripID, ids, dues); err != nil {
+		return store.Trip{}, fmt.Errorf("recalculando vencimientos: %w", err)
+	}
+	if err := refreshDerived(ctx, tx, tripID); err != nil {
+		return store.Trip{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return store.Trip{}, err
 	}
@@ -129,7 +185,7 @@ func materializeChecklist(ctx context.Context, tx pgx.Tx, t store.Trip) error {
 			derives = append(derives, nil)
 		}
 
-		if due, ok := item.DueAt(t.CreatedAt, t.DepartAt, t.ReturnAt); ok {
+		if due, ok := item.DueAt(t.CreatedAt, valueOrZero(t.DepartAt), valueOrZero(t.ReturnAt)); ok {
 			d := due
 			dues = append(dues, &d)
 		} else {
@@ -147,4 +203,11 @@ func materializeChecklist(ctx context.Context, tx pgx.Tx, t store.Trip) error {
 		return fmt.Errorf("materializando los controles: %w", err)
 	}
 	return refreshDerived(ctx, tx, t.ID)
+}
+
+func valueOrZero(value *time.Time) time.Time {
+	if value == nil {
+		return time.Time{}
+	}
+	return *value
 }
