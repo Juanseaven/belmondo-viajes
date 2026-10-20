@@ -41,21 +41,11 @@ func (s *Store) TripDetail(ctx context.Context, tripID string) (store.TripDetail
 		return store.TripDetailData{}, fmt.Errorf("leyendo el viaje: %w", err)
 	}
 
-	rows, err := s.pool.Query(ctx,
-		`SELECT id, trip_id, first_name, last_name, kind, is_holder,
-		        coalesce(document_type, ''), coalesce(document_number, ''), document_expires_at
-		   FROM passengers WHERE trip_id = $1 ORDER BY is_holder DESC, created_at, id`, tripID)
-	if err != nil {
-		return store.TripDetailData{}, fmt.Errorf("leyendo pasajeros: %w", err)
+	if d.Itinerary, err = readItinerary(ctx, s.pool, tripID); err != nil {
+		return store.TripDetailData{}, err
 	}
-	d.Passengers, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (store.Passenger, error) {
-		var p store.Passenger
-		err := row.Scan(&p.ID, &p.TripID, &p.FirstName, &p.LastName, &p.Kind, &p.IsHolder,
-			&p.DocumentType, &p.DocumentNumber, &p.DocumentExpiresAt)
-		return p, err
-	})
-	if err != nil {
-		return store.TripDetailData{}, fmt.Errorf("armando pasajeros: %w", err)
+	if d.Passengers, err = readPassengers(ctx, s.pool, tripID); err != nil {
+		return store.TripDetailData{}, err
 	}
 
 	var payment store.Payment

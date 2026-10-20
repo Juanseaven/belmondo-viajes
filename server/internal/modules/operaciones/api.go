@@ -240,7 +240,10 @@ func (m *Module) addPassenger(w http.ResponseWriter, r *http.Request) {
 		LastName          string `json:"lastName"`
 		Kind              string `json:"kind"`
 		IsHolder          bool   `json:"isHolder"`
+		BirthDate         string `json:"birthDate"`
+		ResidenceCountry  string `json:"residenceCountry"`
 		DocumentType      string `json:"documentType"`
+		DocumentCountry   string `json:"documentCountry"`
 		DocumentNumber    string `json:"documentNumber"`
 		DocumentExpiresAt string `json:"documentExpiresAt"`
 	}
@@ -250,21 +253,20 @@ func (m *Module) addPassenger(w http.ResponseWriter, r *http.Request) {
 	if body.Kind == "" {
 		body.Kind = "adulto"
 	}
-	var expires *time.Time
-	if body.DocumentExpiresAt != "" {
-		value, err := parseDate(body.DocumentExpiresAt)
-		if err != nil {
-			httpx.BadRequest(w, "vencimiento de documento inválido")
-			return
-		}
-		expires = &value
-	}
-	passenger, err := m.repo.AddPassenger(r.Context(), store.NewPassenger{
+	n := store.NewPassenger{
 		TripID: r.PathValue("id"), FirstName: strings.TrimSpace(body.FirstName),
 		LastName: strings.TrimSpace(body.LastName), Kind: body.Kind, IsHolder: body.IsHolder,
-		DocumentType: body.DocumentType, DocumentNumber: body.DocumentNumber,
-		DocumentExpiresAt: expires, CreatedBy: auth.UserID(r.Context()),
-	})
+		ResidenceCountry: strings.ToUpper(strings.TrimSpace(body.ResidenceCountry)),
+		DocumentType:     body.DocumentType, DocumentCountry: strings.ToUpper(strings.TrimSpace(body.DocumentCountry)),
+		DocumentNumber: body.DocumentNumber, CreatedBy: auth.UserID(r.Context()),
+	}
+	if name, ok := optionalDates(map[string]dateField{
+		"nacimiento": {body.BirthDate, &n.BirthDate}, "vencimiento del documento": {body.DocumentExpiresAt, &n.DocumentExpiresAt},
+	}); !ok {
+		httpx.BadRequest(w, "fecha de "+name+" inválida")
+		return
+	}
+	passenger, err := m.repo.AddPassenger(r.Context(), n)
 	if err != nil {
 		m.storeError(w, "creando el pasajero", err)
 		return
@@ -441,7 +443,7 @@ func (m *Module) storeError(w http.ResponseWriter, action string, err error) {
 		httpx.NotFound(w, "no encontrado")
 	case errors.Is(err, store.ErrConflict):
 		httpx.Error(w, http.StatusConflict, httpx.CodeConflict, err.Error())
-	case errors.Is(err, store.ErrBadCursor):
+	case errors.Is(err, store.ErrBadCursor), errors.Is(err, store.ErrInvalid):
 		httpx.BadRequest(w, err.Error())
 	case errors.Is(err, store.ErrEvidenciaRequerida), errors.Is(err, store.ErrEvidenciaAjena),
 		errors.Is(err, store.ErrDerivadoNoSeCierraAMano):

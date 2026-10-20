@@ -43,6 +43,13 @@ type repository interface {
 	Sellers(context.Context) ([]store.Seller, error)
 	Pending(context.Context, time.Time) ([]store.PendingRow, error)
 	ListTrips(context.Context, store.TripFilter) (store.TripPage, error)
+	PutItinerary(context.Context, string, []store.Stop) error
+	AddDocument(context.Context, store.NewDocument) (store.Document, error)
+	UpdateDocument(context.Context, string, store.DocumentPatch) (store.Document, error)
+	DeleteDocument(context.Context, string) (string, error)
+	AddPermit(context.Context, store.NewPermit) (store.Permit, error)
+	UpdatePermit(context.Context, string, store.PermitPatch) (store.Permit, error)
+	DeletePermit(context.Context, string) (string, error)
 }
 
 type Module struct {
@@ -94,6 +101,13 @@ func (m *Module) Mount(r modules.Router) {
 	r.Authed("GET /bandeja", handler(m.inbox))
 	r.Authed("GET /vendedores", handler(m.sellers))
 	r.Authed("GET /pendientes", handler(m.pending))
+	r.Authed("PUT /viajes/{id}/itinerario", handler(m.putItinerary))
+	r.Authed("POST /pasajeros/{id}/documentos", handler(m.addDocument))
+	r.Authed("PATCH /documentos/{id}", handler(m.updateDocument))
+	r.Authed("DELETE /documentos/{id}", handler(m.deleteDocument))
+	r.Authed("POST /pasajeros/{id}/permisos", handler(m.addPermit))
+	r.Authed("PATCH /permisos/{id}", handler(m.updatePermit))
+	r.Authed("DELETE /permisos/{id}", handler(m.deletePermit))
 }
 
 func (m *Module) Start(context.Context) error    { return nil }

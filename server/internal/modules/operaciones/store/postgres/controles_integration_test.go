@@ -274,8 +274,8 @@ func TestElControlDelDocumentoMiraLosVencimientos(t *testing.T) {
 		t.Fatalf("un pasajero sin vencimiento cargado: %s, se esperaba abierto", got)
 	}
 
-	vence := "2026-12-20"
-	if _, err := s.UpdatePassenger(ctx, tomas.ID, store.PassengerPatch{DocumentExpiresAt: &vence}); err != nil {
+	if _, err := s.AddDocument(ctx, store.NewDocument{PassengerID: tomas.ID, Type: "DNI", Country: "AR",
+		ExpiresAt: ptrTime(fecha("2026-12-20"))}); err != nil {
 		t.Fatalf("vencimiento: %v", err)
 	}
 	if got := estado(t, ctx, pool, f.trip, "control-vto-doc"); got != "abierto" {
@@ -287,7 +287,7 @@ func TestElControlDelDocumentoMiraLosVencimientos(t *testing.T) {
 		UserID: f.user, MessageID: mensaje}); err != nil {
 		t.Fatalf("cerrando con el aviso: %v", err)
 	}
-	if _, err := s.UpdatePassenger(ctx, ana.ID, store.PassengerPatch{DocumentNumber: &vigente}); err != nil {
+	if _, err := s.UpdateDocument(ctx, ana.TravelDocumentID, store.DocumentPatch{Number: &vigente}); err != nil {
 		t.Fatalf("otra edición: %v", err)
 	}
 	if got := estado(t, ctx, pool, f.trip, "control-vto-doc"); got != "cerrado" {

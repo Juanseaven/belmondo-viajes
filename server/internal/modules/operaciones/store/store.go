@@ -29,6 +29,9 @@ var (
 	ErrNotFound           = errors.New("operaciones: no existe")
 	ErrConflict           = errors.New("operaciones: conflicto")
 	ErrBadCursor          = errors.New("operaciones: cursor inválido")
+	// ErrInvalid: el dato no respeta las reglas del esquema (un país que no es
+	// un código ISO, un rol desconocido, fechas al revés).
+	ErrInvalid = errors.New("operaciones: dato inválido")
 )
 
 // CloseControl es la orden de cerrar un renglón.
@@ -78,38 +81,116 @@ type TripPatch struct {
 	SellerUserID *string
 }
 
+// NewPassenger es el alta de un pasajero. El documento es opcional: si viene,
+// se carga como su primer documento y queda como el de viaje. Sin país, es
+// argentino.
 type NewPassenger struct {
 	TripID            string
 	FirstName         string
 	LastName          string
 	Kind              string
 	IsHolder          bool
+	BirthDate         *time.Time
+	ResidenceCountry  string
 	DocumentType      string
+	DocumentCountry   string
 	DocumentNumber    string
 	DocumentExpiresAt *time.Time
 	CreatedBy         string
 }
 
 type Passenger struct {
-	ID                string     `json:"id"`
-	TripID            string     `json:"tripId"`
-	FirstName         string     `json:"firstName"`
-	LastName          string     `json:"lastName"`
-	Kind              string     `json:"kind"`
-	IsHolder          bool       `json:"isHolder"`
-	DocumentType      string     `json:"documentType,omitempty"`
-	DocumentNumber    string     `json:"documentNumber,omitempty"`
-	DocumentExpiresAt *time.Time `json:"documentExpiresAt,omitempty"`
+	ID        string `json:"id"`
+	TripID    string `json:"tripId"`
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
+	// Kind es «menor» o «adulto». Con fecha de nacimiento se deriva de ella a la
+	// fecha de salida; sin fecha, es lo que se eligió a mano.
+	Kind             string     `json:"kind"`
+	IsHolder         bool       `json:"isHolder"`
+	BirthDate        *time.Time `json:"birthDate,omitempty"`
+	ResidenceCountry string     `json:"residenceCountry"`
+	TravelDocumentID string     `json:"travelDocumentId,omitempty"`
+	Documents        []Document `json:"documents"`
+	Permits          []Permit   `json:"permits"`
 }
 
 type PassengerPatch struct {
-	FirstName         *string
-	LastName          *string
-	Kind              *string
-	IsHolder          *bool
-	DocumentType      *string
-	DocumentNumber    *string
-	DocumentExpiresAt *string
+	FirstName        *string
+	LastName         *string
+	Kind             *string
+	IsHolder         *bool
+	BirthDate        *string
+	ResidenceCountry *string
+	TravelDocumentID *string
+}
+
+// Document es un DNI o pasaporte del pasajero. La nacionalidad con la que se
+// evalúa al pasajero es el país del documento con el que viaja.
+type Document struct {
+	ID          string     `json:"id"`
+	PassengerID string     `json:"passengerId"`
+	TripID      string     `json:"-"`
+	Type        string     `json:"type"`
+	Country     string     `json:"country"`
+	Number      string     `json:"number,omitempty"`
+	IssuedAt    *time.Time `json:"issuedAt,omitempty"`
+	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
+}
+
+type NewDocument struct {
+	PassengerID string
+	Type        string
+	Country     string
+	Number      string
+	IssuedAt    *time.Time
+	ExpiresAt   *time.Time
+}
+
+type DocumentPatch struct {
+	Type      *string
+	Country   *string
+	Number    *string
+	IssuedAt  *string
+	ExpiresAt *string
+}
+
+// Permit es una visa, autorización electrónica o residencia que el pasajero ya
+// tiene.
+type Permit struct {
+	ID          string     `json:"id"`
+	PassengerID string     `json:"passengerId"`
+	TripID      string     `json:"-"`
+	Kind        string     `json:"kind"`
+	Country     string     `json:"country"`
+	Label       string     `json:"label,omitempty"`
+	ValidFrom   *time.Time `json:"validFrom,omitempty"`
+	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
+}
+
+type NewPermit struct {
+	PassengerID string
+	Kind        string
+	Country     string
+	Label       string
+	ValidFrom   *time.Time
+	ExpiresAt   *time.Time
+}
+
+type PermitPatch struct {
+	Kind      *string
+	Country   *string
+	Label     *string
+	ValidFrom *string
+	ExpiresAt *string
+}
+
+// Stop es un país del itinerario. Sin fechas, la estadía es la del viaje.
+type Stop struct {
+	Country  string     `json:"country"`
+	Role     string     `json:"role"`
+	ArriveAt *time.Time `json:"arriveAt,omitempty"`
+	LeaveAt  *time.Time `json:"leaveAt,omitempty"`
 }
 
 type Payment struct {
@@ -194,6 +275,7 @@ type TripSummary struct {
 type TripDetailData struct {
 	Trip
 	Customer   Customer    `json:"customer"`
+	Itinerary  []Stop      `json:"itinerary"`
 	Passengers []Passenger `json:"passengers"`
 	Payment    *Payment    `json:"payment,omitempty"`
 	Controls   []Control   `json:"controls"`

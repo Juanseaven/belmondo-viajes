@@ -42,8 +42,9 @@ func refreshDerived(ctx context.Context, q execer, tripID string) error {
 // solo si el cierre fue del dato: si lo cerró un aviso, ese mensaje prueba que
 // se hizo lo que el control pedía, y el dato no lo deshace.
 //
-// Los documentos «llegan al regreso» si vencen después de la fecha de regreso,
-// o de la de salida mientras no haya regreso.
+// Los documentos «llegan al regreso» si el documento con el que viaja cada
+// pasajero vence después de la fecha de regreso, o de la de salida mientras no
+// haya regreso.
 const sqlRefreshDerived = `
 WITH datos AS (
     SELECT t.id AS trip_id,
@@ -58,9 +59,10 @@ WITH datos AS (
                     WHERE p.trip_id = t.id AND p.is_holder)               AS titular,
            (EXISTS (SELECT 1 FROM passengers p WHERE p.trip_id = t.id)
             AND NOT EXISTS (SELECT 1 FROM passengers p
+                              LEFT JOIN passenger_documents d ON d.id = p.travel_document_id
                              WHERE p.trip_id = t.id
-                               AND (p.document_expires_at IS NULL
-                                    OR p.document_expires_at < coalesce(t.return_at, t.depart_at))))
+                               AND (d.expires_at IS NULL
+                                    OR d.expires_at < coalesce(t.return_at, t.depart_at))))
                                                                           AS documentos,
            (coalesce(btrim(cu.email), '') <> ''
             AND coalesce(btrim(cu.phone_number), '') <> '')               AS contacto,

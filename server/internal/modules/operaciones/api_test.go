@@ -24,6 +24,13 @@ type fakeRepo struct {
 
 	pendingDay time.Time
 	filter     store.TripFilter
+
+	err            error
+	itinerary      []store.Stop
+	newDocument    store.NewDocument
+	documentPatch  store.DocumentPatch
+	newPermit      store.NewPermit
+	passengerPatch store.PassengerPatch
 }
 
 func (f *fakeRepo) CreateTrip(_ context.Context, n store.NewTrip) (store.Trip, error) {
@@ -42,8 +49,9 @@ func (f *fakeRepo) TripDetail(context.Context, string) (store.TripDetailData, er
 func (f *fakeRepo) AddPassenger(context.Context, store.NewPassenger) (store.Passenger, error) {
 	return store.Passenger{}, nil
 }
-func (f *fakeRepo) UpdatePassenger(context.Context, string, store.PassengerPatch) (store.Passenger, error) {
-	return store.Passenger{}, nil
+func (f *fakeRepo) UpdatePassenger(_ context.Context, _ string, patch store.PassengerPatch) (store.Passenger, error) {
+	f.passengerPatch = patch
+	return store.Passenger{}, f.err
 }
 func (f *fakeRepo) DeletePassenger(context.Context, string) error { return nil }
 func (f *fakeRepo) PutPayment(context.Context, store.Payment) (store.Payment, error) {
@@ -99,6 +107,9 @@ func TestModuloMontaTodoElContratoAutenticado(t *testing.T) {
 		"PUT /viajes/{id}/pago", "POST /controles/{id}/cerrar", "POST /controles/{id}/reabrir",
 		"GET /clientes/{id}", "PATCH /clientes/{id}", "POST /clientes/{id}/contactos", "GET /bandeja",
 		"GET /vendedores", "GET /pendientes",
+		"PUT /viajes/{id}/itinerario",
+		"POST /pasajeros/{id}/documentos", "PATCH /documentos/{id}", "DELETE /documentos/{id}",
+		"POST /pasajeros/{id}/permisos", "PATCH /permisos/{id}", "DELETE /permisos/{id}",
 	}
 	if len(routes.patterns) != len(want) {
 		t.Fatalf("rutas = %v", routes.patterns)
@@ -193,8 +204,9 @@ func TestNombreYMigracionesDelModuloSonEstables(t *testing.T) {
 		t.Fatalf("nombre = %q", m.Name())
 	}
 	entries, err := fs.ReadDir(m.Migrations(), ".")
-	if err != nil || len(entries) != 4 || entries[0].Name() != "0001_init.sql" || entries[1].Name() != "0002_trip_drafts.sql" ||
-		entries[2].Name() != "0003_documentos_vigentes.sql" || entries[3].Name() != "0004_estado_consulta.sql" {
+	if err != nil || len(entries) != 5 || entries[0].Name() != "0001_init.sql" || entries[1].Name() != "0002_trip_drafts.sql" ||
+		entries[2].Name() != "0003_documentos_vigentes.sql" || entries[3].Name() != "0004_estado_consulta.sql" ||
+		entries[4].Name() != "0005_viajeros.sql" {
 		t.Fatalf("migraciones = %v, err = %v", entries, err)
 	}
 }
