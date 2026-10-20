@@ -60,7 +60,7 @@ func (f *fakeRepo) DeletePassenger(context.Context, string) (string, error) { re
 func (f *fakeRepo) EvaluationInput(context.Context, string) (store.EvaluationInput, error) {
 	return store.EvaluationInput{}, nil
 }
-func (f *fakeRepo) SaveRequirements(context.Context, string, []evaluacion.Requirement) error {
+func (f *fakeRepo) SaveRequirements(context.Context, string, []evaluacion.Requirement, map[string]string) error {
 	return nil
 }
 func (f *fakeRepo) Confirm(context.Context, store.NewConfirmation) error            { return nil }
@@ -236,10 +236,10 @@ func TestNombreYMigracionesDelModuloSonEstables(t *testing.T) {
 		t.Fatalf("nombre = %q", m.Name())
 	}
 	entries, err := fs.ReadDir(m.Migrations(), ".")
-	if err != nil || len(entries) != 7 || entries[0].Name() != "0001_init.sql" || entries[1].Name() != "0002_trip_drafts.sql" ||
+	if err != nil || len(entries) != 8 || entries[0].Name() != "0001_init.sql" || entries[1].Name() != "0002_trip_drafts.sql" ||
 		entries[2].Name() != "0003_documentos_vigentes.sql" || entries[3].Name() != "0004_estado_consulta.sql" ||
 		entries[4].Name() != "0005_viajeros.sql" || entries[5].Name() != "0006_requisitos.sql" ||
-		entries[6].Name() != "0007_origen.sql" {
+		entries[6].Name() != "0007_origen.sql" || entries[7].Name() != "0008_documento_automatico.sql" {
 		t.Fatalf("migraciones = %v, err = %v", entries, err)
 	}
 }

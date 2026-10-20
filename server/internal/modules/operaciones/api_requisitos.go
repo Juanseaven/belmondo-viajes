@@ -31,7 +31,14 @@ func (m *Module) reevaluate(ctx context.Context, tripID string) error {
 			return err
 		}
 	}
-	return m.repo.SaveRequirements(ctx, tripID, evaluacion.Evaluate(in.Trip, rules, in.Confirmations))
+	trip := evaluacion.ChooseDocuments(in.Trip, rules)
+	docs := map[string]string{}
+	for _, p := range trip.Passengers {
+		if !p.DocManual && p.Doc != nil && p.Doc.ID != "" {
+			docs[p.ID] = p.Doc.ID
+		}
+	}
+	return m.repo.SaveRequirements(ctx, tripID, evaluacion.Evaluate(trip, rules, in.Confirmations), docs)
 }
 
 // afterChange re-evalúa después de una escritura que puede cambiar los

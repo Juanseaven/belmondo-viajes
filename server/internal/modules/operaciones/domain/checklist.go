@@ -59,7 +59,19 @@ const (
 // El plazo es un dato de la plantilla y no una fecha que alguien tipea: por eso
 // mover la fecha de salida corre todos los vencimientos sin que nadie toque
 // nada. Un control derivado no vence —no hay a quién apurar— y devuelve false.
+//
+// Ningún plazo queda antes del alta: un viaje vendido con la salida encima
+// tendría todos sus controles atrasados desde antes de existir. El que cae
+// antes pasa al día del alta.
 func (i ChecklistItem) DueAt(alta, salida, regreso time.Time) (time.Time, bool) {
+	due, ok := i.rawDueAt(alta, salida, regreso)
+	if ok && due.Before(alta) {
+		due = alta
+	}
+	return due, ok
+}
+
+func (i ChecklistItem) rawDueAt(alta, salida, regreso time.Time) (time.Time, bool) {
 	switch i.base {
 	case desdeAlta:
 		return alta.AddDate(0, 0, i.days), true

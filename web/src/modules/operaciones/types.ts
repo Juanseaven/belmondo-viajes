@@ -49,6 +49,8 @@ export interface Passenger {
   residenceCountry: string;
   /** Con qué documento viaja en este viaje: define la nacionalidad que se evalúa. */
   travelDocumentId?: string;
+  /** Lo eligió una persona: el sistema no lo cambia. Si no, lo elige el sistema. */
+  travelDocumentManual?: boolean;
   documents: TravelDocument[];
   permits: Permit[];
 }

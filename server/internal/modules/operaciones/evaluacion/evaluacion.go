@@ -101,11 +101,16 @@ type Passenger struct {
 	Minor            bool
 	ResidenceCountry string
 	// Doc es el documento con el que viaja. Nil: no hay ninguno cargado.
-	Doc     *Document
-	Permits []Permit
+	Doc *Document
+	// Docs son todos sus documentos, entre los que ChooseDocuments elige.
+	Docs []Document
+	// DocManual: una persona eligió Doc a mano y el sistema no lo cambia.
+	DocManual bool
+	Permits   []Permit
 }
 
 type Document struct {
+	ID        string
 	Type      string
 	Country   string
 	IssuedAt  *time.Time
@@ -133,8 +138,8 @@ type Confirmation struct {
 func Pairs(t Trip) []reglas.Pair {
 	nationalities := []string{}
 	for _, p := range t.Passengers {
-		if p.Doc != nil {
-			nationalities = append(nationalities, p.Doc.Country)
+		for _, doc := range candidates(p) {
+			nationalities = append(nationalities, doc.Country)
 		}
 	}
 	if len(t.Passengers) == 0 {

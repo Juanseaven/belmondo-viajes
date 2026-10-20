@@ -134,8 +134,11 @@ type Passenger struct {
 	BirthDate        *time.Time `json:"birthDate,omitempty"`
 	ResidenceCountry string     `json:"residenceCountry"`
 	TravelDocumentID string     `json:"travelDocumentId,omitempty"`
-	Documents        []Document `json:"documents"`
-	Permits          []Permit   `json:"permits"`
+	// TravelDocumentManual: una persona eligió el documento de viaje y el
+	// sistema no lo cambia. Si no, lo elige la evaluación.
+	TravelDocumentManual bool       `json:"travelDocumentManual"`
+	Documents            []Document `json:"documents"`
+	Permits              []Permit   `json:"permits"`
 }
 
 type PassengerPatch struct {
@@ -145,6 +148,8 @@ type PassengerPatch struct {
 	IsHolder         *bool
 	BirthDate        *string
 	ResidenceCountry *string
+	// TravelDocumentID elige a mano el documento de viaje; vacío devuelve la
+	// elección al sistema.
 	TravelDocumentID *string
 }
 
@@ -327,10 +332,10 @@ type TripDetailData struct {
 	Requirements  []TripRequirement `json:"requirements"`
 	// Preview es lo que piden los países a un pasaporte argentino, mientras el
 	// viaje no tiene pasajeros. No se guarda: es una vista de las reglas.
-	Preview []evaluacion.PreviewLine `json:"preview,omitempty"`
-	Passengers   []Passenger       `json:"passengers"`
-	Payment      *Payment          `json:"payment,omitempty"`
-	Controls     []Control         `json:"controls"`
+	Preview    []evaluacion.PreviewLine `json:"preview,omitempty"`
+	Passengers []Passenger              `json:"passengers"`
+	Payment    *Payment                 `json:"payment,omitempty"`
+	Controls   []Control                `json:"controls"`
 }
 
 // TripRow es un viaje como se ve en una lista: lo justo para leerlo de un

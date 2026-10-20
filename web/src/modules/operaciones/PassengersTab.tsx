@@ -257,7 +257,7 @@ function DocumentsEditor({ passenger, countries, run, onUpdatePassenger, onAddDo
                 onChange={() => { if (onUpdatePassenger) void run(() => onUpdatePassenger(passenger.id, { travelDocumentId: document.id })); }} />
               <span>
                 {document.type} · {countryName(countries, document.country)}{document.number ? ` · ${document.number}` : ""}
-                <small>{document.expiresAt ? `Vence ${shortDate(document.expiresAt)}` : "Sin vencimiento cargado"}{document.id === passenger.travelDocumentId ? " · viaja con este" : ""}</small>
+                <small>{document.expiresAt ? `Vence ${shortDate(document.expiresAt)}` : "Sin vencimiento cargado"}{document.id === passenger.travelDocumentId ? ` · viaja con este${passenger.travelDocumentManual ? ", elegido a mano" : ""}` : ""}</small>
               </span>
             </label>
             {onUpdateDocument && <Button variant="ghost" size="icon-xs" aria-label={`Editar ${documentLabel(document, countries)}`} onClick={() => setEditing(document.id)}><Pencil /></Button>}
@@ -265,6 +265,15 @@ function DocumentsEditor({ passenger, countries, run, onUpdatePassenger, onAddDo
           </li>
         ))}
       </ul>
+      {passenger.documents.length > 1 && (passenger.travelDocumentManual ? (
+        onUpdatePassenger && (
+          <Button size="sm" variant="ghost" onClick={() => void run(() => onUpdatePassenger(passenger.id, { travelDocumentId: "" }))}>
+            Que lo elija el sistema
+          </Button>
+        )
+      ) : (
+        <p className="trip-note">El sistema elige con cuál viaja: el que cumple con todos los países, y el DNI si alcanza. Marcá otro para elegirlo a mano.</p>
+      ))}
       {onAddDocument && (editing === "nuevo" ? (
         <DocumentForm countries={countries} onCancel={() => setEditing(undefined)} onSave={async (input) => {
           if (await run(() => onAddDocument(passenger.id, input as DocumentInput))) setEditing(undefined);

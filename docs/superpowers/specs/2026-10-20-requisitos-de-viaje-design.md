@@ -108,6 +108,15 @@ Se agregan a `passengers`:
   exenciones.
 - **`travel_document_id`**: con qué documento viaja **en este viaje**. Si el
   pasajero tiene un solo documento, es ese.
+- *(Corrección después de la primera prueba.)* **El documento de viaje lo elige
+  el sistema.** En cada evaluación prueba cada documento del pasajero contra
+  todos los países del itinerario y se queda con el que deja menos «falta»,
+  después menos «verificar»; si empatan, prefiere el DNI (a Brasil se viaja con
+  DNI), después el que ya tenía y después el que vence más tarde.
+  `travel_document_manual` marca que una persona lo eligió a mano («viaja con
+  este»): entonces el sistema no lo cambia, hasta que alguien pida «que lo elija
+  el sistema» o se borre ese documento. Para elegir, se piden las reglas de las
+  nacionalidades de todos sus documentos, no solo la del elegido.
 
 ### Documentos
 

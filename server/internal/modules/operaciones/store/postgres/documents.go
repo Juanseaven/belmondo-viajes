@@ -109,8 +109,10 @@ func (s *Store) DeleteDocument(ctx context.Context, documentID string) (string, 
 	if err != nil {
 		return "", writeError("borrando el documento", err)
 	}
+	// Si se borró el documento de viaje, queda otro hasta la próxima evaluación,
+	// y si era el que alguien eligió a mano, la elección vuelve al sistema.
 	if _, err := tx.Exec(ctx,
-		`UPDATE passengers p SET travel_document_id = (
+		`UPDATE passengers p SET travel_document_manual = false, travel_document_id = (
 		     SELECT d.id FROM passenger_documents d
 		      WHERE d.passenger_id = p.id ORDER BY d.created_at, d.id LIMIT 1)
 		  WHERE p.id = $1 AND p.travel_document_id IS NULL`, passengerID); err != nil {

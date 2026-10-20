@@ -60,7 +60,7 @@ func TestRequisitosMigratoriosSigueALosRequisitos(t *testing.T) {
 		// La vigencia la gobierna el otro control: no frena a este.
 		req(ana.ID, "US", evaluacion.KeyVigencia, evaluacion.Verificar),
 	}
-	if err := s.SaveRequirements(ctx, f.trip, todoBien); err != nil {
+	if err := s.SaveRequirements(ctx, f.trip, todoBien, nil); err != nil {
 		t.Fatalf("guardando: %v", err)
 	}
 	if got := estado(t, ctx, pool, f.trip, "control-visa"); got != "cerrado" {
@@ -69,7 +69,7 @@ func TestRequisitosMigratoriosSigueALosRequisitos(t *testing.T) {
 
 	falta := append([]evaluacion.Requirement{}, todoBien...)
 	falta[0].Status = evaluacion.Falta
-	if err := s.SaveRequirements(ctx, f.trip, falta); err != nil {
+	if err := s.SaveRequirements(ctx, f.trip, falta, nil); err != nil {
 		t.Fatalf("guardando: %v", err)
 	}
 	if got := estado(t, ctx, pool, f.trip, "control-visa"); got != "abierto" {
@@ -100,7 +100,7 @@ func TestElAvisoCierraLoAvisadoYUnRequisitoNuevoLoReabre(t *testing.T) {
 		req(ana.ID, "US", evaluacion.KeyVisa, evaluacion.Falta),
 		req(ana.ID, "US", "vacuna:fiebre amarilla", evaluacion.Verificar),
 	}
-	if err := s.SaveRequirements(ctx, f.trip, conDudas); err != nil {
+	if err := s.SaveRequirements(ctx, f.trip, conDudas, nil); err != nil {
 		t.Fatal(err)
 	}
 	err := s.CloseControl(ctx, store.CloseControl{ControlID: visa, UserID: f.user, MessageID: aviso(t, ctx, pool, f, "1")})
@@ -109,7 +109,7 @@ func TestElAvisoCierraLoAvisadoYUnRequisitoNuevoLoReabre(t *testing.T) {
 	}
 
 	soloFalta := conDudas[:1]
-	if err := s.SaveRequirements(ctx, f.trip, soloFalta); err != nil {
+	if err := s.SaveRequirements(ctx, f.trip, soloFalta, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.CloseControl(ctx, store.CloseControl{ControlID: visa, UserID: f.user,
@@ -121,7 +121,7 @@ func TestElAvisoCierraLoAvisadoYUnRequisitoNuevoLoReabre(t *testing.T) {
 	}
 
 	// Lo mismo que se avisó no lo reabre.
-	if err := s.SaveRequirements(ctx, f.trip, soloFalta); err != nil {
+	if err := s.SaveRequirements(ctx, f.trip, soloFalta, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := estado(t, ctx, pool, f.trip, "control-visa"); got != "cerrado" {
@@ -130,7 +130,7 @@ func TestElAvisoCierraLoAvisadoYUnRequisitoNuevoLoReabre(t *testing.T) {
 
 	// Un requisito nuevo, sí.
 	nuevo := append(append([]evaluacion.Requirement{}, soloFalta...), req(ana.ID, "MX", evaluacion.KeyVisa, evaluacion.Falta))
-	if err := s.SaveRequirements(ctx, f.trip, nuevo); err != nil {
+	if err := s.SaveRequirements(ctx, f.trip, nuevo, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := estado(t, ctx, pool, f.trip, "control-visa"); got != "abierto" {
@@ -151,7 +151,7 @@ func TestElControlDelDocumentoMiraLaVigenciaDelDestino(t *testing.T) {
 	}
 
 	schengen := []evaluacion.Requirement{req(ana.ID, "ES", evaluacion.KeyVigencia, evaluacion.Falta)}
-	if err := s.SaveRequirements(ctx, f.trip, schengen); err != nil {
+	if err := s.SaveRequirements(ctx, f.trip, schengen, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := estado(t, ctx, pool, f.trip, "control-vto-doc"); got != "abierto" {
@@ -159,7 +159,7 @@ func TestElControlDelDocumentoMiraLaVigenciaDelDestino(t *testing.T) {
 	}
 
 	desconocida := []evaluacion.Requirement{req(ana.ID, "BR", evaluacion.KeyVigencia, evaluacion.Verificar)}
-	if err := s.SaveRequirements(ctx, f.trip, desconocida); err != nil {
+	if err := s.SaveRequirements(ctx, f.trip, desconocida, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := estado(t, ctx, pool, f.trip, "control-vto-doc"); got != "cerrado" {
@@ -177,7 +177,7 @@ func TestConfirmarUnRequisitoQuedaAtadoAlValorDeLaRegla(t *testing.T) {
 		req(ana.ID, "JP", evaluacion.KeyVisa, evaluacion.Verificar),
 		{PassengerID: ana.ID, Country: "JP", Key: evaluacion.KeyVigencia, Status: evaluacion.Falta, MissingData: true, Text: "falta"},
 	}
-	if err := s.SaveRequirements(ctx, f.trip, reqs); err != nil {
+	if err := s.SaveRequirements(ctx, f.trip, reqs, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -204,7 +204,7 @@ func TestConfirmarUnRequisitoQuedaAtadoAlValorDeLaRegla(t *testing.T) {
 
 	// Al re-evaluar, la confirmación se ve con quién la hizo.
 	reqs[0].Status, reqs[0].Confirmed = evaluacion.Cumple, true
-	if err := s.SaveRequirements(ctx, f.trip, reqs); err != nil {
+	if err := s.SaveRequirements(ctx, f.trip, reqs, nil); err != nil {
 		t.Fatal(err)
 	}
 	detail, _ := s.TripDetail(ctx, f.trip)

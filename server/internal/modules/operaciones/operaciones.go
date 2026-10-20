@@ -53,7 +53,7 @@ type repository interface {
 	UpdatePermit(context.Context, string, store.PermitPatch) (store.Permit, error)
 	DeletePermit(context.Context, string) (string, error)
 	EvaluationInput(context.Context, string) (store.EvaluationInput, error)
-	SaveRequirements(context.Context, string, []evaluacion.Requirement) error
+	SaveRequirements(context.Context, string, []evaluacion.Requirement, map[string]string) error
 	Confirm(context.Context, store.NewConfirmation) error
 	OpenTripsUsing(context.Context, []reglas.Pair) ([]string, error)
 	OpenTrips(context.Context) ([]string, error)

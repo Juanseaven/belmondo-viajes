@@ -146,7 +146,8 @@ function ControlRow({ control, onRun, onClose, onReopen }: { control: Control; o
       <span className="trip-control-mark">{done && <Check aria-hidden />}</span>
       <span>
         <strong>{control.title}</strong>
-        {done ? <small>{closedBy(control)}</small> : control.dueAt && <small className={overdue ? "trip-warn" : undefined}>{overdue ? "Venció" : "Vence"} {shortDate(control.dueAt)}</small>}
+        {/* «Para el», no «Vence»: al lado de «Vencimiento de DNI», «Venció» se leía como el documento. */}
+        {done ? <small>{closedBy(control)}</small> : control.dueAt && <small className={overdue ? "trip-warn" : undefined}>{overdue ? "Atrasado desde el" : "Para el"} {shortDate(control.dueAt)}</small>}
       </span>
       {!done && control.closing === "accion" && <Button size="sm" variant="outline" onClick={() => onRun(control)}>{control.actionLabel || "Hacer ahora"}</Button>}
       {!done && control.closing === "manual" && <Button size="sm" variant="outline" onClick={() => onClose(control)}>Confirmar</Button>}

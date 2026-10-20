@@ -155,6 +155,13 @@ Cada renglón lleva su plazo. Los de `carga` cuentan **desde el alta del viaje**
 los de `control`, **hacia atrás desde la fecha de salida**. Si se corre la fecha
 de salida, todos los vencimientos se corren solos.
 
+*(Corrección del 2026-10-20.)* Ningún plazo queda antes del alta del viaje: un
+viaje que se vende con la salida encima tendría todos sus controles «atrasados»
+desde antes de existir. El que cae antes del alta pasa al día del alta. En la
+ficha, el plazo se lee «Para el 21 oct» o «Atrasado desde el 21 oct», nunca
+«Vence»: al lado de «Vencimiento de DNI o pasaporte», «Venció 21 ago» se leía
+como si hubiera vencido el documento.
+
 ### Hoja de carga
 
 | Renglón | Cierre | Se cierra con / Plazo | Crítico |

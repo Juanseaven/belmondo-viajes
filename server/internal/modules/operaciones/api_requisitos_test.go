@@ -22,12 +22,14 @@ type evalRepo struct {
 	openTrips    []string
 	usingPairs   []reglas.Pair
 	detail       store.TripDetailData
+	docs         map[string]string
 }
 
 func (r *evalRepo) EvaluationInput(context.Context, string) (store.EvaluationInput, error) {
 	return r.input, nil
 }
-func (r *evalRepo) SaveRequirements(_ context.Context, tripID string, reqs []evaluacion.Requirement) error {
+func (r *evalRepo) SaveRequirements(_ context.Context, tripID string, reqs []evaluacion.Requirement, docs map[string]string) error {
+	r.docs = docs
 	if r.saved == nil {
 		r.saved = map[string][]evaluacion.Requirement{}
 	}

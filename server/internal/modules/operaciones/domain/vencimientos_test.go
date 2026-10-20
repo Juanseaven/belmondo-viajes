@@ -52,6 +52,22 @@ func TestVencimientoSeCalculaDesdeLasFechasDelViaje(t *testing.T) {
 	}
 }
 
+// Un viaje que sale en dos semanas no puede tener controles atrasados desde
+// antes de existir: el plazo que cae antes del alta pasa al día del alta.
+func TestNingunPlazoQuedaAntesDelAlta(t *testing.T) {
+	alta := fecha("2026-10-20")
+	salida, regreso := fecha("2026-11-03"), fecha("2026-11-25")
+
+	vtoDoc, _ := renglon(t, "control-vto-doc").DueAt(alta, salida, regreso) // salida - 60
+	if !vtoDoc.Equal(alta) {
+		t.Errorf("control-vto-doc vence %s, se esperaba el alta", vtoDoc.Format("2006-01-02"))
+	}
+	checkin, _ := renglon(t, "control-checkin").DueAt(alta, salida, regreso) // salida - 2
+	if checkin.Format("2006-01-02") != "2026-11-01" {
+		t.Errorf("un plazo después del alta no se toca: %s", checkin.Format("2006-01-02"))
+	}
+}
+
 // Un control que el sistema cierra solo no tiene nada que vencer: no hay nadie a
 // quien apurar. Darle fecha lo pondría a competir en el chip de la bandeja con
 // los que sí necesitan que alguien haga algo.

@@ -430,6 +430,73 @@ func TestUnViajeSeCreaConOrigenItinerarioYFechas(t *testing.T) {
 	}
 }
 
+// Elegir «viaja con este» lo fija; pedir que elija el sistema lo libera. Borrar
+// el documento elegido también lo libera.
+func TestElDocumentoElegidoAManoSeFijaYSeLibera(t *testing.T) {
+	ctx, pool := testDB(t)
+	s := New(pool)
+	f := escenario(t, ctx, pool, s)
+	p, err := s.AddPassenger(ctx, store.NewPassenger{TripID: f.trip, FirstName: "Ana", LastName: "Pérez", Kind: "adulto",
+		DocumentType: "DNI", DocumentCountry: "AR", CreatedBy: f.user})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pas, err := s.AddDocument(ctx, store.NewDocument{PassengerID: p.ID, Type: "Pasaporte", Country: "AR"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := pasajero(t, s, f.trip, p.ID); got.TravelDocumentManual {
+		t.Fatalf("recién cargado no es una elección a mano: %+v", got)
+	}
+
+	pasID := pas.ID
+	if _, err := s.UpdatePassenger(ctx, p.ID, store.PassengerPatch{TravelDocumentID: &pasID}); err != nil {
+		t.Fatal(err)
+	}
+	if got := pasajero(t, s, f.trip, p.ID); !got.TravelDocumentManual || got.TravelDocumentID != pas.ID {
+		t.Fatalf("elegido a mano: %+v", got)
+	}
+
+	// La evaluación no toca un documento elegido a mano.
+	dniID := got0(t, s, f.trip, p.ID)
+	if err := s.SaveRequirements(ctx, f.trip, nil, map[string]string{p.ID: dniID}); err != nil {
+		t.Fatal(err)
+	}
+	if got := pasajero(t, s, f.trip, p.ID); got.TravelDocumentID != pas.ID {
+		t.Fatalf("la evaluación cambió el elegido a mano: %+v", got)
+	}
+
+	sistema := ""
+	if _, err := s.UpdatePassenger(ctx, p.ID, store.PassengerPatch{TravelDocumentID: &sistema}); err != nil {
+		t.Fatal(err)
+	}
+	if got := pasajero(t, s, f.trip, p.ID); got.TravelDocumentManual || got.TravelDocumentID != pas.ID {
+		t.Fatalf("devuelto al sistema conserva el documento hasta la próxima evaluación: %+v", got)
+	}
+	if err := s.SaveRequirements(ctx, f.trip, nil, map[string]string{p.ID: dniID}); err != nil {
+		t.Fatal(err)
+	}
+	if got := pasajero(t, s, f.trip, p.ID); got.TravelDocumentID != dniID {
+		t.Fatalf("la evaluación no eligió: %+v", got)
+	}
+
+	if _, err := s.UpdatePassenger(ctx, p.ID, store.PassengerPatch{TravelDocumentID: &dniID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DeleteDocument(ctx, dniID); err != nil {
+		t.Fatal(err)
+	}
+	if got := pasajero(t, s, f.trip, p.ID); got.TravelDocumentManual || got.TravelDocumentID != pas.ID {
+		t.Fatalf("borrado el elegido a mano: %+v", got)
+	}
+}
+
+// got0 es el primer documento cargado del pasajero.
+func got0(t *testing.T, s *Store, tripID, passengerID string) string {
+	t.Helper()
+	return pasajero(t, s, tripID, passengerID).Documents[0].ID
+}
+
 func pasajero(t *testing.T, s *Store, tripID, passengerID string) store.Passenger {
 	t.Helper()
 	detail, err := s.TripDetail(t.Context(), tripID)

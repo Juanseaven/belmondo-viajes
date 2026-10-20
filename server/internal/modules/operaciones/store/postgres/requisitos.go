@@ -13,10 +13,11 @@ import (
 	reglas "github.com/juanseaven/viajes-crm/server/internal/modules/requisitos/domain"
 )
 
-// SaveRequirements reemplaza la evaluación del viaje y recalcula los controles
-// que la siguen, en una transacción. El bloqueo del viaje serializa dos
-// evaluaciones simultáneas: la última que termina es la que queda.
-func (s *Store) SaveRequirements(ctx context.Context, tripID string, reqs []evaluacion.Requirement) error {
+// SaveRequirements reemplaza la evaluación del viaje, guarda el documento que
+// eligió para cada pasajero (si nadie lo eligió a mano) y recalcula los
+// controles que la siguen, en una transacción. El bloqueo del viaje serializa
+// dos evaluaciones simultáneas: la última que termina es la que queda.
+func (s *Store) SaveRequirements(ctx context.Context, tripID string, reqs []evaluacion.Requirement, docs map[string]string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -26,6 +27,16 @@ func (s *Store) SaveRequirements(ctx context.Context, tripID string, reqs []eval
 	var locked string
 	if err := tx.QueryRow(ctx, `SELECT id FROM trips WHERE id = $1 FOR UPDATE`, tripID).Scan(&locked); err != nil {
 		return writeError("leyendo el viaje", err)
+	}
+	for passengerID, docID := range docs {
+		// El documento tiene que ser del pasajero: lo garantiza la clave
+		// compuesta. Uno que alguien eligió a mano no se toca.
+		if _, err := tx.Exec(ctx,
+			`UPDATE passengers SET travel_document_id = $3
+			  WHERE id = $1 AND trip_id = $2 AND NOT travel_document_manual
+			    AND travel_document_id IS DISTINCT FROM $3::uuid`, passengerID, tripID, docID); err != nil {
+			return writeError("guardando el documento de viaje", err)
+		}
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM trip_requirements WHERE trip_id = $1`, tripID); err != nil {
 		return fmt.Errorf("borrando la evaluación anterior: %w", err)
@@ -154,10 +165,13 @@ func (s *Store) EvaluationInput(ctx context.Context, tripID string) (store.Evalu
 // ToEvaluation traduce un pasajero de la ficha al que lee la evaluación: el
 // documento de viaje y sus permisos.
 func ToEvaluation(p store.Passenger) evaluacion.Passenger {
-	out := evaluacion.Passenger{ID: p.ID, Name: p.FirstName, Minor: p.Kind == "menor", ResidenceCountry: p.ResidenceCountry}
+	out := evaluacion.Passenger{ID: p.ID, Name: p.FirstName, Minor: p.Kind == "menor", ResidenceCountry: p.ResidenceCountry,
+		DocManual: p.TravelDocumentManual}
 	for _, d := range p.Documents {
+		doc := evaluacion.Document{ID: d.ID, Type: d.Type, Country: d.Country, IssuedAt: d.IssuedAt, ExpiresAt: d.ExpiresAt}
+		out.Docs = append(out.Docs, doc)
 		if d.ID == p.TravelDocumentID {
-			out.Doc = &evaluacion.Document{Type: d.Type, Country: d.Country, IssuedAt: d.IssuedAt, ExpiresAt: d.ExpiresAt}
+			out.Doc = &doc
 		}
 	}
 	for _, pm := range p.Permits {
@@ -168,8 +182,9 @@ func ToEvaluation(p store.Passenger) evaluacion.Passenger {
 }
 
 // OpenTripsUsing devuelve los viajes no cerrados en los que algún pasajero
-// viaja con un documento de esa nacionalidad a ese país, y los que todavía no
-// tienen pasajeros y muestran lo que se le pide a un pasaporte argentino.
+// viaja —o podría viajar, si el sistema elige su documento— con un documento de
+// esa nacionalidad a ese país, y los que todavía no tienen pasajeros y muestran
+// lo que se le pide a un pasaporte argentino.
 func (s *Store) OpenTripsUsing(ctx context.Context, pairs []reglas.Pair) ([]string, error) {
 	nats := make([]string, len(pairs))
 	countries := make([]string, len(pairs))
@@ -183,8 +198,9 @@ func (s *Store) OpenTripsUsing(ctx context.Context, pairs []reglas.Pair) ([]stri
 		   JOIN unnest($1::text[], $2::text[]) AS r(nationality, country) ON r.country = tc.country
 		  WHERE t.status <> 'cerrado'
 		    AND (EXISTS (SELECT 1 FROM passengers p
-		                   JOIN passenger_documents d ON d.id = p.travel_document_id
-		                  WHERE p.trip_id = t.id AND d.country = r.nationality)
+		                   JOIN passenger_documents d ON d.passenger_id = p.id
+		                  WHERE p.trip_id = t.id AND d.country = r.nationality
+		                    AND (d.id = p.travel_document_id OR NOT p.travel_document_manual))
 		         OR (r.nationality = '`+evaluacion.PreviewNationality+`'
 		             AND NOT EXISTS (SELECT 1 FROM passengers p WHERE p.trip_id = t.id)))`, nats, countries)
 }

@@ -87,7 +87,8 @@ func (s *Store) UpdatePassenger(ctx context.Context, passengerID string, patch s
 		   is_holder = coalesce($5, is_holder),
 		   birth_date = CASE WHEN $6::text IS NULL THEN birth_date ELSE nullif($6, '')::date END,
 		   residence_country = coalesce(nullif($7, ''), residence_country),
-		   travel_document_id = CASE WHEN $8::text IS NULL THEN travel_document_id ELSE nullif($8, '')::uuid END
+		   travel_document_id = CASE WHEN nullif($8::text, '') IS NULL THEN travel_document_id ELSE $8::uuid END,
+		   travel_document_manual = CASE WHEN $8::text IS NULL THEN travel_document_manual ELSE $8 <> '' END
 		 WHERE id = $1
 		 RETURNING trip_id`,
 		passengerID, patch.FirstName, patch.LastName, patch.Kind, patch.IsHolder,
@@ -155,7 +156,8 @@ SELECT p.id, p.trip_id, p.first_name, p.last_name,
        CASE WHEN p.birth_date IS NULL THEN p.kind
             WHEN p.birth_date + interval '18 years' > coalesce(t.depart_at, current_date) THEN 'menor'
             ELSE 'adulto' END,
-       p.is_holder, p.birth_date, p.residence_country, coalesce(p.travel_document_id::text, '')
+       p.is_holder, p.birth_date, p.residence_country, coalesce(p.travel_document_id::text, ''),
+       p.travel_document_manual
   FROM passengers p
   JOIN trips t ON t.id = p.trip_id`
 
@@ -198,7 +200,7 @@ func readPassenger(ctx context.Context, q querier, passengerID string) (store.Pa
 func scanPassenger(row pgx.CollectableRow) (store.Passenger, error) {
 	p := store.Passenger{Documents: []store.Document{}, Permits: []store.Permit{}}
 	err := row.Scan(&p.ID, &p.TripID, &p.FirstName, &p.LastName, &p.Kind, &p.IsHolder,
-		&p.BirthDate, &p.ResidenceCountry, &p.TravelDocumentID)
+		&p.BirthDate, &p.ResidenceCountry, &p.TravelDocumentID, &p.TravelDocumentManual)
 	return p, err
 }
 

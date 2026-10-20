@@ -90,7 +90,7 @@ it("las fechas se leen en castellano, no en ISO", () => {
   render(<TripPanel trip={trip} {...noop} />);
   fireEvent.click(screen.getByRole("tab", { name: "Controles" }));
 
-  expect(screen.getByText("Venció 19 ago")).toBeTruthy();
+  expect(screen.getByText("Atrasado desde el 19 ago")).toBeTruthy();
   expect(screen.queryByText(/2026-08-19/)).toBeNull();
 });
 
@@ -156,6 +156,25 @@ it("el documento del pasajero se completa después", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Guardar documento" }));
 
   await waitFor(() => expect(onUpdateDocument).toHaveBeenCalledWith("d-1", { expiresAt: "2030-01-01" }));
+});
+
+it("con varios documentos, el sistema elige con cuál viaja hasta que alguien elige a mano", async () => {
+  const onUpdatePassenger = vi.fn().mockResolvedValue(undefined);
+  const dni = { id: "d-2", passengerId: "p-1", type: "DNI" as const, country: "AR", number: "30111222", expiresAt: "2031-05-01" };
+  const auto: TripDetail = { ...withPassenger, passengers: [{ ...withPassenger.passengers[0], documents: [pasaporte, dni] }] };
+  const { rerender } = render(<TripPanel trip={auto} countries={countries} onUpdatePassenger={onUpdatePassenger} {...noop} />);
+  fireEvent.click(screen.getByRole("tab", { name: "Pasajeros" }));
+  fireEvent.click(screen.getByRole("button", { name: "Editar Pérez, Ana" }));
+
+  expect(screen.getByText(/El sistema elige con cuál viaja/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Que lo elija el sistema" })).toBeNull();
+
+  const manual: TripDetail = { ...auto, passengers: [{ ...auto.passengers[0], travelDocumentManual: true }] };
+  rerender(<TripPanel trip={manual} countries={countries} onUpdatePassenger={onUpdatePassenger} {...noop} />);
+  expect(screen.getByText(/viaja con este, elegido a mano/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Que lo elija el sistema" }));
+
+  await waitFor(() => expect(onUpdatePassenger).toHaveBeenCalledWith("p-1", { travelDocumentId: "" }));
 });
 
 it("un pasajero con doble nacionalidad carga su otro pasaporte y elige con cuál viaja", async () => {
