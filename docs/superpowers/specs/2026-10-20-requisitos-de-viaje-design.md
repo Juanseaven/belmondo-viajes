@@ -47,9 +47,7 @@ desde el chat), y el sistema pone las reglas y hace el cruce.
 
 ### El itinerario
 
-`trips.destination` sigue existiendo como nombre para mostrar («Cancún»,
-«Europa clásica»). Se agrega el itinerario: una tabla `trip_countries` con una
-fila por país.
+Se agrega el itinerario: una tabla `trip_countries` con una fila por país.
 
 | Campo | Qué es |
 |---|---|
@@ -63,8 +61,41 @@ Es una lista y no un país porque un circuito por Europa pasa por varios y cada
 uno se evalúa por separado. De las escalas alcanza el país; el aeropuerto queda
 para más adelante.
 
-**Se asume que todos los viajes salen de Argentina.** El origen no se modela; la
-regla de salida de menores (ver más abajo) se aplica a todos.
+### El origen
+
+*(Corrección posterior a la aprobación, después de la primera prueba: la versión
+aprobada asumía que todos los viajes salían de Argentina y no lo mostraba en
+ningún lado.)*
+
+`trips.origin_country`: ISO alfa-2, `NOT NULL DEFAULT 'AR'`. Es de dónde sale el
+viaje. Los viajes existentes quedan saliendo de Argentina, que es lo que se
+asumía.
+
+- **No se evalúa como entrada**, igual que la vuelta: el pasajero sale de ahí y
+  vuelve ahí.
+- **No puede estar en el itinerario.** Guardar un itinerario con el país de
+  salida, o cambiar el origen a un país del itinerario, es un error de
+  validación («el viaje sale de Argentina: no puede ser también destino»).
+- **Pesa en dos requisitos:** la salida de menores, que es una regla argentina
+  y se pide solo si el viaje sale de Argentina, y la vacuna exigida a quienes
+  vienen de país de riesgo (ver «Evaluación»).
+
+### El nombre del viaje
+
+`trips.destination` deja de cargarse a mano. **Se arma con los países con rol
+`destino`, en orden:** «México», «Italia y Francia», «Italia, Francia y
+España». Las escalas no entran en el nombre. Se guarda en `trips.destination` al
+guardar el itinerario, para que la lista de viajes, el buscador y el selector
+del encabezado lo sigan leyendo de donde lo leen hoy. Un itinerario sin
+destinos (solo escalas, o vacío) lo deja vacío y la ficha muestra «Datos por
+completar».
+
+Los viajes que ya tienen texto en `destination` lo conservan hasta que se les
+cargue el itinerario; entonces se reemplaza por el nombre armado.
+
+Si la agencia vende paquetes con nombre comercial («Europa clásica»), vuelve
+como campo opcional. Queda para revisar con la agencia después de la primera
+prueba.
 
 ### El pasajero
 
@@ -230,10 +261,12 @@ fuente citada en el código. Nadie las carga: viajan con el sistema.
   «Passport not required» de Wikipedia (Mercosur salvo Guyana, Comunidad
   Andina, Chile). Es constante porque es estable y porque es justo lo que más
   vende la agencia; si Wikipedia dice lo mismo, mejor.
-- **Salida de menores desde Argentina:** todo pasajero menor necesita la
-  autorización de viaje, salvo que viaje con ambos padres. El sistema no sabe
-  con quién viaja, así que es un requisito que una persona confirma (ver
-  «Confirmaciones»).
+- **Salida de menores desde Argentina:** en un viaje que sale de Argentina,
+  todo pasajero menor necesita la autorización de viaje, salvo que viaje con
+  ambos padres. El sistema no sabe con quién viaja, así que es un requisito que
+  una persona confirma (ver «Confirmaciones»). Si el viaje sale de otro país,
+  no se pide: las reglas de salida de los demás países quedan fuera de esta
+  entrega.
 
 ### Extracción
 
@@ -319,12 +352,30 @@ Cada requisito termina en uno de cuatro estados: **cumple**, **falta**,
 | Antigüedad | emisión contra `emision_max_anios`; sin fecha de emisión cuando la regla la pide → falta el dato |
 | Visa | `autorizacion_electronica`, `visa_electronica` o `visa_consular`: se busca un permiso vigente de ese país durante la estadía → cumple o falta; las exenciones se aplican con los permisos cargados («tiene visa de EE.UU. vigente»). `visa_a_la_llegada`: cumple, con la frase «se tramita al llegar». `no_admitido`: falta, con la frase «este país no admite pasajeros con este documento»; no se confirma, se resuelve viajando con otro documento |
 | Estadía | días en el país contra `estadia_max_dias` → si se pasa, falta |
-| Vacunas | exigida para todos → falta hasta confirmar; solo para quienes vienen de país de riesgo → verificar (Argentina es de riesgo parcial según la OMS) |
+| Vacunas | exigida para todos → falta hasta confirmar; solo para quienes vienen de país de riesgo → verificar, con una frase que nombra el país de salida («el viaje sale de Argentina, que la OMS considera de riesgo en parte»; de otro país, «hay que ver si Perú es de riesgo»). No hay lista de países de riesgo: siempre es verificar |
 | Tránsito | solo para escalas: si el país no pide visa a esa nacionalidad, cumple; si la pide, verificar (puede hacer falta visa de tránsito) |
-| Menor | menor a la salida → falta hasta confirmar la autorización o que viaja con ambos padres |
+| Menor | solo si el viaje sale de Argentina: menor a la salida → falta hasta confirmar la autorización o que viaja con ambos padres |
 
 Un viaje sin itinerario cargado tiene un único requisito: «falta cargar el país
 de destino». Un pasajero sin documento de viaje: «falta cargar el documento».
+
+### Antes de cargar pasajeros
+
+*(Agregado después de la primera prueba.)* Muchas consultas arrancan con «¿qué
+necesito para ir a X?», cuando todavía no hay pasajeros. Para que el panel
+responda en ese momento, un viaje **con itinerario y sin pasajeros** muestra lo
+que piden sus países **a un pasajero con pasaporte argentino**, y lo dice así
+en el título.
+
+- Es una vista de la regla, no una evaluación: dice qué pide cada país
+  (documento, visa, estadía, vigencia, vacunas, tránsito en las escalas) con sus
+  fuentes, sin cumple ni falta, porque no hay documento contra el cual medir.
+- No se guarda en `trip_requirements` ni cierra controles: un viaje sin
+  pasajeros sigue con «Requisitos migratorios» abierto.
+- Las reglas se piden igual que en una evaluación (`Pairs` agrega `AR` + cada
+  país cuando no hay pasajeros), así que la búsqueda arranca apenas se guarda el
+  destino y muestra «buscando requisitos…» mientras tanto.
+- Apenas se carga el primer pasajero, el panel pasa a la evaluación de siempre.
 
 ### Dónde se guarda
 
@@ -415,8 +466,24 @@ Todo dentro de la ficha que ya existe al lado del chat. Valen las reglas de
 lectura de la pantalla de Viajes: palabras y no códigos, y nada en color sin
 una frase que diga por qué.
 
-- **Viaje:** editor del itinerario (países, destino o escala, fechas
-  opcionales). Los países se eligen por nombre en español, no por código.
+- **Viaje:** *(corregido después de la primera prueba)* el itinerario es lo
+  primero de la sección Viaje, en el borrador de «Operación nueva» y en la
+  ficha, con la forma de un buscador de requisitos:
+
+  ```
+  VIAJE
+  Sale de  [Argentina ▾]      Va a  [México ▾]
+                               ⊕ Agregar destino · ⊕ Agregar escala
+  Salida [dd/mm/aaaa]         Regreso [dd/mm/aaaa]
+                                   [Guardar viaje]
+  ```
+
+  El texto libre «Destino» desaparece (ver «El nombre del viaje»). Cada país
+  de «Va a» dice si es destino o escala y se puede quitar. Las fechas por país
+  siguen siendo opcionales y solo están en la ficha, detrás de «Fechas en cada
+  país». En el borrador, «Guardar viaje» crea el viaje con origen, itinerario y
+  fechas en un solo pedido; en la ficha, un solo botón guarda todo. Los países
+  se eligen por nombre en español, no por código.
 - **Pasajero** (`PassengersTab`): fecha de nacimiento, residencia, la lista de
   documentos con «viaja con este», y la lista de visas y autorizaciones.
 - **Sección nueva «Requisitos»:** agrupada por pasajero y, dentro, por país. Una
@@ -467,7 +534,12 @@ del catálogo de países.
 Las tomó quien escribió el diseño; se pueden cambiar sin rehacer el resto:
 
 - la nacionalidad sale del documento y no es un campo del pasajero;
-- todos los viajes salen de Argentina;
+- el origen es Argentina por defecto y solo pesa en menores y vacunas
+  (reemplaza a «todos los viajes salen de Argentina»);
+- el nombre del viaje se arma con los destinos; el nombre comercial queda
+  para después de la primera prueba;
+- sin pasajeros, el panel muestra lo que piden los países a un pasaporte
+  argentino;
 - Wikipedia sola alcanza; el conflicto es solo cuando las dos fuentes dicen algo
   distinto;
 - en estadía gana la fuente más exigente;
@@ -528,6 +600,9 @@ Pruebas en Go del motor de evaluación (puras, sin base):
   emitido hace 11 años, falta; sin fecha de emisión, falta el dato;
 - un campo en `verificar` da `verificar`, nunca cumple;
 - menor a la salida (cumple 18 durante el viaje) cuenta como menor;
+- un menor en un viaje que sale de Chile no tiene el requisito de autorización;
+- la vacuna para quienes vienen de país de riesgo nombra el país de salida;
+- sin pasajeros, las reglas pedidas son las de `AR` + cada país del itinerario;
 - una escala en un país que pide visa da «tránsito: verificar»;
 - una confirmación de un `verificar` deja de valer cuando la regla cambia ese
   campo;
@@ -559,13 +634,21 @@ Pruebas contra Postgres real (`TEST_DATABASE_URL`):
   donde no;
 - cambiar una regla re-evalúa los viajes abiertos que la usan y no los cerrados;
 - la migración pasa los documentos viejos a `passenger_documents` como
-  argentinos y deja el `travel_document_id` puesto.
+  argentinos y deja el `travel_document_id` puesto;
+- guardar el itinerario arma el nombre del viaje con los destinos y no con las
+  escalas;
+- el itinerario no acepta el país de salida, y el origen no acepta un país del
+  itinerario;
+- crear un viaje con origen, itinerario y fechas en un solo pedido.
 
 Pruebas de componente:
 
 - la sección «Requisitos» dice cada requisito con palabras y muestra la fuente;
 - «buscando requisitos…» mientras la regla está en `buscando`;
-- el botón «Confirmar» aparece solo en lo confirmable.
+- el botón «Confirmar» aparece solo en lo confirmable;
+- el borrador pide «Sale de» y «Va a», y no tiene texto libre de destino;
+- sin pasajeros, la sección «Requisitos» dice «para un pasajero con pasaporte
+  argentino» y no muestra cumple ni falta.
 
 Prueba manual con las fuentes reales: crear viajes de pasajeros argentinos a
 Brasil, EE.UU., Canadá, España y Japón, y comparar lo que dice la ficha contra
