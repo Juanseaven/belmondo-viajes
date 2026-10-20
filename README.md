@@ -4,12 +4,21 @@ Panel de administración de una agencia de viajes, organizado en módulos. Se
 construye de a poco: cada herramienta que la agencia necesita entra como un
 módulo nuevo, sin tocar los que ya están.
 
-Hoy hay uno: **mirror**, el espejo de WhatsApp. Refleja en tiempo real todas las
-líneas de la agencia en una bandeja compartida, filtrable por número, con envío
-desde el panel.
+Hoy hay dos:
+
+- **mirror**, el espejo de WhatsApp. Refleja en tiempo real todas las líneas de
+  la agencia en una bandeja compartida, filtrable por número, con envío desde el
+  panel.
+- **operaciones**, los clientes y viajes de la agencia. La ficha de cada viaje
+  vive al lado de la conversación del cliente, y la pantalla **Viajes** junta lo
+  que hay que hacer hoy (Pendientes) y la consulta de todos los viajes.
+
+Documentos de diseño:
 
 - Arquitectura modular: [docs/superpowers/specs/2026-08-04-arquitectura-modular-design.md](docs/superpowers/specs/2026-08-04-arquitectura-modular-design.md)
 - Módulo mirror: [docs/superpowers/specs/2026-08-01-panel-espejo-whatsapp-design.md](docs/superpowers/specs/2026-08-01-panel-espejo-whatsapp-design.md)
+- Módulo operaciones: [docs/superpowers/specs/2026-08-20-modulo-operaciones-design.md](docs/superpowers/specs/2026-08-20-modulo-operaciones-design.md)
+- Pantalla de Viajes: [docs/superpowers/specs/2026-10-20-pantalla-viajes-design.md](docs/superpowers/specs/2026-10-20-pantalla-viajes-design.md)
 
 ## Estado
 
@@ -19,7 +28,9 @@ desde el panel.
 | mirror — ingesta | Funciona: webhook → worker particionado → Postgres → R2 → websocket |
 | mirror — lectura | Funciona: bandeja unificada o por línea, hilo paginado, búsqueda dentro de los mensajes, marcar revisado |
 | mirror — escritura | Funciona: enviar texto y adjuntos, alta y desvinculación de línea con QR desde el panel |
-| Frontend | Login, shell con menú por módulos, bandeja del espejo completa |
+| operaciones — ficha | Funciona: viaje, pasajeros, pago, cliente, estado y vendedor junto al chat; 31 controles con cierre derivado, por acción o manual |
+| operaciones — Viajes | Funciona: Pendientes (atrasado, esta semana, salen pronto) y Todos los viajes con búsqueda, filtros y orden |
+| Frontend | Login, shell con menú por módulos, bandeja del espejo, ficha del viaje y pantalla de Viajes |
 
 ### API del módulo mirror
 

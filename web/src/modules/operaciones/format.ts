@@ -41,3 +41,37 @@ export function parseAmount(raw: string): number | undefined {
   else if ((value.match(/\./g) ?? []).length > 1) normalized = value.replace(/\./g, "");
   return /^-?\d+(\.\d+)?$/.test(normalized) ? Number(normalized) : Number.NaN;
 }
+
+const weekday = new Intl.DateTimeFormat("es-AR", { weekday: "long" });
+
+/** Días entre dos días de calendario: positivo si `value` es posterior a `from`. */
+const daysBetween = (from: string, value: string) => {
+  const utc = (day: string) => {
+    const [y, m, d] = dayOf(day).split("-").map(Number);
+    return Date.UTC(y, m - 1, d);
+  };
+  return Math.round((utc(value) - utc(from)) / 86_400_000);
+};
+
+/**
+ * Un día dicho como lo diría alguien en la agencia: «hoy», «mañana», el día de
+ * la semana si cae en los próximos seis días, y la fecha si no. Seis y no siete:
+ * «el martes» dicho un martes sería ambiguo.
+ */
+function relativeDay(value: string, from: string) {
+  const diff = daysBetween(from, value);
+  if (diff === 0) return "hoy";
+  if (diff === 1) return "mañana";
+  if (diff > 1 && diff < 7) return `el ${weekday.format(new Date(`${dayOf(value)}T12:00:00`))}`;
+  return `el ${shortDate(value)}`;
+}
+
+/** «venció el 18 oct», «vence hoy», «vence el jueves». */
+export function whenDue(dueAt: string, from = today()) {
+  return daysBetween(from, dueAt) < 0 ? `venció el ${shortDate(dueAt)}` : `vence ${relativeDay(dueAt, from)}`;
+}
+
+/** «sale mañana», «sale el 10 dic», «salió el 3 oct». */
+export function departs(departAt: string, from = today()) {
+  return daysBetween(from, departAt) < 0 ? `salió el ${shortDate(departAt)}` : `sale ${relativeDay(departAt, from)}`;
+}

@@ -1183,3 +1183,95 @@ p.trip-warn, .trip-note { margin: 8px 0 0; font-size: var(--fs-11); }
     transition-duration: .01ms !important;
   }
 }
+
+/* --- Viajes ---------------------------------------------------------------
+   La pantalla propia de operaciones. Lectura antes que densidad: un renglón por
+   viaje, la tarea en grande y los datos en gris debajo. */
+.content > section.viajes-screen { padding: 0; }
+.viajes-screen { height: 100dvh; overflow-y: auto; background: var(--paper); }
+.viajes-head { padding: 22px 28px 0; }
+.viajes-head h1 { margin: 0; color: var(--ink); font-size: var(--fs-20); font-weight: 600; }
+.viajes-tabs { position: sticky; top: 0; z-index: 2; display: flex; gap: 4px; padding: 12px 28px 0; border-bottom: 1px solid var(--hairline); background: var(--paper); }
+.viajes-tabs button { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 9px 10px; border: 0; color: var(--ink-3); background: transparent; font-size: var(--fs-13); font-weight: 500; }
+.viajes-tabs button::after { content: ""; position: absolute; right: 6px; bottom: -1px; left: 6px; height: 2px; background: transparent; }
+.viajes-tabs button:hover { color: var(--ink); }
+.viajes-tabs button[aria-selected="true"] { color: var(--ink); font-weight: 600; }
+.viajes-tabs button[aria-selected="true"]::after { background: var(--green); }
+.viajes-count { min-width: 20px; padding: 0 6px; border-radius: 999px; color: var(--late); background: var(--late-tint); font-size: var(--fs-11); font-weight: 700; line-height: 18px; text-align: center; }
+.viajes-body { max-width: 1080px; padding: 6px 28px 40px; }
+.viajes-empty { margin-top: 28px; padding: 28px; border: 1px dashed var(--hairline-strong); border-radius: 8px; color: var(--ink-3); background: var(--canvas); font-size: var(--fs-13); text-align: center; }
+.viajes-empty strong { display: block; color: var(--ink); font-size: var(--fs-14); }
+.viajes-empty p { margin: 4px 0 12px; }
+.viajes-loading, .viajes-error { margin: 24px 0; color: var(--ink-3); font-size: var(--fs-13); }
+.viajes-error { color: var(--late); }
+
+.pending-group { margin-top: 22px; }
+.pending-group h2 { margin: 0 0 8px; color: var(--ink-3); font-size: var(--fs-11); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.pending-group.is-atrasado h2 { color: var(--late); }
+.pending-group.is-semana h2 { color: var(--warn-ink); }
+.pending-group ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.pending-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 14px; border: 1px solid var(--hairline); border-left-width: 3px; border-radius: 8px; background: var(--paper); }
+.pending-row.is-atrasado { border-left-color: var(--late); }
+.pending-row.is-semana { border-left-color: var(--warn); }
+.pending-text { display: grid; gap: 3px; min-width: 0; }
+.pending-task { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.pending-task strong { color: var(--ink); font-size: var(--fs-14); font-weight: 600; }
+.pending-row.is-atrasado .pending-task strong { color: var(--late); }
+.pending-when { color: var(--ink-3); font-size: var(--fs-12); }
+.pending-row.is-atrasado .pending-when { color: var(--late); font-weight: 600; }
+.pending-row.is-semana .pending-when { color: var(--warn-ink); font-weight: 600; }
+.pending-text small { overflow: hidden; color: var(--ink-3); font-size: var(--fs-12); text-overflow: ellipsis; white-space: nowrap; }
+.pending-text .pending-more { color: var(--ink-3); font-style: italic; }
+.pending-row > button { flex: 0 0 auto; }
+
+.trips-filters { display: grid; gap: 10px; padding: 16px 0 6px; }
+.trips-search { position: relative; }
+.trips-search svg { position: absolute; top: 50%; left: 10px; width: 15px; color: var(--ink-3); transform: translateY(-50%); }
+.trips-search input { padding-left: 32px; }
+.trips-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.trips-chip { padding: 5px 11px; border: 1px solid var(--hairline-strong); border-radius: 999px; color: var(--ink-2); background: var(--paper); font-size: var(--fs-12); white-space: nowrap; }
+.trips-chip:hover { border-color: var(--green-line); }
+.trips-chip[aria-pressed="true"] { border-color: var(--green); color: var(--green-strong); background: var(--green-tint); font-weight: 600; }
+.trips-chip.is-late[aria-pressed="true"] { border-color: var(--late); color: var(--late); background: var(--late-tint); }
+.trips-selects { display: flex; flex-wrap: wrap; gap: 10px; }
+.trips-selects label { display: grid; gap: 3px; color: var(--ink-3); font-size: var(--fs-11); font-weight: 600; }
+.trips-selects select, .trips-selects input { height: 32px; padding: 0 8px; border: 1px solid var(--hairline-strong); border-radius: 6px; color: var(--ink); background: var(--paper); font-size: var(--fs-12); }
+.trips-count { margin: 12px 0 4px; color: var(--ink-3); font-size: var(--fs-12); }
+.trips-clear { margin-top: 10px; border: 0; color: var(--green-strong); background: transparent; font-size: var(--fs-12); font-weight: 600; }
+.trips-table { width: 100%; border-collapse: collapse; font-size: var(--fs-13); }
+.trips-table th { padding: 8px 10px; border-bottom: 1px solid var(--hairline); color: var(--ink-3); font-size: var(--fs-11); font-weight: 600; text-align: left; white-space: nowrap; }
+.trips-table th button { display: inline-flex; align-items: center; gap: 3px; padding: 0; border: 0; color: inherit; background: transparent; font: inherit; }
+.trips-table th button.is-active { color: var(--ink); }
+.trips-table th svg { width: 12px; }
+.trips-table td { padding: 10px; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+.trips-table td > span, .trips-table td > strong { display: block; color: var(--ink); }
+.trips-table td > strong { font-weight: 600; }
+.trips-table td small { display: block; margin-top: 2px; color: var(--ink-3); font-size: var(--fs-11); }
+.trips-table td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.trips-table tr.is-clickable { cursor: pointer; }
+.trips-table tr.is-clickable:hover td, .trips-table tr.is-clickable:focus-visible td { background: var(--canvas); }
+.trips-table tr:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
+.trips-table .is-late, .trips-table td small.is-late { color: var(--late); font-weight: 600; }
+.trips-table .is-soon, .trips-table td small.is-soon { color: var(--warn-ink); font-weight: 600; }
+.trips-table .is-ok { color: var(--ink-3); }
+.trips-more { display: flex; justify-content: center; padding: 14px 0; }
+
+@media (max-width: 700px) {
+  .viajes-head { padding: 18px 16px 0; }
+  .viajes-tabs { padding: 10px 16px 0; }
+  .viajes-body { padding: 4px 16px 32px; }
+  .pending-row { flex-direction: column; align-items: stretch; }
+  .pending-text small { white-space: normal; }
+  /* La tabla pasa a renglones con el formato de Pendientes: lo que sigue arriba,
+     en grande; el cliente debajo; y número, destino, salida y total en una
+     línea gris. Solo CSS: el contenido es el mismo que en escritorio. */
+  .trips-table thead { display: none; }
+  .trips-table, .trips-table tbody { display: block; }
+  .trips-table tr { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin-bottom: 8px; padding: 11px 13px; border: 1px solid var(--hairline); border-radius: 8px; }
+  .trips-table td { display: block; padding: 0; border: 0; color: var(--ink-3); font-size: var(--fs-12); }
+  .trips-table td > span, .trips-table td > strong { display: inline; color: inherit; }
+  .trips-table td small { display: inline; margin: 0 0 0 5px; }
+  .trips-table td[data-label="Lo que sigue"] { order: -2; flex-basis: 100%; color: var(--ink); font-size: var(--fs-14); font-weight: 600; }
+  .trips-table td[data-label="Cliente"] { order: -1; flex-basis: 100%; color: var(--ink); font-size: var(--fs-13); }
+  .trips-table td[data-label="#"]::before { content: "#"; }
+}

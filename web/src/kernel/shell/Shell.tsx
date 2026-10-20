@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ComponentType, type FocusEvent, type ReactNode } from "react";
-import { LogOut, MessageCircleMore } from "lucide-react";
+import { LogOut, MessageCircleMore, Plane } from "lucide-react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ const SIDEBAR_OPEN_WIDTH = 208;
 /** Cada módulo trae su ícono; los que no figuran caen en el de mensajería. */
 const MODULE_ICONS: Record<string, ComponentType<{ "aria-hidden"?: boolean }>> = {
   mirror: MessageCircleMore,
+  operaciones: Plane,
 };
 
 function initials(value: string): string {

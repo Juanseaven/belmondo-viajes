@@ -58,3 +58,20 @@ it("permite elegir otro viaje del contacto y lo conserva al recargar", async () 
   await waitFor(() => expect(operacionesApi.inbox).toHaveBeenCalledTimes(3));
   expect(screen.getByText("2 viajes|Jujuy")).toBeTruthy();
 });
+
+// Desde la pantalla de Viajes se llega al chat con un viaje concreto: la ficha
+// tiene que mostrar ese, no el que elegiría la bandeja.
+it("respeta el viaje que llega elegido desde la pantalla de Viajes", async () => {
+  const older = { ...summary, id: "trip-0", number: 0, destination: "Jujuy" };
+  vi.mocked(operacionesApi.trips).mockResolvedValue({ items: [summary, older] });
+  vi.mocked(operacionesApi.trip).mockImplementation(async (id) => (id === "trip-0" ? { ...detail, ...older } : detail));
+
+  function Preferred() {
+    const trips = useTrips(["contact-1"], "contact-1", "trip-0");
+    return <div>{trips.active?.destination ?? "sin detalle"}</div>;
+  }
+  render(<Preferred />);
+
+  expect(await screen.findByText("Jujuy")).toBeTruthy();
+  expect(operacionesApi.trip).not.toHaveBeenCalledWith("trip-1");
+});

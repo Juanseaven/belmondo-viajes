@@ -326,10 +326,14 @@ pantalla del espejo importa los componentes de `operaciones` para dibujar el ban
 el panel y el chip.
 
 No es un ciclo —son capas distintas— pero es una asimetría y conviene tenerla
-escrita. `operaciones` no aparece en el menú: no tiene pantalla propia, su interfaz
-vive dentro de la del espejo. Si algún día molesta, la salida es que la pantalla
-del espejo deje de ser «de mirror» y pase a ser una pantalla de la aplicación
-que compone los dos módulos. No hace falta ahora.
+escrita. Si algún día molesta, la salida es que la pantalla del espejo deje de
+ser «de mirror» y pase a ser una pantalla de la aplicación que compone los dos
+módulos. No hace falta ahora.
+
+**Actualización (2026-10-20).** Este diseño decía que `operaciones` no aparecía
+en el menú. Ya no es así: tiene su pantalla, **Viajes**
+(`2026-10-20-pantalla-viajes-design.md`), además de la ficha que la pantalla del
+espejo sigue dibujando al lado del chat. La asimetría de arriba se mantiene.
 
 ## Alcance
 

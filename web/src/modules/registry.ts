@@ -1,5 +1,6 @@
 import type { ModuleDef } from "./types";
 import { mirror } from "./mirror/module";
+import { operaciones } from "./operaciones/module";
 
 /**
  * El registro de módulos del frontend.
@@ -13,7 +14,7 @@ import { mirror } from "./mirror/module";
  */
 export const modules: ModuleDef[] = [
   mirror,
-  // passport,
+  operaciones,
 ];
 
 /**

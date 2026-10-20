@@ -1,5 +1,15 @@
 import { api } from "@/kernel/api/client";
-import type { Customer, CustomerUpdate, InboxItem, Passenger, Payment, Seller, TripDetail, TripSummary, TripUpdate } from "./types";
+import type { Customer, CustomerUpdate, InboxItem, Passenger, Payment, PendingRow, Seller, TripDetail, TripListParams, TripPage, TripSummary, TripUpdate } from "./types";
+
+function listQuery(params: TripListParams): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === "" || value === false) continue;
+    query.set(key, value === true ? "1" : String(value));
+  }
+  const text = query.toString();
+  return text ? `?${text}` : "";
+}
 
 export interface NewTrip { contactId: string; destination?: string; departAt?: string; returnAt?: string }
 export interface NewPassenger { firstName: string; lastName: string; kind?: "adulto" | "menor"; isHolder?: boolean; documentType?: string; documentNumber?: string; documentExpiresAt?: string }
@@ -22,4 +32,6 @@ export const operacionesApi = {
   customer: (id: string) => api<Customer>(`/api/operaciones/clientes/${id}`),
   updateCustomer: (id: string, input: CustomerUpdate) => api<Customer>(`/api/operaciones/clientes/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
   sellers: () => api<{ items: Seller[] }>("/api/operaciones/vendedores"),
+  pending: () => api<{ items: PendingRow[] }>("/api/operaciones/pendientes"),
+  listTrips: (params: TripListParams) => api<TripPage>(`/api/operaciones/viajes${listQuery(params)}`),
 };

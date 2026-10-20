@@ -73,6 +73,8 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
   const openId = params.get("c") ?? "";
   const focusId = params.get("m") ?? undefined;
   const query = params.get("q") ?? "";
+  // El viaje con el que se llegó desde la pantalla de Viajes.
+  const preferredTripId = params.get("viaje") ?? undefined;
 
   const [lines, setLines] = useState<Line[]>([]);
   const [open, setOpen] = useState<Conversation | null>(null);
@@ -89,7 +91,7 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
     ? lines.find((line) => line.id === instance)?.unread ?? 0
     : lines.reduce((total, line) => total + line.unread, 0);
   const contactIds = useMemo(() => inbox.items.map((item) => item.contactId), [inbox.items]);
-  const trips = useTrips(contactIds, open?.contactId);
+  const trips = useTrips(contactIds, open?.contactId, preferredTripId);
   const runControl = (control: Control) => setActionDraft({ controlId: control.id, body: control.message || "" });
 
   useEffect(() => {
@@ -337,7 +339,7 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
             <SearchResults
               query={query}
               instance={instance}
-              onOpen={(hit) => setParams({ c: hit.conversationId, m: hit.messageId })}
+              onOpen={(hit) => setParams({ c: hit.conversationId, m: hit.messageId, viaje: undefined })}
               onClear={() => {
                 setSearchValue("");
                 setParams({ q: undefined, m: undefined });
@@ -347,7 +349,7 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
             <ConversationList
               inbox={inbox}
               selectedId={openId}
-              onSelect={(id) => setParams({ c: id, m: undefined })}
+              onSelect={(id) => setParams({ c: id, m: undefined, viaje: undefined })}
             />
           )}
         </aside>

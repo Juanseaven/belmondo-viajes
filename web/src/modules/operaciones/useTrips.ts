@@ -5,18 +5,23 @@ import { useSocket } from "@/kernel/api/useSocket";
 import { operacionesApi } from "./api";
 import type { TripDetail, TripSummary } from "./types";
 
-export function useTrips(contactIds: string[], activeContactId?: string) {
+/**
+ * preferredTripId es el viaje con el que se llegó al chat desde la pantalla de
+ * Viajes: manda sobre el que elegiría la bandeja hasta que se cambie de contacto
+ * o de viaje.
+ */
+export function useTrips(contactIds: string[], activeContactId?: string, preferredTripId?: string) {
   const contactKey = useMemo(() => [...new Set(contactIds)].join(","), [contactIds.join(",")]);
   const [byContact, setByContact] = useState<Record<string, TripSummary | undefined>>({});
   const [contactTrips, setContactTrips] = useState<TripSummary[]>([]);
   // El viaje que eligió quien atiende. Sin elección, manda el que la bandeja
   // considera activo: el más reciente sin cerrar.
-  const [selectedId, setSelectedId] = useState<string>();
+  const [selectedId, setSelectedId] = useState<string | undefined>(preferredTripId);
   const [active, setActive] = useState<TripDetail>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
 
-  useEffect(() => { setSelectedId(undefined); }, [activeContactId]);
+  useEffect(() => { setSelectedId(preferredTripId); }, [activeContactId, preferredTripId]);
 
   const reload = useCallback(async () => {
     const ids = contactKey ? contactKey.split(",") : [];

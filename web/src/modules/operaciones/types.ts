@@ -105,3 +105,60 @@ export const nextControl = (controls: Control[]): Control | undefined =>
       if (b.dueAt) return 1;
       return 0;
     })[0];
+
+/** Algo de un viaje que tiene plazo: un control abierto o la seña sin cobrar. */
+export interface PendingItem {
+  kind: "control" | "sena";
+  id?: string;
+  itemId?: string;
+  /** La tarea dicha como orden: «Agendar el check in del vuelo de ida». */
+  task: string;
+  dueAt: string;
+  critical: boolean;
+}
+
+/** Un viaje como se ve en las listas de la pantalla de Viajes. */
+export interface TripRow {
+  id: string;
+  number: number;
+  status: TripStatus;
+  destination: string;
+  departAt?: string;
+  returnAt?: string;
+  customerName: string;
+  passengerCount: number;
+  sellerName?: string;
+  totalUsd?: number;
+  depositUsd?: number;
+  depositDueAt?: string;
+  depositPaidAt?: string;
+  /** Lo más urgente del viaje, venza cuando venza. Sin esto, está al día. */
+  next?: PendingItem;
+  /** La conversación más reciente del cliente. Sin esto, no hay chat que abrir. */
+  conversationId?: string;
+}
+
+export type PendingGroup = "atrasado" | "semana" | "salen";
+
+export interface PendingRow extends TripRow {
+  group: PendingGroup;
+  /** Encabeza el renglón. Sin esto, el viaje sale pronto y está al día. */
+  task?: PendingItem;
+  more: number;
+}
+
+export interface TripPage { items: TripRow[]; total: number; nextCursor?: string }
+
+export type TripSort = "salida" | "numero" | "total";
+
+/** Los parámetros de «Todos los viajes», como los espera el backend. */
+export interface TripListParams {
+  q?: string;
+  estado?: string;
+  salidaDesde?: string;
+  salidaHasta?: string;
+  vendedor?: string;
+  atrasados?: boolean;
+  orden?: TripSort;
+  cursor?: string;
+}
