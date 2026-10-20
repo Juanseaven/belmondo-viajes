@@ -22,8 +22,8 @@ type Line struct {
 	WasConnected bool       `json:"wasConnected"`
 	LastSeenAt   *time.Time `json:"lastSeenAt,omitempty"`
 
-	// Suma de unread_count de sus conversaciones. Permite ver qué línea tiene
-	// movimiento sin ir entrando una por una.
+	// Cantidad de conversaciones con mensajes sin leer. El filtro necesita chats,
+	// no la suma de mensajes pendientes dentro de cada chat.
 	Unread int `json:"unread"`
 }
 
@@ -143,7 +143,7 @@ func (h SearchHit) Cursor() Cursor {
 type InboxQuery struct {
 	InstanceID string // vacío = todas las líneas
 	Search     string // filtra por nombre o número de contacto
-	NeedsReply bool   // solo conversaciones cuyo ultimo mensaje es entrante
+	UnreadOnly bool   // solo conversaciones con unread_count > 0
 	Cursor     Cursor
 	Limit      int
 }

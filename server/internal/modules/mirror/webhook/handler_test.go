@@ -47,6 +47,33 @@ func TestHandlerAcceptsMatchingEvolutionGoInstanceCredential(t *testing.T) {
 	}
 }
 
+func TestHandlerPartitionsAReceiptWithTheMessagesFromTheSameChat(t *testing.T) {
+	t.Parallel()
+
+	const (
+		name = "linea-abc"
+		id   = "249aad2e-68f9-464f-bc84-aca560c38f0e"
+		key  = "global-secret"
+		chat = "5491112345678@s.whatsapp.net"
+	)
+	pool := &recordingSubmitter{}
+	handler := NewHandler(&recordingEvents{}, pool, fixedInstanceLookup{id: id}, key,
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	body := `{"event":"Receipt","instanceId":"` + id + `","instanceName":"` + name +
+		`","instanceToken":"` + evolution.InstanceToken(key, name) +
+		`","data":{"Chat":"` + chat + `","IsFromMe":true,"MessageIDs":["MSG-1"],"Type":"read"}}`
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/webhooks/evolution", bytes.NewBufferString(body)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if pool.job.PartitionKey != name+"|"+chat {
+		t.Fatalf("receipt partition = %q, want the chat partition %q", pool.job.PartitionKey, name+"|"+chat)
+	}
+}
+
 func TestHandlerProcessesTheSameConnectionStateAgainOnALaterReconnect(t *testing.T) {
 	t.Parallel()
 

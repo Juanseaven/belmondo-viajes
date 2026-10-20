@@ -186,12 +186,23 @@ func ParseMessage(instance string, raw json.RawMessage) (*domain.Message, error)
 		return nil, fmt.Errorf("evento sin Info.ID o Info.Chat")
 	}
 
+	isGroup := data.Info.IsGroup || strings.HasSuffix(data.Info.Chat, "@g.us")
+	remoteJID := data.Info.Chat
 	contactName := data.Info.PushName
-	if data.Info.IsGroup || strings.HasSuffix(data.Info.Chat, "@g.us") {
+	if isGroup || data.Info.IsFromMe {
 		contactName = ""
 	}
-	msg := baseMessage(instance, data.Info.Chat, data.Info.ID, contactName,
-		data.Info.IsFromMe, data.Info.IsGroup, data.Info.Timestamp.Time)
+	if !isGroup && !data.Info.IsFromMe {
+		remoteJID = preferredPhoneJID(data.Info.Chat, data.Info.Sender, data.Info.SenderAlt)
+	}
+	msg := baseMessage(instance, remoteJID, data.Info.ID, contactName,
+		data.Info.IsFromMe, isGroup, data.Info.Timestamp.Time)
+	if !msg.IsGroup && !data.Info.IsFromMe {
+		msg.AlternateJID = preferredLIDJID(data.Info.Chat, data.Info.Sender, data.Info.SenderAlt)
+		if msg.AlternateJID == msg.RemoteJID {
+			msg.AlternateJID = ""
+		}
+	}
 	if msg.IsGroup && !data.Info.IsFromMe {
 		msg.SenderJID = preferredPhoneJID(data.Info.Sender, data.Info.SenderAlt)
 		msg.SenderName = data.Info.PushName
@@ -433,4 +444,13 @@ func preferredPhoneJID(values ...string) string {
 		}
 	}
 	return firstNonEmpty(values...)
+}
+
+func preferredLIDJID(values ...string) string {
+	for _, value := range values {
+		if strings.HasSuffix(value, "@lid") {
+			return value
+		}
+	}
+	return ""
 }

@@ -42,12 +42,12 @@ func (m *Messages) Save(ctx context.Context, msg *domain.Message, sentByUserID s
 		return nil, err
 	}
 
-	contactID, err := upsertContact(ctx, tx, msg)
+	contactID, remoteJID, err := upsertContact(ctx, tx, msg)
 	if err != nil {
 		return nil, fmt.Errorf("upsert de contacto: %w", err)
 	}
 
-	conversationID, err := upsertConversation(ctx, tx, instanceID, contactID, msg)
+	conversationID, err := upsertConversation(ctx, tx, instanceID, contactID, remoteJID, msg)
 	if err != nil {
 		return nil, fmt.Errorf("upsert de conversación: %w", err)
 	}
@@ -180,22 +180,43 @@ func resolvedSender(ctx context.Context, tx pgx.Tx, instanceID, senderJID, fallb
 	return name, phone, nil
 }
 
-func upsertContact(ctx context.Context, tx pgx.Tx, msg *domain.Message) (string, error) {
+func upsertContact(ctx context.Context, tx pgx.Tx, msg *domain.Message) (string, string, error) {
+	// Individual chats can alternate between a phone JID and an opaque LID.
+	// Once the directory links both, the phone contact is canonical.
+	if strings.HasSuffix(msg.RemoteJID, "@lid") {
+		var id, canonicalJID string
+		err := tx.QueryRow(ctx,
+			`SELECT id, wa_jid FROM contacts WHERE lid_jid=$1 LIMIT 1`, msg.RemoteJID,
+		).Scan(&id, &canonicalJID)
+		if err == nil {
+			return id, canonicalJID, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return "", "", err
+		}
+	}
 	// El push_name solo se sobrescribe si viene con valor: un evento sin pushName
 	// no debe borrar el nombre que ya conocíamos del cliente.
 	const q = `
-		INSERT INTO contacts (wa_jid, phone_number, push_name)
-		VALUES ($1, $2, NULLIF($3,''))
+		INSERT INTO contacts (wa_jid, phone_number, push_name, lid_jid)
+		VALUES ($1, $2, NULLIF($3,''), NULLIF($4,''))
 		ON CONFLICT (wa_jid) DO UPDATE
-		   SET push_name = COALESCE(NULLIF(EXCLUDED.push_name,''), contacts.push_name)
+		   SET push_name = COALESCE(NULLIF(EXCLUDED.push_name,''), contacts.push_name),
+		       lid_jid = COALESCE(NULLIF(EXCLUDED.lid_jid,''), contacts.lid_jid)
 		RETURNING id`
 
 	var id string
-	err := tx.QueryRow(ctx, q, msg.RemoteJID, phoneFromJID(msg.RemoteJID), msg.PushName).Scan(&id)
-	return id, err
+	err := tx.QueryRow(ctx, q, msg.RemoteJID, phoneFromJID(msg.RemoteJID), msg.PushName, msg.AlternateJID).Scan(&id)
+	if err != nil {
+		return "", "", err
+	}
+	if err := mergeLIDContact(ctx, tx, id, msg.RemoteJID, msg.AlternateJID); err != nil {
+		return "", "", err
+	}
+	return id, msg.RemoteJID, nil
 }
 
-func upsertConversation(ctx context.Context, tx pgx.Tx, instanceID, contactID string, msg *domain.Message) (string, error) {
+func upsertConversation(ctx context.Context, tx pgx.Tx, instanceID, contactID, remoteJID string, msg *domain.Message) (string, error) {
 	const q = `
 		INSERT INTO conversations (instance_id, contact_id, remote_jid, is_group)
 		VALUES ($1, $2, $3, $4)
@@ -204,7 +225,7 @@ func upsertConversation(ctx context.Context, tx pgx.Tx, instanceID, contactID st
 		RETURNING id`
 
 	var id string
-	err := tx.QueryRow(ctx, q, instanceID, contactID, msg.RemoteJID, msg.IsGroup).Scan(&id)
+	err := tx.QueryRow(ctx, q, instanceID, contactID, remoteJID, msg.IsGroup).Scan(&id)
 	return id, err
 }
 
@@ -223,6 +244,37 @@ func (m *Messages) UpdateStatus(ctx context.Context, instanceName, waMessageID s
 		     > array_position(ARRAY['pending','sent','delivered','read']::message_status[], m.status)`
 	_, err := m.db.Exec(ctx, q, instanceName, waMessageID, status)
 	return err
+}
+
+// MarkReadFromDevice clears the shared unread badge when another linked
+// WhatsApp device reports that this account read the chat. Matching through the
+// contact aliases covers private chats that alternate between phone JIDs and
+// opaque LIDs.
+func (m *Messages) MarkReadFromDevice(ctx context.Context, instanceName, remoteJID string) ([]string, error) {
+	const q = `
+		UPDATE conversations c
+		   SET unread_count = 0
+		  FROM instances i, contacts ct
+		 WHERE c.instance_id = i.id
+		   AND c.contact_id = ct.id
+		   AND i.evolution_name = $1
+		   AND (c.remote_jid = $2 OR ct.wa_jid = $2 OR ct.lid_jid = $2)
+		   AND c.unread_count > 0
+		RETURNING c.id`
+	rows, err := m.db.Query(ctx, q, instanceName, remoteJID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var conversationIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		conversationIDs = append(conversationIDs, id)
+	}
+	return conversationIDs, rows.Err()
 }
 
 // MarkDeleted es un soft delete deliberado. Que un vendedor borre un mensaje para

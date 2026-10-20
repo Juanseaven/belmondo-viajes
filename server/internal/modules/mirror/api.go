@@ -22,8 +22,8 @@ const (
 	threadPageMax     = 200
 )
 
-// listLines alimenta el filtro por línea, con el contador de sin-revisar de cada
-// una.
+// listLines alimenta el filtro por línea, con la cantidad de chats no leídos de
+// cada una.
 func (m *Module) listLines(w http.ResponseWriter, r *http.Request) {
 	lines, err := m.read.Lines(r.Context())
 	if err != nil {
@@ -48,7 +48,7 @@ func (m *Module) listConversations(w http.ResponseWriter, r *http.Request) {
 	rows, err := m.read.Inbox(r.Context(), store.InboxQuery{
 		InstanceID: q.Get("instance"),
 		Search:     q.Get("q"),
-		NeedsReply: q.Get("status") == "unanswered",
+		UnreadOnly: q.Get("status") == "unread",
 		Cursor:     cursor,
 		Limit:      limit,
 	})

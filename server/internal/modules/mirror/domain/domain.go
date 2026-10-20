@@ -76,6 +76,9 @@ const (
 type Message struct {
 	InstanceName string
 	RemoteJID    string
+	// AlternateJID links the phone JID of a private chat with WhatsApp's opaque
+	// LID when a live inbound event carries both identities.
+	AlternateJID string
 	WAMessageID  string
 	PushName     string
 	// SenderJID/SenderName identify the participant inside a group. RemoteJID is

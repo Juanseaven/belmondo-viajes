@@ -49,6 +49,9 @@ type MessageStore interface {
 	// deja la bandeja mintiendo.
 	Save(ctx context.Context, msg *domain.Message, sentByUserID string) (*PersistedMessage, error)
 	UpdateStatus(ctx context.Context, instanceName, waMessageID string, status domain.MessageStatus) error
+	// MarkReadFromDevice applies a read receipt emitted by this WhatsApp account
+	// and returns the conversations whose unread badge changed.
+	MarkReadFromDevice(ctx context.Context, instanceName, remoteJID string) ([]string, error)
 	MarkDeleted(ctx context.Context, instanceName, waMessageID string) error
 }
 

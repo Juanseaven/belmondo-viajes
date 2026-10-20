@@ -22,6 +22,8 @@ import (
 	"github.com/juanseaven/viajes-crm/server/internal/modules/mirror/worker"
 )
 
+const offlineReplayGrace = 5 * time.Minute
+
 // MediaEnqueuer recibe los adjuntos pendientes de bajar de Evolution y subir a R2.
 type MediaEnqueuer interface {
 	Enqueue(job store.PendingMedia)
@@ -129,7 +131,18 @@ func (p *Processor) handleMessage(ctx context.Context, job worker.Job) error {
 	if err != nil {
 		return fmt.Errorf("parseando mensaje: %w", err)
 	}
-	return p.persistMessage(ctx, job, msg, true)
+	replay := isOfflineReplay(job.ReceivedAt, msg.Timestamp)
+	if err := p.persistMessage(ctx, job, msg, !replay); err != nil {
+		return err
+	}
+	if replay {
+		p.broadcast("history.sync", "", map[string]any{"instance": job.Instance})
+	}
+	return nil
+}
+
+func isOfflineReplay(receivedAt, messageAt time.Time) bool {
+	return !receivedAt.IsZero() && !messageAt.IsZero() && receivedAt.Sub(messageAt) > offlineReplayGrace
 }
 
 func (p *Processor) persistMessage(ctx context.Context, job worker.Job, msg *domain.Message, notify bool) error {
@@ -302,16 +315,37 @@ func (p *Processor) handleReceipt(ctx context.Context, job worker.Job) error {
 	var d struct {
 		MessageIDs []string `json:"MessageIDs"`
 		Type       string   `json:"Type"`
+		Chat       string   `json:"Chat"`
+		IsFromMe   bool     `json:"IsFromMe"`
 	}
 	if err := json.Unmarshal(job.Payload, &d); err != nil {
 		return fmt.Errorf("parseando recibo: %w", err)
 	}
+	receiptType := firstNonEmpty(d.Type, job.State)
 	for _, id := range d.MessageIDs {
-		if err := p.messages.UpdateStatus(ctx, job.Instance, id, receiptStatus(firstNonEmpty(d.Type, job.State))); err != nil {
+		if err := p.messages.UpdateStatus(ctx, job.Instance, id, receiptStatus(receiptType)); err != nil {
 			return err
 		}
 	}
+	if d.IsFromMe && d.Chat != "" && isReadReceipt(receiptType) {
+		conversationIDs, err := p.messages.MarkReadFromDevice(ctx, job.Instance, d.Chat)
+		if err != nil {
+			return fmt.Errorf("aplicando lectura desde WhatsApp: %w", err)
+		}
+		for _, conversationID := range conversationIDs {
+			p.broadcast("conversation.read", "", map[string]any{"conversationId": conversationID})
+		}
+	}
 	return nil
+}
+
+func isReadReceipt(value string) bool {
+	switch strings.ToLower(value) {
+	case "read", "read-self":
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Processor) handleDelete(ctx context.Context, job worker.Job) error {
@@ -495,7 +529,7 @@ func receiptStatus(value string) domain.MessageStatus {
 	switch strings.ToLower(value) {
 	case "delivered", "delivery_ack":
 		return domain.StatusDelivered
-	case "read", "readself", "played":
+	case "read", "readself", "read-self", "played":
 		return domain.StatusRead
 	case "error", "failed":
 		return domain.StatusFailed

@@ -2,9 +2,12 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juanseaven/viajes-crm/server/internal/modules/mirror/domain"
 )
@@ -35,7 +38,8 @@ func (c *Contacts) UpsertDirectory(ctx context.Context, instanceName string, con
 		ON CONFLICT (wa_jid) DO UPDATE SET
 			phone_number = coalesce(contacts.phone_number, excluded.phone_number),
 			push_name = coalesce(nullif(excluded.push_name, ''), contacts.push_name),
-			lid_jid = coalesce(nullif(excluded.lid_jid, ''), contacts.lid_jid)`
+			lid_jid = coalesce(nullif(excluded.lid_jid, ''), contacts.lid_jid)
+		RETURNING id`
 	const upsertLine = `
 		INSERT INTO contact_directory (
 			instance_id, wa_jid, lid_jid, first_name, full_name, push_name, business_name
@@ -60,9 +64,13 @@ func (c *Contacts) UpsertDirectory(ctx context.Context, instanceName string, con
 		if pushName == "" {
 			pushName = contact.Name
 		}
-		if _, err := tx.Exec(ctx, upsertGlobal,
-			contact.PhoneJID, phone, pushName, contact.LIDJID); err != nil {
+		var canonicalID string
+		if err := tx.QueryRow(ctx, upsertGlobal,
+			contact.PhoneJID, phone, pushName, contact.LIDJID).Scan(&canonicalID); err != nil {
 			return fmt.Errorf("guardando contacto %q: %w", contact.PhoneJID, err)
+		}
+		if err := mergeLIDContact(ctx, tx, canonicalID, contact.PhoneJID, contact.LIDJID); err != nil {
+			return fmt.Errorf("fusionando identidad LID %q: %w", contact.LIDJID, err)
 		}
 		if _, err := tx.Exec(ctx, upsertLine, instanceID, contact.PhoneJID, contact.LIDJID,
 			contact.FirstName, contact.FullName, pushName, contact.BusinessName); err != nil {
@@ -71,6 +79,139 @@ func (c *Contacts) UpsertDirectory(ctx context.Context, instanceName string, con
 	}
 
 	return tx.Commit(ctx)
+}
+
+type conversationAlias struct {
+	id                   string
+	instanceID           string
+	lastMessageAt        *time.Time
+	lastMessagePreview   *string
+	lastMessageType      *string
+	lastMessageDirection *string
+	unreadCount          int
+	isArchived           bool
+	createdAt            time.Time
+}
+
+// mergeLIDContact moves every conversation attached to the opaque LID onto the
+// phone contact. The alias contact itself is deliberately retained: other
+// modules may reference it, while no inbox row remains attached to it.
+func mergeLIDContact(ctx context.Context, tx pgx.Tx, canonicalID, phoneJID, lidJID string) error {
+	if canonicalID == "" || phoneJID == "" || !strings.HasSuffix(lidJID, "@lid") {
+		return nil
+	}
+
+	var aliasID string
+	err := tx.QueryRow(ctx,
+		`SELECT id FROM contacts WHERE wa_jid=$1 AND id<>$2`, lidJID, canonicalID,
+	).Scan(&aliasID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(ctx, `
+		UPDATE contacts canonical
+		   SET display_name = coalesce(canonical.display_name, alias.display_name),
+		       push_name = coalesce(canonical.push_name, alias.push_name),
+		       profile_pic_url = coalesce(canonical.profile_pic_url, alias.profile_pic_url),
+		       notes = coalesce(canonical.notes, alias.notes),
+		       is_blocked = canonical.is_blocked OR alias.is_blocked
+		  FROM contacts alias
+		 WHERE canonical.id=$1 AND alias.id=$2`, canonicalID, aliasID); err != nil {
+		return err
+	}
+
+	rows, err := tx.Query(ctx, `
+		SELECT id, instance_id, last_message_at, last_message_preview,
+		       last_message_type::text, last_message_direction::text,
+		       unread_count, is_archived, created_at
+		  FROM conversations
+		 WHERE contact_id=$1
+		 FOR UPDATE`, aliasID)
+	if err != nil {
+		return err
+	}
+	var aliases []conversationAlias
+	for rows.Next() {
+		var item conversationAlias
+		if err := rows.Scan(&item.id, &item.instanceID, &item.lastMessageAt,
+			&item.lastMessagePreview, &item.lastMessageType, &item.lastMessageDirection,
+			&item.unreadCount, &item.isArchived, &item.createdAt); err != nil {
+			rows.Close()
+			return err
+		}
+		aliases = append(aliases, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	for _, alias := range aliases {
+		var targetID string
+		err := tx.QueryRow(ctx, `
+			SELECT id FROM conversations
+			 WHERE instance_id=$1 AND contact_id=$2
+			 FOR UPDATE`, alias.instanceID, canonicalID).Scan(&targetID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			if _, err := tx.Exec(ctx,
+				`UPDATE messages SET contact_id=$2 WHERE conversation_id=$1`, alias.id, canonicalID); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `
+				UPDATE conversations
+				   SET contact_id=$2, remote_jid=$3
+				 WHERE id=$1`, alias.id, canonicalID, phoneJID); err != nil {
+				return err
+			}
+			continue
+		}
+		if err != nil {
+			return err
+		}
+
+		if _, err := tx.Exec(ctx, `
+			UPDATE messages
+			   SET conversation_id=$2, contact_id=$3
+			 WHERE conversation_id=$1`, alias.id, targetID, canonicalID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE outbound_messages SET conversation_id=$2 WHERE conversation_id=$1`, alias.id, targetID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE conversations
+			   SET remote_jid=$2,
+			       last_message_preview = CASE
+			         WHEN last_message_at IS NULL OR ($3::timestamptz IS NOT NULL AND $3 >= last_message_at) THEN $4
+			         ELSE last_message_preview END,
+			       last_message_type = CASE
+			         WHEN last_message_at IS NULL OR ($3::timestamptz IS NOT NULL AND $3 >= last_message_at) THEN $5::message_type
+			         ELSE last_message_type END,
+			       last_message_direction = CASE
+			         WHEN last_message_at IS NULL OR ($3::timestamptz IS NOT NULL AND $3 >= last_message_at) THEN $6::message_direction
+			         ELSE last_message_direction END,
+			       last_message_at = CASE
+			         WHEN last_message_at IS NULL OR ($3::timestamptz IS NOT NULL AND $3 >= last_message_at) THEN $3
+			         ELSE last_message_at END,
+			       unread_count = unread_count + $7,
+			       is_archived = is_archived AND $8,
+			       created_at = least(created_at, $9)
+			 WHERE id=$1`, targetID, phoneJID, alias.lastMessageAt, alias.lastMessagePreview,
+			alias.lastMessageType, alias.lastMessageDirection, alias.unreadCount,
+			alias.isArchived, alias.createdAt); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM conversations WHERE id=$1`, alias.id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *Contacts) SetGroupName(ctx context.Context, instanceName, groupJID, name string) error {

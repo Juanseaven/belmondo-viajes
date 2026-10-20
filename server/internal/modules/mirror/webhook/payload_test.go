@@ -43,6 +43,57 @@ func TestParseMessageReadsEvolutionGoLivePayload(t *testing.T) {
 	}
 }
 
+func TestParseMessageLinksThePhoneChatWithItsIndividualLID(t *testing.T) {
+	t.Parallel()
+
+	raw := json.RawMessage(`{
+		"Info": {
+			"Chat": "5491128709473@s.whatsapp.net",
+			"Sender": "5491128709473@s.whatsapp.net",
+			"SenderAlt": "37035637244007@lid",
+			"IsFromMe": false,
+			"IsGroup": false,
+			"ID": "VERO-IN",
+			"PushName": "Vero",
+			"Timestamp": "2026-08-20T16:22:40Z"
+		},
+		"Message": {"conversation": "Que pasa"}
+	}`)
+
+	msg, err := ParseMessage("juanse", raw)
+	if err != nil {
+		t.Fatalf("ParseMessage: %v", err)
+	}
+	if msg.RemoteJID != "5491128709473@s.whatsapp.net" || msg.AlternateJID != "37035637244007@lid" {
+		t.Fatalf("identity = %q / %q", msg.RemoteJID, msg.AlternateJID)
+	}
+}
+
+func TestParseMessageDoesNotUseTheOwnersPushNameForAnOutgoingPrivateChat(t *testing.T) {
+	t.Parallel()
+
+	raw := json.RawMessage(`{
+		"Info": {
+			"Chat": "37035637244007@lid",
+			"Sender": "121921404452969@lid",
+			"IsFromMe": true,
+			"IsGroup": false,
+			"ID": "VERO-OUT",
+			"PushName": "Juanse Avendaño",
+			"Timestamp": "2026-08-20T16:22:41Z"
+		},
+		"Message": {"conversation": "Dale"}
+	}`)
+
+	msg, err := ParseMessage("juanse", raw)
+	if err != nil {
+		t.Fatalf("ParseMessage: %v", err)
+	}
+	if msg.PushName != "" {
+		t.Fatalf("outgoing contact push name = %q, want empty", msg.PushName)
+	}
+}
+
 func TestParseMessageKeepsTheParticipantWhoSentToAGroup(t *testing.T) {
 	t.Parallel()
 

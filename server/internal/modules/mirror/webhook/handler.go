@@ -122,6 +122,7 @@ func (h *Handler) keysFor(env Envelope) (dedupe, partition string) {
 			ID   string `json:"ID"`
 			Chat string `json:"Chat"`
 		} `json:"Info"`
+		Chat string `json:"Chat"`
 	}
 	if len(env.Data) > 0 {
 		_ = json.Unmarshal(env.Data, &probe)
@@ -143,7 +144,7 @@ func (h *Handler) keysFor(env Envelope) (dedupe, partition string) {
 		// transiciÃ³n aunque el contenido coincida con una anterior.
 		fingerprint = fmt.Sprintf("%s:%d", fingerprint, h.now().UnixNano())
 	}
-	return DedupeKey(env.InstanceName, env.Event, fingerprint), PartitionKey(env.InstanceName, "")
+	return DedupeKey(env.InstanceName, env.Event, fingerprint), PartitionKey(env.InstanceName, probe.Chat)
 }
 
 func repeatableLifecycleEvent(event string) bool {

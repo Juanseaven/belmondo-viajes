@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/juanseaven/viajes-crm/server/internal/kernel/ws"
 	"github.com/juanseaven/viajes-crm/server/internal/modules/mirror/domain"
@@ -185,6 +186,89 @@ func TestProcessorUsesTheReceiptRootStateWhenDataTypeIsEmpty(t *testing.T) {
 	}
 }
 
+func TestProcessorClearsUnreadWhenThisWhatsAppAccountReadTheChat(t *testing.T) {
+	t.Parallel()
+
+	messages := &processorMessages{readConversationIDs: []string{"conv-1"}}
+	hub := &processorHub{}
+	processor := NewProcessor(&processorEvents{}, messages, nil, nil,
+		nil, nil, nil, nil, nil, hub, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	err := processor.Handle(context.Background(), worker.Job{
+		EventID: 16, Event: webhook.EventReceipt, Instance: "juanse-abc",
+		Payload: json.RawMessage(`{
+			"Chat":"5491111111111@s.whatsapp.net","IsFromMe":true,
+			"MessageIDs":["WA-INBOUND"],"Type":"read"
+		}`),
+	})
+	if err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if messages.readInstance != "juanse-abc" || messages.readChat != "5491111111111@s.whatsapp.net" {
+		t.Fatalf("device read = %q/%q", messages.readInstance, messages.readChat)
+	}
+	if len(hub.events) != 1 || hub.events[0].Type != "conversation.read" {
+		t.Fatalf("broadcasts = %+v", hub.events)
+	}
+	var payload struct {
+		ConversationID string `json:"conversationId"`
+	}
+	if err := json.Unmarshal(hub.events[0].Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.ConversationID != "conv-1" {
+		t.Fatalf("conversationId = %q, want conv-1", payload.ConversationID)
+	}
+}
+
+func TestProcessorDoesNotClearUnreadForAReceiptFromTheCustomer(t *testing.T) {
+	t.Parallel()
+
+	messages := &processorMessages{readConversationIDs: []string{"conv-1"}}
+	processor := NewProcessor(&processorEvents{}, messages, nil, nil,
+		nil, nil, nil, nil, nil, &processorHub{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	err := processor.Handle(context.Background(), worker.Job{
+		EventID: 17, Event: webhook.EventReceipt, Instance: "juanse-abc",
+		Payload: json.RawMessage(`{
+			"Chat":"5491111111111@s.whatsapp.net","IsFromMe":false,
+			"MessageIDs":["WA-OUTBOUND"],"Type":"read"
+		}`),
+	})
+	if err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if messages.readChat != "" {
+		t.Fatalf("customer receipt cleared unread for %q", messages.readChat)
+	}
+}
+
+func TestProcessorPersistsAnOfflineReplayWithoutBroadcastingEveryOldMessage(t *testing.T) {
+	t.Parallel()
+
+	messages := &processorMessages{}
+	hub := &processorHub{}
+	processor := NewProcessor(&processorEvents{}, messages, nil, nil,
+		nil, nil, nil, nil, nil, hub, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	err := processor.Handle(context.Background(), worker.Job{
+		EventID: 18, Event: webhook.EventMessage, Instance: "juanse-abc",
+		ReceivedAt: time.Date(2026, 8, 27, 18, 0, 0, 0, time.UTC),
+		Payload: json.RawMessage(`{
+			"Info":{"Chat":"5491111111111@s.whatsapp.net","Sender":"5491111111111@s.whatsapp.net",
+			"IsFromMe":false,"IsGroup":false,"ID":"OFFLINE-1","PushName":"Sofia",
+			"Timestamp":"2026-08-21T12:00:00Z"},
+			"Message":{"conversation":"Mensaje atrasado"}
+		}`),
+	})
+	if err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if len(messages.saved) != 1 || messages.saved[0].Historical {
+		t.Fatalf("offline replay must be persisted as a normal unread candidate: %+v", messages.saved)
+	}
+	if len(hub.events) != 1 || hub.events[0].Type != "history.sync" {
+		t.Fatalf("old replay broadcasts = %+v, want one batch-refresh signal", hub.events)
+	}
+}
+
 func TestProcessorStoresEvolutionGoQRCode(t *testing.T) {
 	t.Parallel()
 
@@ -221,9 +305,12 @@ func (p *processorEvents) MarkProcessed(_ context.Context, id int64) error {
 func (*processorEvents) MarkFailed(context.Context, int64, string) error { return nil }
 
 type processorMessages struct {
-	saved    []*domain.Message
-	statusID string
-	status   domain.MessageStatus
+	saved               []*domain.Message
+	statusID            string
+	status              domain.MessageStatus
+	readInstance        string
+	readChat            string
+	readConversationIDs []string
 }
 
 func (p *processorMessages) Save(_ context.Context, msg *domain.Message, _ string) (*store.PersistedMessage, error) {
@@ -233,6 +320,10 @@ func (p *processorMessages) Save(_ context.Context, msg *domain.Message, _ strin
 func (p *processorMessages) UpdateStatus(_ context.Context, _, id string, status domain.MessageStatus) error {
 	p.statusID, p.status = id, status
 	return nil
+}
+func (p *processorMessages) MarkReadFromDevice(_ context.Context, instance, chat string) ([]string, error) {
+	p.readInstance, p.readChat = instance, chat
+	return p.readConversationIDs, nil
 }
 func (*processorMessages) MarkDeleted(context.Context, string, string) error { return nil }
 

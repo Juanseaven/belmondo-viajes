@@ -221,14 +221,14 @@ func TestFiltrosLleganAlStore(t *testing.T) {
 	}
 }
 
-func TestFiltroSinResponderLlegaAlStore(t *testing.T) {
+func TestFiltroNoLeidosLlegaAlStore(t *testing.T) {
 	read := &fakeRead{}
 	m := newTestModule(read)
 
-	do(m.listConversations, "/?status=unanswered", nil)
+	do(m.listConversations, "/?status=unread", nil)
 
-	if !read.lastInbox.NeedsReply {
-		t.Fatal("NeedsReply = false, se esperaba true")
+	if !read.lastInbox.UnreadOnly {
+		t.Fatal("el filtro de no leídos no llegó al store")
 	}
 }
 

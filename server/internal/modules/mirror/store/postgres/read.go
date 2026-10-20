@@ -19,7 +19,7 @@ func NewRead(db *pgxpool.Pool) *Read { return &Read{db: db} }
 
 var _ store.ReadStore = (*Read)(nil)
 
-// Lines lista las líneas con su contador de sin-revisar.
+// Lines lista las líneas con su contador de chats sin leer.
 //
 // El LEFT JOIN filtra por unread_count > 0 dentro de la condición, no en un
 // WHERE de fuera. Dos razones: un WHERE convertiría el LEFT JOIN en INNER y
@@ -33,7 +33,7 @@ func (r *Read) Lines(ctx context.Context) ([]store.Line, error) {
 		       i.status, i.is_active,
 		       (i.connected_at IS NOT NULL OR coalesce(i.phone_jid, '') <> ''),
 		       i.last_seen_at,
-		       coalesce(sum(c.unread_count), 0)::int
+		       count(c.id)::int
 		  FROM instances i
 		  LEFT JOIN conversations c
 		         ON c.instance_id = i.id
@@ -128,8 +128,8 @@ func (r *Read) Inbox(ctx context.Context, q store.InboxQuery) ([]store.InboxItem
 			len(args), len(args), len(args), len(args), len(args), len(args), len(args)))
 	}
 
-	if q.NeedsReply {
-		where = append(where, "c.last_message_direction = 'inbound'")
+	if q.UnreadOnly {
+		where = append(where, "c.unread_count > 0")
 	}
 
 	if !q.Cursor.IsZero() {

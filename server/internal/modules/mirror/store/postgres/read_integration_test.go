@@ -322,33 +322,30 @@ func TestBandejaFiltraPorLinea(t *testing.T) {
 	}
 }
 
-func TestBandejaFiltraConversacionesCuyoUltimoMensajeEsEntrante(t *testing.T) {
+func TestBandejaFiltraConversacionesConMensajesNoLeidos(t *testing.T) {
 	ctx, p := testDB(t)
 	read := NewRead(p)
 
 	line := seedLine(t, ctx, p, "ana", "Ana")
 	now := time.Now().UTC()
-	inboundContact := seedContact(t, ctx, p, "inbound@s.whatsapp.net", "Espera respuesta", "")
-	outboundContact := seedContact(t, ctx, p, "outbound@s.whatsapp.net", "Ya respondida", "")
-	inbound := seedConversation(t, ctx, p, line, inboundContact, now, 1)
-	outbound := seedConversation(t, ctx, p, line, outboundContact, now.Add(-time.Minute), 0)
+	unreadContact := seedContact(t, ctx, p, "unread@s.whatsapp.net", "No leído", "")
+	readContact := seedContact(t, ctx, p, "read@s.whatsapp.net", "Leído", "")
+	unread := seedConversation(t, ctx, p, line, unreadContact, now, 3)
+	readConversation := seedConversation(t, ctx, p, line, readContact, now.Add(-time.Minute), 0)
 
 	if _, err := p.Exec(ctx,
 		`UPDATE conversations
 		    SET last_message_direction = CASE id WHEN $1 THEN 'inbound'::message_direction ELSE 'outbound'::message_direction END
-		  WHERE id IN ($1, $2)`, inbound, outbound); err != nil {
+		  WHERE id IN ($1, $2)`, readConversation, unread); err != nil {
 		t.Fatalf("preparando direcciones: %v", err)
 	}
 
-	got, err := read.Inbox(ctx, store.InboxQuery{NeedsReply: true, Limit: 10})
+	got, err := read.Inbox(ctx, store.InboxQuery{UnreadOnly: true, Limit: 10})
 	if err != nil {
 		t.Fatalf("Inbox: %v", err)
 	}
-	if len(got) != 1 || got[0].ID != inbound {
-		t.Fatalf("sin responder devolvio %#v, se esperaba solo %s", got, inbound)
-	}
-	if !got[0].NeedsReply {
-		t.Fatal("la fila entrante no expuso needsReply")
+	if len(got) != 1 || got[0].ID != unread {
+		t.Fatalf("no leídos devolvió %#v, se esperaba solo %s", got, unread)
 	}
 }
 
@@ -384,12 +381,12 @@ func TestMensajeViejoNoCambiaLaDireccionDelUltimoMensaje(t *testing.T) {
 		t.Fatalf("guardando entrante viejo: %v", err)
 	}
 
-	rows, err := NewRead(p).Inbox(ctx, store.InboxQuery{NeedsReply: true, Limit: 10})
+	rows, err := NewRead(p).Inbox(ctx, store.InboxQuery{Limit: 10})
 	if err != nil {
 		t.Fatalf("Inbox: %v", err)
 	}
-	if len(rows) != 0 {
-		t.Fatalf("el mensaje viejo marco la conversacion como sin responder: %#v", rows)
+	if len(rows) != 1 || rows[0].NeedsReply {
+		t.Fatalf("el mensaje viejo cambió la dirección del último mensaje: %#v", rows)
 	}
 }
 
@@ -540,7 +537,103 @@ func TestGuardarMensajeGrupalDevuelveElAutorResueltoParaTiempoReal(t *testing.T)
 
 // --- Líneas -----------------------------------------------------------------
 
-func TestLineasSumanLosSinRevisar(t *testing.T) {
+func TestGuardarMensajeIndividualPorLIDReutilizaLaConversacionTelefonica(t *testing.T) {
+	ctx, p := testDB(t)
+	seedLine(t, ctx, p, "juanse", "Juanse")
+
+	phoneJID := "5491128709473@s.whatsapp.net"
+	lidJID := "37035637244007@lid"
+	contactID := seedContact(t, ctx, p, phoneJID, "Vero", "+5491128709473")
+	if _, err := p.Exec(ctx, `UPDATE contacts SET lid_jid=$2 WHERE id=$1`, contactID, lidJID); err != nil {
+		t.Fatal(err)
+	}
+
+	messages := NewMessages(p)
+	inbound, err := messages.Save(ctx, &domain.Message{
+		InstanceName: "juanse", RemoteJID: phoneJID, WAMessageID: "VERO-IN",
+		PushName: "Vero", Direction: domain.Inbound, Origin: domain.OriginContact,
+		Type: domain.TypeText, Status: domain.StatusSent, Body: "¿Venís?",
+		Timestamp: time.Now().UTC(),
+	}, "")
+	if err != nil {
+		t.Fatalf("guardando entrante: %v", err)
+	}
+	outbound, err := messages.Save(ctx, &domain.Message{
+		InstanceName: "juanse", RemoteJID: lidJID, WAMessageID: "VERO-OUT",
+		Direction: domain.Outbound, Origin: domain.OriginDevice,
+		Type: domain.TypeText, Status: domain.StatusSent, Body: "Dale",
+		Timestamp: time.Now().UTC().Add(time.Second),
+	}, "")
+	if err != nil {
+		t.Fatalf("guardando saliente por LID: %v", err)
+	}
+
+	if outbound.ContactID != contactID || outbound.ConversationID != inbound.ConversationID {
+		t.Fatalf("saliente quedó en %s/%s; se esperaba %s/%s",
+			outbound.ContactID, outbound.ConversationID, contactID, inbound.ConversationID)
+	}
+	var remoteJID string
+	var conversations, storedMessages int
+	if err := p.QueryRow(ctx, `SELECT remote_jid FROM conversations WHERE id=$1`, inbound.ConversationID).Scan(&remoteJID); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.QueryRow(ctx, `SELECT count(*) FROM conversations`).Scan(&conversations); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.QueryRow(ctx, `SELECT count(*) FROM messages WHERE conversation_id=$1`, inbound.ConversationID).Scan(&storedMessages); err != nil {
+		t.Fatal(err)
+	}
+	if remoteJID != phoneJID || conversations != 1 || storedMessages != 2 {
+		t.Fatalf("remote=%q conversations=%d messages=%d; se esperaba %q/1/2",
+			remoteJID, conversations, storedMessages, phoneJID)
+	}
+}
+
+func TestAgendaFusionaUnaConversacionLIDQueYaExistia(t *testing.T) {
+	ctx, p := testDB(t)
+	seedLine(t, ctx, p, "juanse", "Juanse")
+
+	phoneJID := "5491128709473@s.whatsapp.net"
+	lidJID := "37035637244007@lid"
+	before, err := NewMessages(p).Save(ctx, &domain.Message{
+		InstanceName: "juanse", RemoteJID: lidJID, WAMessageID: "VERO-OLD-OUT",
+		PushName: "Vero", Direction: domain.Outbound, Origin: domain.OriginDevice,
+		Type: domain.TypeText, Status: domain.StatusSent, Body: "Que pasa",
+		Timestamp: time.Now().UTC(),
+	}, "")
+	if err != nil {
+		t.Fatalf("guardando saliente previo al mapeo: %v", err)
+	}
+
+	if err := NewContacts(p).UpsertDirectory(ctx, "juanse", []domain.ContactIdentity{{
+		PhoneJID: phoneJID, LIDJID: lidJID, FullName: "Vero Traversari", PushName: "Vero",
+	}}); err != nil {
+		t.Fatalf("guardando mapeo de agenda: %v", err)
+	}
+	after, err := NewMessages(p).Save(ctx, &domain.Message{
+		InstanceName: "juanse", RemoteJID: phoneJID, WAMessageID: "VERO-NEW-IN",
+		PushName: "Vero", Direction: domain.Inbound, Origin: domain.OriginContact,
+		Type: domain.TypeText, Status: domain.StatusSent, Body: "Prende el horno",
+		Timestamp: time.Now().UTC().Add(time.Second),
+	}, "")
+	if err != nil {
+		t.Fatalf("guardando entrante posterior al mapeo: %v", err)
+	}
+
+	var conversations, storedMessages int
+	if err := p.QueryRow(ctx, `SELECT count(*) FROM conversations`).Scan(&conversations); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.QueryRow(ctx, `SELECT count(*) FROM messages WHERE conversation_id=$1`, after.ConversationID).Scan(&storedMessages); err != nil {
+		t.Fatal(err)
+	}
+	if conversations != 1 || storedMessages != 2 || before.ConversationID != after.ConversationID {
+		t.Fatalf("antes=%s después=%s conversations=%d messages=%d; se esperaba un único hilo conservando su id",
+			before.ConversationID, after.ConversationID, conversations, storedMessages)
+	}
+}
+
+func TestLineasCuentanChatsConMensajesNoLeidos(t *testing.T) {
 	ctx, p := testDB(t)
 
 	ana := seedLine(t, ctx, p, "ana", "Ana")
@@ -564,8 +657,8 @@ func TestLineasSumanLosSinRevisar(t *testing.T) {
 	for _, l := range lines {
 		byLabel[l.Label] = l.Unread
 	}
-	if byLabel["Ana"] != 7 {
-		t.Fatalf("sin-revisar de Ana = %d, se esperaban 7", byLabel["Ana"])
+	if byLabel["Ana"] != 2 {
+		t.Fatalf("chats no leídos de Ana = %d, se esperaban 2", byLabel["Ana"])
 	}
 	// La clave del LEFT JOIN: una línea sin pendientes tiene que seguir apareciendo
 	// con cero, no desaparecer del filtro.
@@ -732,6 +825,74 @@ func TestMarkReadPoneACeroYEsIdempotente(t *testing.T) {
 	}
 	if got.Unread != 0 {
 		t.Fatalf("sin-revisar = %d, se esperaba 0", got.Unread)
+	}
+}
+
+func TestLecturaDesdeWhatsAppEncuentraLaConversacionPorSuAliasLID(t *testing.T) {
+	ctx, p := testDB(t)
+
+	line := seedLine(t, ctx, p, "ana", "Ana")
+	phoneJID := "5491112345678@s.whatsapp.net"
+	lidJID := "12345678901234@lid"
+	contact := seedContact(t, ctx, p, phoneJID, "Uno", "+5491112345678")
+	if _, err := p.Exec(ctx, `UPDATE contacts SET lid_jid=$2 WHERE id=$1`, contact, lidJID); err != nil {
+		t.Fatal(err)
+	}
+	conv := seedConversation(t, ctx, p, line, contact, time.Now().UTC(), 5)
+
+	changed, err := NewMessages(p).MarkReadFromDevice(ctx, "ana", lidJID)
+	if err != nil {
+		t.Fatalf("MarkReadFromDevice: %v", err)
+	}
+	if len(changed) != 1 || changed[0] != conv {
+		t.Fatalf("changed conversations = %v, want [%s]", changed, conv)
+	}
+
+	got, err := NewRead(p).Conversation(ctx, conv)
+	if err != nil {
+		t.Fatalf("Conversation: %v", err)
+	}
+	if got.Unread != 0 {
+		t.Fatalf("unread after the linked-device receipt = %d, want 0", got.Unread)
+	}
+}
+
+func TestMigracionDeLecturasConservaSoloMensajesPosterioresALaUltimaLectura(t *testing.T) {
+	ctx, p := testDB(t)
+
+	line := seedLine(t, ctx, p, "ana", "Ana")
+	chat := "5491112345678@s.whatsapp.net"
+	contact := seedContact(t, ctx, p, chat, "Uno", "+5491112345678")
+	readAt := time.Date(2026, 8, 24, 15, 0, 0, 0, time.UTC)
+	conv := seedConversation(t, ctx, p, line, contact, readAt.Add(time.Hour), 3)
+	seedMessage(t, ctx, p, conv, line, contact, "before-read", "ya leido", readAt.Add(-time.Minute))
+	seedMessage(t, ctx, p, conv, line, contact, "after-read", "pendiente", readAt.Add(time.Minute))
+
+	payload := fmt.Sprintf(`{
+		"event":"Receipt","instanceName":"ana","data":{
+			"Chat":%q,"IsFromMe":true,"MessageIDs":["before-read"],
+			"Timestamp":%q,"Type":"read"
+		}}`, chat, readAt.Format(time.RFC3339))
+	if _, err := p.Exec(ctx, `
+		INSERT INTO webhook_events (instance_name, event, dedupe_key, payload, status)
+		VALUES ('ana', 'Receipt', 'read-receipt', $1::jsonb, 'processed')`, payload); err != nil {
+		t.Fatalf("seeding read receipt: %v", err)
+	}
+
+	migration, err := os.ReadFile("../../migrations/0008_reconcile_whatsapp_reads.sql")
+	if err != nil {
+		t.Fatalf("reading reconciliation migration: %v", err)
+	}
+	if _, err := p.Exec(ctx, string(migration)); err != nil {
+		t.Fatalf("running reconciliation migration: %v", err)
+	}
+
+	got, err := NewRead(p).Conversation(ctx, conv)
+	if err != nil {
+		t.Fatalf("Conversation: %v", err)
+	}
+	if got.Unread != 1 {
+		t.Fatalf("unread after reconciliation = %d, want only the message after the receipt", got.Unread)
 	}
 }
 
