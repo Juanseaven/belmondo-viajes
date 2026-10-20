@@ -100,7 +100,7 @@ En pantalla y en el código se dice **viaje** —`trips`—, no «operación» n
 código habla el mismo idioma para que nadie traduzca entre lo que lee y lo que
 programa.
 
-Guarda número visible, estado (`cotizado`, `confirmado`, `en viaje`, `cerrado`),
+Guarda número visible, estado (`consulta` —como nace—, `cotizado`, `confirmado`, `en viaje`, `cerrado`),
 destino, fecha de salida, fecha de regreso, el cliente, el vendedor —una
 persona, no la línea de WhatsApp— y quién lo creó y cuándo.
 

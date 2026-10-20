@@ -7,6 +7,7 @@ import type { Seller } from "./types";
 
 const ESTADOS: { value: EstadoFilter; label: string }[] = [
   { value: "abiertos", label: "Abiertos" },
+  { value: "consulta", label: "Consultas" },
   { value: "cotizado", label: "Cotizados" },
   { value: "confirmado", label: "Confirmados" },
   { value: "en viaje", label: "En viaje" },

@@ -4,7 +4,7 @@ import type { TripListParams, TripSort } from "./types";
  * Los filtros de «Todos los viajes». Viven en la URL, como los del espejo: una
  * recarga o un enlace pasado a otra persona muestran la misma lista.
  */
-export type EstadoFilter = "abiertos" | "cotizado" | "confirmado" | "en viaje" | "cerrado";
+export type EstadoFilter = "abiertos" | "consulta" | "cotizado" | "confirmado" | "en viaje" | "cerrado";
 export type SalidaFilter = "" | "30d" | "mes" | "mes-proximo" | "rango";
 
 export interface TripFilters {
@@ -19,7 +19,7 @@ export interface TripFilters {
   orden: TripSort;
 }
 
-const ESTADOS: EstadoFilter[] = ["abiertos", "cotizado", "confirmado", "en viaje", "cerrado"];
+const ESTADOS: EstadoFilter[] = ["abiertos", "consulta", "cotizado", "confirmado", "en viaje", "cerrado"];
 const SALIDAS: SalidaFilter[] = ["", "30d", "mes", "mes-proximo", "rango"];
 const ORDENES: TripSort[] = ["salida", "numero", "total"];
 

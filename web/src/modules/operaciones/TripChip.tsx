@@ -1,7 +1,7 @@
 import type { TripSummary } from "./types";
 
 const STATUS: Record<TripSummary["status"], string> = {
-  cotizado: "Cotizado", confirmado: "Confirmado", "en viaje": "Viaje en curso", cerrado: "Cerrado",
+  consulta: "Consulta", cotizado: "Cotizado", confirmado: "Confirmado", "en viaje": "Viaje en curso", cerrado: "Cerrado",
 };
 
 export function TripChip({ trip }: { trip: TripSummary }) {

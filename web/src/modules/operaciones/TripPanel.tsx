@@ -14,6 +14,7 @@ import { nextControl } from "./types";
 type Tab = "resumen" | "pasajeros" | "pagos" | "controles";
 
 const STATUSES: { value: TripStatus; label: string }[] = [
+  { value: "consulta", label: "Consulta" },
   { value: "cotizado", label: "Cotizado" },
   { value: "confirmado", label: "Confirmado" },
   { value: "en viaje", label: "En viaje" },

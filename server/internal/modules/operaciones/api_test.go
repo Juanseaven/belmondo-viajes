@@ -193,8 +193,8 @@ func TestNombreYMigracionesDelModuloSonEstables(t *testing.T) {
 		t.Fatalf("nombre = %q", m.Name())
 	}
 	entries, err := fs.ReadDir(m.Migrations(), ".")
-	if err != nil || len(entries) != 3 || entries[0].Name() != "0001_init.sql" || entries[1].Name() != "0002_trip_drafts.sql" ||
-		entries[2].Name() != "0003_documentos_vigentes.sql" {
+	if err != nil || len(entries) != 4 || entries[0].Name() != "0001_init.sql" || entries[1].Name() != "0002_trip_drafts.sql" ||
+		entries[2].Name() != "0003_documentos_vigentes.sql" || entries[3].Name() != "0004_estado_consulta.sql" {
 		t.Fatalf("migraciones = %v, err = %v", entries, err)
 	}
 }
@@ -224,13 +224,13 @@ func TestListadoHTTPTraduceLosFiltros(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	m.listTrips(rec, httptest.NewRequest(http.MethodGet,
-		"/viajes?q=cancun&estado=confirmado,en%20viaje&salidaDesde=2026-11-01&salidaHasta=2026-11-30&vendedor=ninguno&atrasados=1&orden=total&cursor=abc", nil))
+		"/viajes?q=cancun&estado=consulta,en%20viaje&salidaDesde=2026-11-01&salidaHasta=2026-11-30&vendedor=ninguno&atrasados=1&orden=total&cursor=abc", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	f := repo.filter
-	if f.Query != "cancun" || len(f.Statuses) != 2 || f.Statuses[1] != "en viaje" || f.OpenOnly ||
+	if f.Query != "cancun" || len(f.Statuses) != 2 || f.Statuses[0] != "consulta" || f.Statuses[1] != "en viaje" || f.OpenOnly ||
 		f.DepartFrom == nil || f.DepartFrom.Format("2006-01-02") != "2026-11-01" ||
 		f.DepartTo == nil || !f.SellerNone || !f.LateOnly || f.Sort != store.SortTotal ||
 		f.Cursor != "abc" || f.Today.Format("2006-01-02") != "2026-10-20" {

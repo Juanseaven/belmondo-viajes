@@ -63,7 +63,7 @@ func (m *Module) pending(w http.ResponseWriter, r *http.Request) {
 }
 
 var tripStatuses = map[string]domain.TripStatus{
-	"cotizado": domain.TripCotizado, "confirmado": domain.TripConfirmado,
+	"consulta": domain.TripConsulta, "cotizado": domain.TripCotizado, "confirmado": domain.TripConfirmado,
 	"en viaje": domain.TripEnViaje, "cerrado": domain.TripCerrado,
 }
 

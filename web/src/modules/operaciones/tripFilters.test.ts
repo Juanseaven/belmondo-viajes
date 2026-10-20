@@ -29,3 +29,7 @@ it("el estado y los demás filtros llegan como los espera el backend", () => {
   expect(toListParams({ ...base, estado: "en viaje", q: " Rossi ", vendedor: "ninguno", atrasados: true }, "2026-10-20"))
     .toMatchObject({ estado: "en viaje", q: "Rossi", vendedor: "ninguno", atrasados: true });
 });
+
+it("la consulta es un estado válido en la URL", () => {
+  expect(filtersFromParams(new URLSearchParams("estado=consulta")).estado).toBe("consulta");
+});

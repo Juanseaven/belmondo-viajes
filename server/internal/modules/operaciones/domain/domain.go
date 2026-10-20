@@ -76,6 +76,9 @@ const (
 type TripStatus string
 
 const (
+	// TripConsulta: alguien preguntó y todavía no se le cotizó. Es como nace
+	// todo viaje.
+	TripConsulta   TripStatus = "consulta"
 	TripCotizado   TripStatus = "cotizado"
 	TripConfirmado TripStatus = "confirmado"
 	TripEnViaje    TripStatus = "en viaje"

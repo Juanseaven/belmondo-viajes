@@ -97,3 +97,10 @@ it("elegir fechas muestra el rango", () => {
   expect(screen.getByLabelText("Desde")).toBeTruthy();
   expect(screen.getByLabelText("Hasta")).toBeTruthy();
 });
+
+it("las consultas se filtran como cualquier estado", () => {
+  const onChange = vi.fn();
+  render(<TripFiltersBar value={defaultFilters()} sellers={[]} onChange={onChange} />);
+  fireEvent.click(screen.getByRole("button", { name: "Consultas" }));
+  expect(onChange).toHaveBeenLastCalledWith({ ...defaultFilters(), estado: "consulta" });
+});

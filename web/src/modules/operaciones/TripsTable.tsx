@@ -7,7 +7,7 @@ import { dayOf, money, shortDate, today as currentDay, whenDue } from "./format"
 import type { TripRow, TripSort, TripStatus } from "./types";
 
 export const STATUS_LABEL: Record<TripStatus, string> = {
-  cotizado: "Cotizado", confirmado: "Confirmado", "en viaje": "En viaje", cerrado: "Cerrado",
+  consulta: "Consulta", cotizado: "Cotizado", confirmado: "Confirmado", "en viaje": "En viaje", cerrado: "Cerrado",
 };
 
 const MISSING = "—";

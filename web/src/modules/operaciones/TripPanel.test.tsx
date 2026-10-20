@@ -209,3 +209,10 @@ it("un control por acción que cerró el dato lo dice y no se reabre a mano", ()
   expect(screen.getByText("Dato cargado")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Reabrir" })).toBeNull();
 });
+
+it("el estado arranca en consulta, antes de cotizado", () => {
+  render(<TripPanel trip={{ ...trip, status: "consulta" }} {...noop} />);
+  const options = Array.from((screen.getByLabelText("Estado del viaje") as HTMLSelectElement).options).map((o) => o.text);
+  expect(options).toEqual(["Consulta", "Cotizado", "Confirmado", "En viaje", "Cerrado"]);
+  expect((screen.getByLabelText("Estado del viaje") as HTMLSelectElement).value).toBe("consulta");
+});

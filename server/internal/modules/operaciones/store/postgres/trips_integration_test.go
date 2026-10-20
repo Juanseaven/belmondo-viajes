@@ -84,8 +84,8 @@ func TestAltaCreaElClienteLoVinculaYMaterializaLosControles(t *testing.T) {
 		t.Fatalf("alta del viaje: %v", err)
 	}
 
-	if viaje.Status != domain.TripCotizado {
-		t.Errorf("estado inicial %q, se esperaba %q", viaje.Status, domain.TripCotizado)
+	if viaje.Status != domain.TripConsulta {
+		t.Errorf("estado inicial %q, se esperaba %q", viaje.Status, domain.TripConsulta)
 	}
 	if viaje.Number == 0 {
 		t.Error("el viaje no recibió número visible")
@@ -247,4 +247,28 @@ func seedContact(t *testing.T, ctx context.Context, p *pgxpool.Pool, jid, name s
 		t.Fatalf("sembrando contacto: %v", err)
 	}
 	return id
+}
+
+// Un viaje nace como consulta: alguien preguntó y todavía no se le cotizó. Que
+// naciera «cotizado» afirmaba algo que nadie había hecho.
+func TestUnViajeNuevoNaceComoConsulta(t *testing.T) {
+	ctx, pool := testDB(t)
+	s := New(pool)
+	user := seedUser(t, ctx, pool, "consulta@agencia.test")
+	contact := seedContact(t, ctx, pool, "5491100000301@s.whatsapp.net", "Consulta")
+	trip, err := s.CreateTrip(ctx, store.NewTrip{ContactID: contact, CreatedBy: user})
+	if err != nil {
+		t.Fatalf("alta: %v", err)
+	}
+	if trip.Status != domain.TripConsulta {
+		t.Fatalf("estado inicial = %q, se esperaba consulta", trip.Status)
+	}
+	cotizado := domain.TripCotizado
+	if _, err := s.UpdateTrip(ctx, trip.ID, store.TripPatch{Status: &cotizado}); err != nil {
+		t.Fatalf("pasar a cotizado: %v", err)
+	}
+	consulta := domain.TripConsulta
+	if _, err := s.UpdateTrip(ctx, trip.ID, store.TripPatch{Status: &consulta}); err != nil {
+		t.Fatalf("volver a consulta: %v", err)
+	}
 }

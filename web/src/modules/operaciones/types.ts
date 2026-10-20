@@ -1,4 +1,4 @@
-export type TripStatus = "cotizado" | "confirmado" | "en viaje" | "cerrado";
+export type TripStatus = "consulta" | "cotizado" | "confirmado" | "en viaje" | "cerrado";
 export type Closing = "derivado" | "accion" | "manual";
 
 export interface ControlSummary {
