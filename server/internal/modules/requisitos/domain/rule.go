@@ -155,7 +155,7 @@ func (r Rule) Effective() Fields {
 	case RuleBuscando:
 		return AllVerify("buscando requisitos")
 	case RuleSinFuentes:
-		return AllVerify("no se pudieron consultar las fuentes")
+		return AllVerify("todavía no hay datos de las fuentes")
 	default:
 		return r.Fields
 	}
