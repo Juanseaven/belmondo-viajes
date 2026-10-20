@@ -1061,6 +1061,38 @@ time {
 .trip-chip { overflow: hidden; color: var(--warn-ink); font-size: var(--fs-11); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .trip-chip.critical { color: var(--late); }
 
+/* Ficha completa: encabezado con estado y vendedor, formularios con select. */
+.trip-head-actions { display: flex; flex: 0 0 auto; gap: 2px; }
+.trip-switcher { max-width: 100%; padding: 0; border: 0; color: var(--ink); background: transparent; font-size: var(--fs-13); font-weight: 600; font-variant-numeric: tabular-nums; }
+.trip-head-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 14px 12px; }
+.trip-head-fields > span { display: grid; gap: 3px; min-width: 0; }
+.trip-head-fields small { color: var(--ink-3); font-size: var(--fs-11); font-weight: 600; }
+.trip-head-fields .trip-form-error { grid-column: 1 / -1; margin: 0; }
+.trip-head-fields select,
+.trip-payment-form select,
+.trip-details-form select { width: 100%; height: 30px; padding: 0 6px; border: 1px solid var(--hairline-strong); border-radius: 6px; color: var(--ink); background: var(--paper); font-size: var(--fs-12); }
+.trip-payment-form select,
+.trip-details-form select { height: 34px; }
+.trip-payment-form .trip-check,
+.trip-check { display: flex; align-items: center; gap: 7px; color: var(--ink-2); font-size: var(--fs-12); font-weight: 500; }
+.trip-payment-form .trip-check input,
+.trip-check input { width: 15px; height: 15px; accent-color: var(--green); }
+.trip-date-fields .trip-check { align-self: end; height: 34px; }
+.trip-payment-form > button { justify-self: start; }
+.trip-payment-form .trip-form-error { margin: 0; }
+.trip-form-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.trip-remove { margin-left: auto; color: var(--late); }
+.trip-warn,
+.trip-panel small.trip-warn { color: var(--late); }
+.trip-panel small.trip-warn { font-weight: 600; }
+p.trip-warn, .trip-note { margin: 8px 0 0; font-size: var(--fs-11); }
+.trip-note { color: var(--ink-3); }
+.trip-undo { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 0 0; padding: 8px 10px; border-radius: 6px; color: var(--ink-2); background: var(--sunken); font-size: var(--fs-12); }
+.trip-undo button { border: 0; color: var(--green-strong); background: transparent; font-weight: 600; }
+.passenger-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.passenger-row > span { min-width: 0; }
+.passenger-form { margin-top: 0; }
+
 @media (max-width: 700px) {
   .trip-inline-form { grid-template-columns: 1fr; }
   .trip-date-fields { grid-template-columns: 1fr; }

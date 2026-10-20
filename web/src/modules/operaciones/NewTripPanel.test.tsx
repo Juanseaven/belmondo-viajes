@@ -44,3 +44,14 @@ it("permite que un pasajero sea el primer dato de la operación", async () => {
 
   await waitFor(() => expect(onAddPassenger).toHaveBeenCalledWith({ firstName: "Ana", lastName: "Pérez" }));
 });
+
+it("abriendo un viaje nuevo sobre otro existente, se puede volver sin crear nada", () => {
+  const onCreate = vi.fn();
+  const onCancel = vi.fn();
+  render(<NewTripPanel contactName="Maso" onCreate={onCreate} onCancel={onCancel} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Volver al viaje" }));
+
+  expect(onCancel).toHaveBeenCalled();
+  expect(onCreate).not.toHaveBeenCalled();
+});

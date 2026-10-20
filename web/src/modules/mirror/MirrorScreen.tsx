@@ -34,10 +34,9 @@ import { useInbox } from "./useInbox";
 import type { useThread } from "./useThread";
 import { mirror } from "./module";
 import { operacionesApi } from "../operaciones/api";
-import { NewTripPanel } from "../operaciones/NewTripPanel";
 import { TripBanner } from "../operaciones/TripBanner";
-import { TripPanel } from "../operaciones/TripPanel";
-import type { Control, Payment } from "../operaciones/types";
+import { TripSidebar } from "../operaciones/TripSidebar";
+import type { Control } from "../operaciones/types";
 import { useTrips } from "../operaciones/useTrips";
 
 /** Lo que el hilo abierto expone hacia arriba para recibir eventos en vivo. */
@@ -91,28 +90,7 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
     : lines.reduce((total, line) => total + line.unread, 0);
   const contactIds = useMemo(() => inbox.items.map((item) => item.contactId), [inbox.items]);
   const trips = useTrips(contactIds, open?.contactId);
-
-  const createDraft = async (seed: { destination?: string; departAt?: string; returnAt?: string }) => {
-    if (!open) throw new Error("No hay una conversación abierta");
-    return operacionesApi.createTrip({ contactId: open.contactId, ...seed });
-  };
-
-  const saveNewTrip = async (seed: { destination?: string; departAt?: string; returnAt?: string }) => {
-    await createDraft(seed);
-    await trips.reload();
-  };
-
-  const addFirstPassenger = async (input: { firstName: string; lastName: string }) => {
-    const trip = await createDraft({});
-    await operacionesApi.addPassenger(trip.id, input);
-    await trips.reload();
-  };
-
-  const saveFirstPayment = async (input: Partial<Payment>) => {
-    const trip = await createDraft({});
-    await operacionesApi.putPayment(trip.id, input);
-    await trips.reload();
-  };
+  const runControl = (control: Control) => setActionDraft({ controlId: control.id, body: control.message || "" });
 
   useEffect(() => {
     setSearchValue(query);
@@ -396,7 +374,7 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
                   <SheetHeader className="sr-only">
                     <SheetTitle>Detalles del contacto</SheetTitle>
                   </SheetHeader>
-                  {trips.active ? <TripPanel trip={trips.active} onUpdateTrip={async (input) => { await operacionesApi.updateTrip(trips.active!.id, input); await trips.reload(); }} onRunControl={(control) => setActionDraft({ controlId: control.id, body: control.message || "" })} onCloseControl={async (control) => { await operacionesApi.closeControl(control.id); await trips.reload(); }} onReopenControl={async (control) => { await operacionesApi.reopenControl(control.id); await trips.reload(); }} onAddPassenger={async (input) => { await operacionesApi.addPassenger(trips.active!.id, input); await trips.reload(); }} onSavePayment={async (input) => { await operacionesApi.putPayment(trips.active!.id, input); await trips.reload(); }} /> : <NewTripPanel contactName={open.contactName} onCreate={saveNewTrip} onAddPassenger={addFirstPassenger} onSavePayment={saveFirstPayment} />}
+                  <TripSidebar contactId={open.contactId} contactName={open.contactName} trips={trips} onRunControl={runControl} />
                 </SheetContent>
               </Sheet>
             </>
@@ -423,17 +401,16 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
             }}
           />
         </div>
-        {open && (trips.active ? <TripPanel
-          trip={trips.active}
-          collapsed={!detailsOpen}
-          onClose={() => setDetailsOpen(false)}
-          onUpdateTrip={async (input) => { await operacionesApi.updateTrip(trips.active!.id, input); await trips.reload(); }}
-          onRunControl={(control: Control) => setActionDraft({ controlId: control.id, body: control.message || "" })}
-          onCloseControl={async (control: Control) => { await operacionesApi.closeControl(control.id); await trips.reload(); }}
-          onReopenControl={async (control: Control) => { await operacionesApi.reopenControl(control.id); await trips.reload(); }}
-          onAddPassenger={async (input) => { await operacionesApi.addPassenger(trips.active!.id, input); await trips.reload(); }}
-          onSavePayment={async (input: Partial<Payment>) => { await operacionesApi.putPayment(trips.active!.id, input); await trips.reload(); }}
-        /> : <NewTripPanel contactName={open.contactName} collapsed={!detailsOpen} onClose={() => setDetailsOpen(false)} onCreate={saveNewTrip} onAddPassenger={addFirstPassenger} onSavePayment={saveFirstPayment} />)}
+        {open && (
+          <TripSidebar
+            contactId={open.contactId}
+            contactName={open.contactName}
+            trips={trips}
+            collapsed={!detailsOpen}
+            onClose={() => setDetailsOpen(false)}
+            onRunControl={runControl}
+          />
+        )}
       </div>
 
       {(altaAbierta || lineaParaVincular) && (

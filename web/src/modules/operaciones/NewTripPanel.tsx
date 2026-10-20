@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { X } from "lucide-react";
+import { ArrowLeft, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { Payment } from "./types";
+import type { PaymentInput } from "./api";
 
 type Tab = "resumen" | "pasajeros" | "pagos" | "controles";
 type TripSeed = { destination?: string; departAt?: string; returnAt?: string };
@@ -12,12 +12,14 @@ interface NewTripPanelProps {
   contactName: string;
   collapsed?: boolean;
   onClose?: () => void;
+  /** Presente cuando el contacto ya tiene un viaje: vuelve a él sin crear nada. */
+  onCancel?: () => void;
   onCreate: (input: TripSeed) => Promise<void>;
   onAddPassenger?: (input: { firstName: string; lastName: string }) => Promise<void>;
-  onSavePayment?: (input: Partial<Payment>) => Promise<void>;
+  onSavePayment?: (input: PaymentInput) => Promise<void>;
 }
 
-export function NewTripPanel({ contactName, collapsed, onClose, onCreate, onAddPassenger, onSavePayment }: NewTripPanelProps) {
+export function NewTripPanel({ contactName, collapsed, onClose, onCancel, onCreate, onAddPassenger, onSavePayment }: NewTripPanelProps) {
   const [tab, setTab] = useState<Tab>("resumen");
   const [destination, setDestination] = useState("");
   const [departAt, setDepartAt] = useState("");
@@ -45,7 +47,10 @@ export function NewTripPanel({ contactName, collapsed, onClose, onCreate, onAddP
     <aside className={`contact-details-panel trip-panel${collapsed ? " is-collapsed" : ""}`} aria-label="Viaje" aria-hidden={collapsed || undefined} inert={collapsed || undefined}>
       <header className="operation-head">
         <div><strong>Operación nueva</strong><small>Se crea al guardar el primer dato</small></div>
-        {onClose && <Button variant="ghost" size="icon-xs" aria-label="Ocultar viaje" onClick={onClose}><X /></Button>}
+        <span className="trip-head-actions">
+          {onCancel && <Button variant="ghost" size="icon-xs" aria-label="Volver al viaje" title="Volver al viaje" onClick={onCancel}><ArrowLeft /></Button>}
+          {onClose && <Button variant="ghost" size="icon-xs" aria-label="Ocultar viaje" onClick={onClose}><X /></Button>}
+        </span>
       </header>
       <div className="detail-tabs operation-tabs" role="tablist" aria-label="Secciones de la operación">
         {(["resumen", "pasajeros", "pagos", "controles"] as Tab[]).map((value) => (

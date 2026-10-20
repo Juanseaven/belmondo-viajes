@@ -36,12 +36,12 @@ const activeTrip = {
 };
 
 vi.mock("../operaciones/useTrips", () => ({
-  useTrips: () => ({ byContact: tripHookState.active ? { "real-contact": tripHookState.active } : {}, active: tripHookState.active, loading: false, error: undefined, reload: tripHookState.reload }),
+  useTrips: () => ({ byContact: tripHookState.active ? { "real-contact": tripHookState.active } : {}, contactTrips: tripHookState.active ? [tripHookState.active] : [], active: tripHookState.active, loading: false, error: undefined, reload: tripHookState.reload, select: vi.fn() }),
 }));
 
 vi.mock("../operaciones/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../operaciones/api")>();
-  return { ...actual, operacionesApi: { ...actual.operacionesApi, closeControl: vi.fn(), reopenControl: vi.fn(), addPassenger: vi.fn(), putPayment: vi.fn(), createTrip: vi.fn() } };
+  return { ...actual, operacionesApi: { ...actual.operacionesApi, closeControl: vi.fn(), reopenControl: vi.fn(), addPassenger: vi.fn(), putPayment: vi.fn(), createTrip: vi.fn(), sellers: vi.fn().mockResolvedValue({ items: [] }) } };
 });
 
 vi.mock("./api", async (importOriginal) => {
@@ -141,7 +141,9 @@ describe("MirrorScreen real", () => {
       </TooltipProvider>,
     );
 
-    expect((await screen.findAllByText("Contacto Real")).length).toBeGreaterThan(1);
+    expect((await screen.findAllByText("Contacto Real")).length).toBeGreaterThan(0);
+    // En la ficha, el nombre del cliente es un campo editable.
+    expect(screen.getAllByDisplayValue("Contacto Real").length).toBeGreaterThan(0);
     expect(screen.getByLabelText("Filtrar por línea")).toBeTruthy();
 
     const tabs = screen.getByRole("tablist", { name: "Filtrar conversaciones" });

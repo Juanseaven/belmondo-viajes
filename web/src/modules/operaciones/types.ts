@@ -87,6 +87,14 @@ export interface TripDetail extends TripSummary {
 
 export interface InboxItem { contactId: string; trip?: TripSummary }
 
+/** Un usuario al que se le puede asignar un viaje. */
+export interface Seller { id: string; name: string }
+
+/** Lo que la ficha puede cambiar del viaje. Un vendedor vacío lo desasigna. */
+export type TripUpdate = Partial<Pick<TripSummary, "destination" | "departAt" | "returnAt" | "status" | "sellerUserId">>;
+
+export type CustomerUpdate = Partial<Pick<Customer, "name" | "email" | "phoneNumber" | "documentType" | "documentNumber">>;
+
 export const nextControl = (controls: Control[]): Control | undefined =>
   [...controls]
     .filter((control) => control.status === "abierto")

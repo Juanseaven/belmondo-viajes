@@ -1,9 +1,7 @@
 import { AlertTriangle } from "lucide-react";
+import { money, shortDate as date } from "./format";
 import type { TripDetail } from "./types";
 import { nextControl } from "./types";
-
-const date = (value: string) => new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "short" }).format(new Date(`${value.slice(0, 10)}T12:00:00`));
-const money = (value: number) => new Intl.NumberFormat("es-AR").format(value);
 
 export function TripBanner({ trip }: { trip: TripDetail }) {
   const critical = nextControl(trip.controls.filter((control) => control.critical));
