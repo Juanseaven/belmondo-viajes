@@ -7,6 +7,10 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"time"
+	// La imagen del backend no trae la base de husos horarios del sistema: sin
+	// esto, cargar la hora de Argentina fallaría en producción y no en los tests.
+	_ "time/tzdata"
 
 	"github.com/juanseaven/viajes-crm/server/internal/kernel"
 	"github.com/juanseaven/viajes-crm/server/internal/kernel/ws"
@@ -37,16 +41,19 @@ type repository interface {
 	LinkContact(context.Context, string, string, string) error
 	Inbox(context.Context, []string) ([]store.InboxItem, error)
 	Sellers(context.Context) ([]store.Seller, error)
+	Pending(context.Context, time.Time) ([]store.PendingRow, error)
+	ListTrips(context.Context, store.TripFilter) (store.TripPage, error)
 }
 
 type Module struct {
-	repo repository
-	log  *slog.Logger
-	emit func(string, map[string]any)
+	repo  repository
+	log   *slog.Logger
+	emit  func(string, map[string]any)
+	clock func() time.Time
 }
 
 func New(k *kernel.Kernel) *Module {
-	m := &Module{repo: postgres.New(k.DB), log: k.Log.With("module", Name)}
+	m := &Module{repo: postgres.New(k.DB), log: k.Log.With("module", Name), clock: time.Now}
 	m.emit = func(eventType string, payload map[string]any) {
 		raw, err := jsonBytes(payload)
 		if err != nil {
@@ -86,6 +93,7 @@ func (m *Module) Mount(r modules.Router) {
 	r.Authed("POST /clientes/{id}/contactos", handler(m.linkContact))
 	r.Authed("GET /bandeja", handler(m.inbox))
 	r.Authed("GET /vendedores", handler(m.sellers))
+	r.Authed("GET /pendientes", handler(m.pending))
 }
 
 func (m *Module) Start(context.Context) error    { return nil }

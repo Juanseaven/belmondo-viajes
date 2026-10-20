@@ -3,7 +3,9 @@ package operaciones
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,10 +34,108 @@ func decode(w http.ResponseWriter, r *http.Request, dst any) bool {
 
 func parseDate(value string) (time.Time, error) { return time.Parse("2006-01-02", value) }
 
+// agencyZone es la hora de la agencia. «Hoy» en la lista de pendientes es el
+// día de Buenos Aires: a las 22 h ya es mañana en UTC.
+var agencyZone = mustLoadZone("America/Argentina/Buenos_Aires")
+
+func mustLoadZone(name string) *time.Location {
+	zone, err := time.LoadLocation(name)
+	if err != nil {
+		panic(fmt.Sprintf("operaciones: huso horario %s: %v", name, err))
+	}
+	return zone
+}
+
+// today es el día calendario de la agencia, a la medianoche UTC: la misma forma
+// en que Postgres devuelve una columna date, para poder compararlos.
+func (m *Module) today() time.Time {
+	now := m.clock().In(agencyZone)
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+func (m *Module) pending(w http.ResponseWriter, r *http.Request) {
+	items, err := m.repo.Pending(r.Context(), m.today())
+	if err != nil {
+		m.storeError(w, "armando los pendientes", err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+var tripStatuses = map[string]domain.TripStatus{
+	"cotizado": domain.TripCotizado, "confirmado": domain.TripConfirmado,
+	"en viaje": domain.TripEnViaje, "cerrado": domain.TripCerrado,
+}
+
+// tripFilter traduce los parámetros de «Todos los viajes». Sin estado, se ven
+// los abiertos; «todos» quita el filtro.
+func (m *Module) tripFilter(r *http.Request) (store.TripFilter, error) {
+	query := r.URL.Query()
+	f := store.TripFilter{
+		Query: strings.TrimSpace(query.Get("q")), Cursor: query.Get("cursor"),
+		LateOnly: query.Get("atrasados") == "1", Today: m.today(),
+	}
+	switch estado := query.Get("estado"); estado {
+	case "", "abiertos":
+		f.OpenOnly = true
+	case "todos":
+	default:
+		for _, value := range strings.Split(estado, ",") {
+			status, ok := tripStatuses[strings.TrimSpace(value)]
+			if !ok {
+				return f, fmt.Errorf("estado desconocido: %s", value)
+			}
+			f.Statuses = append(f.Statuses, status)
+		}
+	}
+	for param, dst := range map[string]**time.Time{"salidaDesde": &f.DepartFrom, "salidaHasta": &f.DepartTo} {
+		if value := query.Get(param); value != "" {
+			date, err := parseDate(value)
+			if err != nil {
+				return f, fmt.Errorf("fecha inválida en %s", param)
+			}
+			*dst = &date
+		}
+	}
+	switch vendedor := query.Get("vendedor"); vendedor {
+	case "":
+	case "ninguno":
+		f.SellerNone = true
+	default:
+		f.SellerID = vendedor
+	}
+	switch orden := store.TripSort(query.Get("orden")); orden {
+	case "", store.SortSalida, store.SortNumero, store.SortTotal:
+		f.Sort = orden
+	default:
+		return f, fmt.Errorf("orden desconocido: %s", orden)
+	}
+	if limit := query.Get("limit"); limit != "" {
+		n, err := strconv.Atoi(limit)
+		if err != nil || n < 1 || n > 100 {
+			return f, fmt.Errorf("limit entre 1 y 100")
+		}
+		f.Limit = n
+	}
+	return f, nil
+}
+
+// listTrips responde dos preguntas. Con contacto, los viajes de ese contacto
+// para la ficha; sin él, la consulta de «Todos los viajes».
 func (m *Module) listTrips(w http.ResponseWriter, r *http.Request) {
 	contactID := r.URL.Query().Get("contacto")
 	if contactID == "" {
-		httpx.BadRequest(w, "falta contacto")
+		filter, err := m.tripFilter(r)
+		if err != nil {
+			httpx.BadRequest(w, err.Error())
+			return
+		}
+		page, err := m.repo.ListTrips(r.Context(), filter)
+		if err != nil {
+			m.storeError(w, "listando viajes", err)
+			return
+		}
+		httpx.JSON(w, http.StatusOK, page)
 		return
 	}
 	trips, err := m.repo.TripsByContact(r.Context(), contactID)
@@ -341,6 +441,8 @@ func (m *Module) storeError(w http.ResponseWriter, action string, err error) {
 		httpx.NotFound(w, "no encontrado")
 	case errors.Is(err, store.ErrConflict):
 		httpx.Error(w, http.StatusConflict, httpx.CodeConflict, err.Error())
+	case errors.Is(err, store.ErrBadCursor):
+		httpx.BadRequest(w, err.Error())
 	case errors.Is(err, store.ErrEvidenciaRequerida), errors.Is(err, store.ErrEvidenciaAjena),
 		errors.Is(err, store.ErrDerivadoNoSeCierraAMano):
 		httpx.BadRequest(w, err.Error())

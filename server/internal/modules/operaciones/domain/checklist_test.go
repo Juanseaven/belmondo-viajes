@@ -83,3 +83,17 @@ func TestCadaRenglonTraeLoQueSuCierreNecesita(t *testing.T) {
 		}
 	}
 }
+
+// La lista de pendientes dice cada renglón como una orden que se entiende sin
+// abrir la ficha. Un renglón con plazo y sin tarea aparecería en esa lista sin
+// decir qué hacer: el renglón nuevo que se olvide de la frase tiene que fallar acá.
+func TestTodoRenglonConPlazoDiceQueHacer(t *testing.T) {
+	for _, item := range domain.Checklist() {
+		if item.HasDeadline() && item.Task == "" {
+			t.Errorf("%s tiene plazo y no tiene tarea", item.ID)
+		}
+		if !item.HasDeadline() && item.Task != "" {
+			t.Errorf("%s no tiene plazo: nunca llega a pendientes, la tarea sobra", item.ID)
+		}
+	}
+}

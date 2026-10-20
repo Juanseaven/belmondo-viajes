@@ -28,6 +28,7 @@ var (
 	ErrControlInexistente = errors.New("operaciones: el control no existe")
 	ErrNotFound           = errors.New("operaciones: no existe")
 	ErrConflict           = errors.New("operaciones: conflicto")
+	ErrBadCursor          = errors.New("operaciones: cursor inválido")
 )
 
 // CloseControl es la orden de cerrar un renglón.
@@ -196,6 +197,71 @@ type TripDetailData struct {
 	Passengers []Passenger `json:"passengers"`
 	Payment    *Payment    `json:"payment,omitempty"`
 	Controls   []Control   `json:"controls"`
+}
+
+// TripRow es un viaje como se ve en una lista: lo justo para leerlo de un
+// vistazo y saltar a su conversación.
+type TripRow struct {
+	ID             string            `json:"id"`
+	Number         int64             `json:"number"`
+	Status         domain.TripStatus `json:"status"`
+	Destination    string            `json:"destination"`
+	DepartAt       *time.Time        `json:"departAt,omitempty"`
+	ReturnAt       *time.Time        `json:"returnAt,omitempty"`
+	CustomerName   string            `json:"customerName"`
+	PassengerCount int               `json:"passengerCount"`
+	SellerName     string            `json:"sellerName,omitempty"`
+	TotalUSD       *float64          `json:"totalUsd,omitempty"`
+	DepositUSD     *float64          `json:"depositUsd,omitempty"`
+	DepositDueAt   *time.Time        `json:"depositDueAt,omitempty"`
+	DepositPaidAt  *time.Time        `json:"depositPaidAt,omitempty"`
+	// Next es lo más urgente del viaje, sin importar cuándo vence. Nil: al día.
+	Next *domain.PendingItem `json:"next,omitempty"`
+	// ConversationID es la conversación más reciente de cualquiera de los
+	// contactos del cliente. Vacío si el cliente no tiene ninguna.
+	ConversationID string `json:"conversationId,omitempty"`
+}
+
+// PendingRow es un viaje en la lista de pendientes.
+type PendingRow struct {
+	TripRow
+	Group domain.PendingGroup `json:"group"`
+	// Task encabeza el renglón. Nil en un viaje que sale pronto y está al día.
+	Task *domain.PendingItem `json:"task,omitempty"`
+	More int                 `json:"more"`
+}
+
+type TripSort string
+
+const (
+	SortSalida TripSort = "salida"
+	SortNumero TripSort = "numero"
+	SortTotal  TripSort = "total"
+)
+
+// TripFilter es la consulta de «Todos los viajes». Today es el día calendario
+// en la hora de la agencia, para el filtro de atrasados.
+type TripFilter struct {
+	Query string
+	// OpenOnly deja afuera los cerrados. Statuses, si no está vacío, manda.
+	OpenOnly   bool
+	Statuses   []domain.TripStatus
+	DepartFrom *time.Time
+	DepartTo   *time.Time
+	// SellerID filtra por vendedor; SellerNone, los viajes sin asignar.
+	SellerID   string
+	SellerNone bool
+	LateOnly   bool
+	Sort       TripSort
+	Cursor     string
+	Limit      int
+	Today      time.Time
+}
+
+type TripPage struct {
+	Items      []TripRow `json:"items"`
+	Total      int       `json:"total"`
+	NextCursor string    `json:"nextCursor,omitempty"`
 }
 
 type InboxItem struct {
