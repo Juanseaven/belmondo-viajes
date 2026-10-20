@@ -4,10 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { mirrorApi, type Conversation, type Line } from "./api";
 import { MirrorScreen } from "./MirrorScreen";
+import { operacionesApi } from "../operaciones/api";
 
 const replace = vi.fn();
 let socketHandler: ((event: { type: string; payload: unknown }) => void) | undefined;
 let userRole = "admin";
+const tripHookState = vi.hoisted(() => ({ active: undefined as unknown, reload: vi.fn() }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace }),
@@ -23,6 +25,24 @@ vi.mock("../../kernel/api/useSocket", () => ({
     socketHandler = handler;
   },
 }));
+
+const activeTrip = {
+  id: "trip-real", number: 10482, customerId: "customer-real", status: "cotizado" as const,
+  destination: "Iguazú", departAt: "2026-09-12", returnAt: "2026-09-15",
+  createdAt: "2026-08-20", passengerCount: 0,
+  customer: { id: "customer-real", name: "Contacto Real", customerSince: "2026-08-20", contactIds: ["real-contact"] },
+  passengers: [], payment: null,
+  controls: [{ id: "control-real", itemId: "visa", stage: "control" as const, closing: "accion" as const, title: "Avisar por visa", actionLabel: "Avisar al pasajero", message: "Revisemos la visa.", critical: true, status: "abierto" as const, dueAt: "2026-08-19", evidence: [] }],
+};
+
+vi.mock("../operaciones/useTrips", () => ({
+  useTrips: () => ({ byContact: tripHookState.active ? { "real-contact": tripHookState.active } : {}, active: tripHookState.active, loading: false, error: undefined, reload: tripHookState.reload }),
+}));
+
+vi.mock("../operaciones/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../operaciones/api")>();
+  return { ...actual, operacionesApi: { ...actual.operacionesApi, closeControl: vi.fn(), reopenControl: vi.fn(), addPassenger: vi.fn(), putPayment: vi.fn(), createTrip: vi.fn() } };
+});
 
 vi.mock("./api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api")>();
@@ -69,11 +89,15 @@ const conversation: Conversation = {
 
 beforeEach(() => {
   userRole = "admin";
+  tripHookState.active = activeTrip;
   vi.mocked(mirrorApi.lines).mockResolvedValue({ lines: [line] });
   vi.mocked(mirrorApi.conversations).mockResolvedValue({ items: [conversation] });
   vi.mocked(mirrorApi.conversation).mockResolvedValue(conversation);
   vi.mocked(mirrorApi.messages).mockResolvedValue({ items: [] });
   vi.mocked(mirrorApi.markRead).mockResolvedValue(undefined);
+  vi.mocked(mirrorApi.send).mockResolvedValue({ id: "outbound-action", idempotencyKey: "action-key", waMessageId: "wa-action", status: "sent" });
+  vi.mocked(operacionesApi.closeControl).mockResolvedValue(undefined);
+  tripHookState.reload.mockResolvedValue(undefined);
   vi.mocked(mirrorApi.lineQR).mockResolvedValue({
     instance: line.name,
     qr: "data:image/png;base64,ZXhpc3Rpbmc=",
@@ -86,6 +110,30 @@ afterEach(() => {
 });
 
 describe("MirrorScreen real", () => {
+  it("crea el borrador antes de guardar el primer pasajero", async () => {
+    tripHookState.active = undefined;
+    vi.mocked(operacionesApi.createTrip).mockResolvedValue({
+      id: "trip-draft", number: 10483, customerId: "customer-real", status: "cotizado",
+      destination: "", createdAt: "2026-08-21", passengerCount: 0,
+    });
+    vi.mocked(operacionesApi.addPassenger).mockResolvedValue({
+      id: "passenger-1", tripId: "trip-draft", firstName: "Ana", lastName: "Pérez",
+      kind: "adulto", isHolder: false,
+    });
+
+    render(<TooltipProvider><MirrorScreen /></TooltipProvider>);
+    await screen.findAllByText("Contacto Real");
+    fireEvent.click(screen.getByRole("tab", { name: "Pasajeros" }));
+    fireEvent.change(screen.getByLabelText("Nombre"), { target: { value: "Ana" } });
+    fireEvent.change(screen.getByLabelText("Apellido"), { target: { value: "Pérez" } });
+    fireEvent.click(screen.getByRole("button", { name: "Guardar pasajero" }));
+
+    await waitFor(() => expect(operacionesApi.addPassenger).toHaveBeenCalledWith("trip-draft", { firstName: "Ana", lastName: "Pérez" }));
+    expect(vi.mocked(operacionesApi.createTrip).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(operacionesApi.addPassenger).mock.invocationCallOrder[0],
+    );
+  });
+
   it("usa la composicion nueva con datos reales y sin contenido demo", async () => {
     render(
       <TooltipProvider>
@@ -97,19 +145,18 @@ describe("MirrorScreen real", () => {
     expect(screen.getByLabelText("Filtrar por línea")).toBeTruthy();
 
     const tabs = screen.getByRole("tablist", { name: "Filtrar conversaciones" });
-    expect(within(tabs).getByRole("tab", { name: /Todas/ })).toBeTruthy();
-    expect(within(tabs).getByRole("tab", { name: /Sin responder/ })).toBeTruthy();
+    expect(within(tabs).getByRole("tab", { name: /^Todos$/ })).toBeTruthy();
+    expect(within(tabs).getByRole("tab", { name: /No leídos 1/ })).toBeTruthy();
 
     expect(screen.queryByRole("heading", { name: "Bandeja de entrada" })).toBeNull();
     expect(screen.queryByText("Ana Pérez")).toBeNull();
-    expect(screen.queryByText("Operación #10482")).toBeNull();
+    expect(screen.getByText("Viaje #10482")).toBeTruthy();
+    expect(screen.getAllByText("Iguazú").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Avisar por visa").length).toBeGreaterThan(0);
     expect(screen.queryByText("Nota de demostración")).toBeNull();
-    expect(screen.getByRole("heading", { name: "Contacto" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Atención" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Conversación" })).toBeTruthy();
   });
 
-  it("consulta el filtro real al elegir Sin responder", async () => {
+  it("consulta el filtro real al elegir No leídos", async () => {
     render(
       <TooltipProvider>
         <MirrorScreen />
@@ -117,12 +164,12 @@ describe("MirrorScreen real", () => {
     );
     await screen.findAllByText("Contacto Real");
 
-    fireEvent.click(screen.getByRole("tab", { name: /Sin responder/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /No leídos/ }));
 
     await waitFor(() => expect(mirrorApi.conversations).toHaveBeenCalledWith({
       instance: "",
       q: "",
-      status: "unanswered",
+      status: "unread",
     }));
   });
 
@@ -134,11 +181,11 @@ describe("MirrorScreen real", () => {
     );
     await screen.findAllByText("Contacto Real");
 
-    fireEvent.click(screen.getByRole("button", { name: "Ocultar detalles" }));
-    expect(screen.queryByRole("complementary", { name: "Detalles del contacto" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Ocultar viaje" }));
+    expect(screen.queryByRole("complementary", { name: "Viaje" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Ver detalles" }));
-    expect(screen.getByRole("complementary", { name: "Detalles del contacto" })).toBeTruthy();
+    expect(screen.getByRole("complementary", { name: "Viaje" })).toBeTruthy();
   });
 
   it("enriches a quoted websocket message before adding it to the open thread", async () => {
@@ -193,6 +240,53 @@ describe("MirrorScreen real", () => {
       { around: liveReply.id },
     ));
     expect(await screen.findByText("Mensaje original en vivo")).toBeTruthy();
+  });
+
+  it("cierra una acción con el mensaje definitivo del webhook y no con el outbound provisional", async () => {
+    render(<TooltipProvider><MirrorScreen /></TooltipProvider>);
+    await screen.findAllByText("Contacto Real");
+
+    fireEvent.click(screen.getByRole("button", { name: "Avisar al pasajero" }));
+    const composer = screen.getByRole("textbox", { name: "Mensaje" });
+    expect(composer).toHaveProperty("value", "Revisemos la visa.");
+    fireEvent.submit(composer.closest("form")!);
+    await waitFor(() => expect(mirrorApi.send).toHaveBeenCalled());
+    expect(operacionesApi.closeControl).not.toHaveBeenCalled();
+
+    act(() => socketHandler?.({
+      type: "message.new",
+      payload: {
+        messageId: "message-definitive", conversationId: conversation.id, instanceId: line.id,
+        waMessageId: "wa-action", direction: "outbound", origin: "panel", type: "text",
+        body: "Revisemos la visa.", timestamp: "2026-08-20T15:00:00Z",
+      },
+    }));
+
+    await waitFor(() => expect(operacionesApi.closeControl).toHaveBeenCalledWith("control-real", "message-definitive"));
+  });
+
+  it("no pierde la evidencia si el webhook gana la carrera al POST de envío", async () => {
+    let resolveSend!: (value: { id: string; idempotencyKey: string; waMessageId: string; status: "sent" }) => void;
+    vi.mocked(mirrorApi.send).mockReturnValue(new Promise((resolve) => { resolveSend = resolve; }));
+    render(<TooltipProvider><MirrorScreen /></TooltipProvider>);
+    await screen.findAllByText("Contacto Real");
+
+    fireEvent.click(screen.getByRole("button", { name: "Avisar al pasajero" }));
+    fireEvent.submit(screen.getByRole("textbox", { name: "Mensaje" }).closest("form")!);
+    await waitFor(() => expect(mirrorApi.send).toHaveBeenCalled());
+
+    act(() => socketHandler?.({
+      type: "message.new",
+      payload: {
+        messageId: "message-early", conversationId: conversation.id, instanceId: line.id,
+        waMessageId: "wa-early", direction: "outbound", origin: "panel", type: "text",
+        body: "Revisemos la visa.", timestamp: "2026-08-20T15:00:00Z",
+      },
+    }));
+    expect(operacionesApi.closeControl).not.toHaveBeenCalled();
+
+    act(() => resolveSend({ id: "outbound-early", idempotencyKey: "early", waMessageId: "wa-early", status: "sent" }));
+    await waitFor(() => expect(operacionesApi.closeControl).toHaveBeenCalledWith("control-real", "message-early"));
   });
 
   it("muestra el QR sobre la misma línea cuando la sesión fue revocada", async () => {

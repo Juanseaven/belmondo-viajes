@@ -1,10 +1,10 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { MessageCircleMore, PanelRightOpen, Phone } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import type { Conversation, Message, MessageQuote } from "./api";
+import type { Conversation, Message, MessageQuote, SendResult } from "./api";
 import { Composer } from "./Composer";
 import { ContactAvatar } from "./ContactAvatar";
 import { MessageBubble } from "./MessageBubble";
@@ -17,6 +17,9 @@ export function Thread({
   detailsHidden = false,
   onShowDetails,
   threadRef,
+	banner,
+	draft,
+	onMessageSent,
 }: {
   conversation: Conversation | null;
   focusId?: string;
@@ -24,6 +27,9 @@ export function Thread({
   detailsHidden?: boolean;
   onShowDetails?: () => void;
   threadRef?: (thread: ReturnType<typeof useThread>) => void;
+  banner?: ReactNode;
+  draft?: string;
+  onMessageSent?: (message: SendResult) => void;
 }) {
   const [replyingTo, setReplyingTo] = useState<MessageQuote>();
   const [aroundId, setAroundId] = useState(focusId);
@@ -128,6 +134,7 @@ export function Thread({
           </Button>
         )}
       </header>
+	  {banner}
 
       <div className="messages" ref={scroller}>
         <div ref={topSentinel} />
@@ -172,11 +179,17 @@ export function Thread({
         conversationId={conversation.id}
         disabled={lineStatus !== undefined && lineStatus !== "open"}
         disabledReason="La línea está desconectada. Volvé a vincularla para poder escribir."
-        onOptimistic={thread.addOptimistic}
+        onOptimistic={(key, body, fileName, quote) => {
+          // Un envío nuevo invalida cualquier compensación pendiente de la
+          // paginación hacia atrás: desde este momento el ancla es el final.
+          prevHeight.current = 0;
+          thread.addOptimistic(key, body, fileName, quote);
+        }}
         onSettled={thread.settleOptimistic}
         replyTo={replyingTo}
         onCancelReply={() => setReplyingTo(undefined)}
-        onSent={() => setReplyingTo(undefined)}
+        initialBody={draft}
+        onSent={(message) => { setReplyingTo(undefined); onMessageSent?.(message); }}
       />
     </div>
   );

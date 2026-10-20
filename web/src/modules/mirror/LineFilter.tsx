@@ -51,7 +51,7 @@ export function LineFilter({
   canManage?: boolean;
   onDisconnect?: (line: Line) => Promise<void>;
 }) {
-  const totalUnread = lines.reduce((sum, line) => sum + line.unread, 0);
+  const unreadChats = lines.reduce((sum, line) => sum + line.unread, 0);
   const current = lines.find((line) => line.id === selected);
   const managedLine = current ?? lines[0];
   const currentLabel = current ? lineLabel(current) : "Todas";
@@ -103,7 +103,7 @@ export function LineFilter({
                 <small>Línea actual</small>
                 <strong>{currentLabel}</strong>
               </span>
-              {totalUnread > 0 && !current && <Badge>{totalUnread}</Badge>}
+              {unreadChats > 0 && !current && <Badge>{unreadChats}</Badge>}
               <ChevronDown aria-hidden />
             </Button>
           </DropdownMenuTrigger>
@@ -113,7 +113,7 @@ export function LineFilter({
               <DropdownMenuRadioItem value="">
                 <span className="line-menu-copy">
                   <strong>Todas las líneas</strong>
-                  <small>{totalUnread ? `${totalUnread} sin leer` : "Bandeja unificada"}</small>
+                  <small>{unreadChats ? `${unreadChats} ${unreadChats === 1 ? "chat" : "chats"} sin leer` : "Bandeja unificada"}</small>
                 </span>
               </DropdownMenuRadioItem>
               {lines.map((line) => (

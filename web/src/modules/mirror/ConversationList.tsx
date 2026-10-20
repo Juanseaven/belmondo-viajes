@@ -6,7 +6,6 @@ import { AlertCircle, Radio } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { ContactAvatar } from "./ContactAvatar";
@@ -22,26 +21,16 @@ const TYPE_LABEL: Record<string, string> = {
   contact: "Contacto",
 };
 
-/** Estado comercial de la fila: lo que hace falta hacer con esa conversación. */
-export interface RowState {
-  label: string;
-  tone?: "warn" | "late";
-  /** Referencia a la operación, cuando la conversación ya se convirtió en viaje. */
-  operation?: string;
-}
-
 export function ConversationList({
   inbox,
   selectedId,
   onSelect,
   showAvatars = true,
-  states,
 }: {
   inbox: ReturnType<typeof useInbox>;
   selectedId: string;
   onSelect: (id: string) => void;
   showAvatars?: boolean;
-  states?: Record<string, RowState>;
 }) {
   const sentinel = useRef<HTMLDivElement>(null);
 
@@ -98,13 +87,9 @@ export function ConversationList({
   }
 
   return (
-    <ScrollArea className="conversation-scroll">
+    <div className="conversation-scroll">
       <ul className="conversation-list">
-        {inbox.items.map((conversation) => {
-          const state = states?.[conversation.id] ?? (conversation.needsReply
-            ? { label: "Sin responder", tone: "warn" as const }
-            : undefined);
-          return (
+        {inbox.items.map((conversation) => (
           <li key={conversation.id}>
             <button
               type="button"
@@ -132,27 +117,18 @@ export function ConversationList({
                   </span>
                   {conversation.unread > 0 && <Badge>{conversation.unread}</Badge>}
                 </span>
-                {/* Tercera línea: por dónde entró y qué falta hacer. El estado se
-                    tiñe solo cuando pide acción; el resto queda en neutro. */}
-                <span className="conversation-meta">
-                  {/* La procedencia de línea no se pierde cuando hay operación:
-                      son dos datos distintos y el supervisor mira los dos. */}
-                  <span className="conversation-line">{conversation.instanceLabel}</span>
-                  {state?.operation && <span className="conversation-operation">{state.operation}</span>}
-                  {state?.label && (
-                    <span className={state.tone ? `conversation-state ${state.tone}` : "conversation-state"}>
-                      {state.label}
-                    </span>
-                  )}
-                </span>
+                {conversation.unread > 0 && (
+                  <span className="conversation-meta">
+                    <span className="conversation-state warn">Sin leer</span>
+                  </span>
+                )}
               </span>
             </button>
           </li>
-          );
-        })}
+        ))}
         <li aria-hidden><div ref={sentinel} /></li>
       </ul>
-    </ScrollArea>
+    </div>
   );
 }
 

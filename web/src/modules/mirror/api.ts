@@ -137,7 +137,7 @@ function qs(params: Record<string, string | number | undefined>): string {
 export const mirrorApi = {
   lines: () => api<{ lines: Line[] }>("/api/mirror/lines"),
 
-  conversations: (params: { instance?: string; q?: string; cursor?: string; status?: "unanswered" }) =>
+  conversations: (params: { instance?: string; q?: string; cursor?: string; status?: "unread" }) =>
     api<Page<Conversation>>(`/api/mirror/conversations${qs(params)}`),
 
   conversation: (id: string) => api<Conversation>(`/api/mirror/conversations/${id}`),

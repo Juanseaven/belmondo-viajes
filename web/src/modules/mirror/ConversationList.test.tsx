@@ -15,6 +15,7 @@ function inboxWith(items: Conversation[]): ReturnType<typeof useInbox> {
     hasMore: false,
     loadMore: async () => undefined,
     reload: async () => undefined,
+    scheduleReload: () => undefined,
     applyNewMessage: () => undefined,
     applyRead: () => undefined,
   };
@@ -34,7 +35,7 @@ describe("ConversationList", () => {
     expect(screen.getByText(/conectá una línea/i)).toBeTruthy();
   });
 
-  it("shows avatar initials, unread count and line origin", () => {
+  it("keeps the unread count in the row without repeating the line origin", () => {
     render(
       <ConversationList
         inbox={inboxWith([{
@@ -57,10 +58,10 @@ describe("ConversationList", () => {
 
     expect(screen.getByText("CM")).toBeTruthy();
     expect(screen.getByText("3")).toBeTruthy();
-    expect(screen.getByText("Línea Norte")).toBeTruthy();
+    expect(screen.queryByText("Línea Norte")).toBeNull();
   });
 
-  it("surfaces the real unanswered state without demo metadata", () => {
+  it("marks a conversation with pending messages as unread", () => {
     render(
       <ConversationList
         inbox={inboxWith([{
@@ -71,14 +72,14 @@ describe("ConversationList", () => {
           contactName: "Carla Mendoza",
           isGroup: false,
           preview: "¿Me confirmás?",
-          unread: 0,
-          needsReply: true,
+          unread: 2,
+          needsReply: false,
         }])}
         selectedId=""
         onSelect={() => undefined}
       />,
     );
 
-    expect(screen.getByText("Sin responder")).toBeTruthy();
+    expect(screen.getByText("Sin leer")).toBeTruthy();
   });
 });

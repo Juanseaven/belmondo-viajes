@@ -21,8 +21,10 @@ export function useThread(conversationId: string | null, focusId?: string) {
   const [error, setError] = useState<string | null>(null);
 
   const queryRef = useRef(0);
+  const earlyEchoes = useRef(new Map<string, Message>());
 
   useEffect(() => {
+    earlyEchoes.current.clear();
     if (!conversationId) {
       setMessages([]);
       setCursor(undefined);
@@ -73,13 +75,21 @@ export function useThread(conversationId: string | null, focusId?: string) {
    * `waMessageId` es la clave de reconciliación: si el mensaje que llega es el
    * eco de algo que enviamos nosotros, reemplaza a la burbuja provisional en vez
    * de duplicarla.
-   */
+  */
   const append = useCallback((msg: Message, waMessageId?: string) => {
+    if (waMessageId && msg.direction === "outbound" && msg.origin === "panel") {
+      earlyEchoes.current.set(waMessageId, msg);
+      if (earlyEchoes.current.size > 100) {
+        const oldest = earlyEchoes.current.keys().next().value;
+        if (oldest) earlyEchoes.current.delete(oldest);
+      }
+    }
     setMessages((prev) => {
       if (prev.some((m) => m.id === msg.id)) return prev; // ya estaba
       if (waMessageId) {
         const i = prev.findIndex((m) => m.pending?.waMessageId === waMessageId);
         if (i >= 0) {
+          earlyEchoes.current.delete(waMessageId);
           const next = [...prev];
           next[i] = msg;
           return next;
@@ -122,17 +132,25 @@ export function useThread(conversationId: string | null, focusId?: string) {
    */
   const settleOptimistic = useCallback(
     (key: string, waMessageId: string | null, error?: string) => {
-      setMessages((prev) =>
-        prev.map((m) =>
+      const earlyEcho = waMessageId ? earlyEchoes.current.get(waMessageId) : undefined;
+      if (waMessageId && earlyEcho) earlyEchoes.current.delete(waMessageId);
+      setMessages((prev) => {
+        if (earlyEcho) {
+          const withoutOptimistic = prev.filter((m) => m.pending?.key !== key);
+          return withoutOptimistic.some((m) => m.id === earlyEcho.id)
+            ? withoutOptimistic
+            : [...withoutOptimistic, earlyEcho];
+        }
+        return prev.map((m) =>
           m.pending?.key === key
             ? {
                 ...m,
                 status: error ? "failed" : "sent",
                 pending: { ...m.pending, waMessageId: waMessageId ?? undefined, error },
-              }
+            }
             : m,
-        ),
-      );
+        );
+      });
     },
     [],
   );

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { mirrorApi, type Conversation } from "./api";
 
+const HISTORY_REFRESH_INTERVAL_MS = 5000;
+
 /**
  * La bandeja: página inicial, scroll infinito y reacción al tiempo real.
  *
@@ -16,7 +18,7 @@ import { mirrorApi, type Conversation } from "./api";
  *     cubrir este caso acoplaría el sobre del socket a la forma de esta pantalla.
  *     Recargar es autocurativo y pasa una vez por chat nuevo.
  */
-export function useInbox(instance: string, search: string, unanswered = false) {
+export function useInbox(instance: string, search: string, unreadOnly = false) {
   const [items, setItems] = useState<Conversation[]>([]);
   const [cursor, setCursor] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
@@ -25,6 +27,8 @@ export function useInbox(instance: string, search: string, unanswered = false) {
   // Identifica la consulta vigente. Una respuesta que llega tarde, después de
   // que el usuario cambió de filtro, se descarta comparando contra esto.
   const queryRef = useRef(0);
+  const scheduledReload = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastHistoryReloadAt = useRef<number | null>(null);
 
   const reload = useCallback(async () => {
     const query = ++queryRef.current;
@@ -34,7 +38,7 @@ export function useInbox(instance: string, search: string, unanswered = false) {
       const page = await mirrorApi.conversations({
         instance,
         q: search,
-        status: unanswered ? "unanswered" : undefined,
+        status: unreadOnly ? "unread" : undefined,
       });
       if (query !== queryRef.current) return;
       setItems(page.items);
@@ -45,7 +49,7 @@ export function useInbox(instance: string, search: string, unanswered = false) {
     } finally {
       if (query === queryRef.current) setLoading(false);
     }
-  }, [instance, search, unanswered]);
+  }, [instance, search, unreadOnly]);
 
   useEffect(() => {
     // Rebote en la búsqueda: sin esto cada tecla dispara una consulta con ILIKE.
@@ -53,6 +57,27 @@ export function useInbox(instance: string, search: string, unanswered = false) {
     const timer = setTimeout(reload, delay);
     return () => clearTimeout(timer);
   }, [reload, search]);
+
+  // Evolution can replay a long disconnect as thousands of individual events.
+  // Refresh immediately at the start, then at a fixed cadence while it continues.
+  const scheduleReload = useCallback(() => {
+    if (scheduledReload.current !== null) return;
+
+    const elapsed = lastHistoryReloadAt.current === null
+      ? HISTORY_REFRESH_INTERVAL_MS
+      : Date.now() - lastHistoryReloadAt.current;
+    const delay = Math.max(0, HISTORY_REFRESH_INTERVAL_MS - elapsed);
+
+    scheduledReload.current = setTimeout(() => {
+      scheduledReload.current = null;
+      lastHistoryReloadAt.current = Date.now();
+      void reload();
+    }, delay);
+  }, [reload]);
+
+  useEffect(() => () => {
+    if (scheduledReload.current !== null) clearTimeout(scheduledReload.current);
+  }, []);
 
   const loadMore = useCallback(async () => {
     if (!cursor) return;
@@ -62,7 +87,7 @@ export function useInbox(instance: string, search: string, unanswered = false) {
         instance,
         q: search,
         cursor,
-        status: unanswered ? "unanswered" : undefined,
+        status: unreadOnly ? "unread" : undefined,
       });
       if (query !== queryRef.current) return;
       // Se filtran los ids ya presentes: si entró un mensaje mientras se pedía la
@@ -76,7 +101,7 @@ export function useInbox(instance: string, search: string, unanswered = false) {
       // Un fallo al paginar no debe vaciar lo ya cargado; el usuario reintenta
       // scrolleando.
     }
-  }, [cursor, instance, search, unanswered]);
+  }, [cursor, instance, search, unreadOnly]);
 
   /** Aplica un mensaje nuevo llegado por websocket. */
   const applyNewMessage = useCallback(
@@ -92,9 +117,6 @@ export function useInbox(instance: string, search: string, unanswered = false) {
         const found = prev.find((c) => c.id === conversationId);
         if (!found) return prev;
         known = true;
-        if (unanswered && direction === "outbound") {
-          return prev.filter((conversation) => conversation.id !== conversationId);
-        }
         const updated: Conversation = {
           ...found,
           preview,
@@ -105,16 +127,21 @@ export function useInbox(instance: string, search: string, unanswered = false) {
         };
         return [updated, ...prev.filter((c) => c.id !== conversationId)];
       });
-      if (!known && (!unanswered || direction === "inbound")) void reload();
+      if (!known && (!unreadOnly || direction === "inbound")) void reload();
     },
-    [reload, unanswered],
+    [reload, unreadOnly],
   );
 
   const applyRead = useCallback((conversationId: string) => {
-    setItems((prev) =>
-      prev.map((c) => (c.id === conversationId ? { ...c, unread: 0 } : c)),
-    );
-  }, []);
+    setItems((prev) => unreadOnly
+      ? prev.filter((conversation) => conversation.id !== conversationId)
+      : prev.map((conversation) => conversation.id === conversationId
+        ? { ...conversation, unread: 0 }
+        : conversation));
+  }, [unreadOnly]);
 
-  return { items, loading, error, hasMore: Boolean(cursor), loadMore, reload, applyNewMessage, applyRead };
+  return {
+    items, loading, error, hasMore: Boolean(cursor), loadMore,
+    reload, scheduleReload, applyNewMessage, applyRead,
+  };
 }

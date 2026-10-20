@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Paperclip, SendHorizontal, WifiOff, X } from "lucide-react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
 import { ApiError } from "../../kernel/api/client";
-import { mirrorApi, type MessageQuote } from "./api";
+import { mirrorApi, type MessageQuote, type SendResult } from "./api";
 
 export function Composer({
   conversationId,
@@ -19,6 +19,7 @@ export function Composer({
   replyTo,
   onCancelReply,
   onSent,
+	initialBody,
 }: {
   conversationId: string;
   disabled?: boolean;
@@ -27,12 +28,17 @@ export function Composer({
   onSettled: (key: string, waMessageId: string | null, error?: string) => void;
   replyTo?: MessageQuote;
   onCancelReply?: () => void;
-  onSent?: () => void;
+  onSent?: (message: SendResult) => void;
+  initialBody?: string;
 }) {
   const [body, setBody] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const empty = body.trim() === "" && !file;
+
+  useEffect(() => {
+    if (initialBody !== undefined) setBody(initialBody);
+  }, [initialBody]);
 
   const clearFile = () => {
     setFile(null);
@@ -57,7 +63,7 @@ export function Composer({
         replyToMessageId: replyTo?.id,
       });
       onSettled(key, response.waMessageId);
-      onSent?.();
+      onSent?.(response);
     } catch (cause) {
       const message = cause instanceof ApiError ? cause.message : "No se pudo enviar el mensaje";
       onSettled(key, null, message);

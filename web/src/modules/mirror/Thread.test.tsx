@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { mirrorApi, type Conversation, type Message } from "./api";
@@ -57,6 +57,8 @@ const reply: Message = {
   },
 };
 
+let intersectionCallback: IntersectionObserverCallback | undefined;
+
 beforeEach(() => {
   vi.mocked(mirrorApi.messages).mockResolvedValue({ items: [reply, original] });
   Object.defineProperty(Element.prototype, "scrollIntoView", {
@@ -67,10 +69,23 @@ beforeEach(() => {
     configurable: true,
     get: () => 1000,
   });
+  vi.stubGlobal("IntersectionObserver", class {
+    constructor(callback: IntersectionObserverCallback) {
+      intersectionCallback = callback;
+    }
+    observe() {}
+    disconnect() {}
+    unobserve() {}
+    takeRecords() { return []; }
+    root = null;
+    rootMargin = "0px";
+    thresholds = [0];
+  });
 });
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
@@ -134,5 +149,34 @@ describe("Thread timeline", () => {
 
     expect(screen.getByRole("separator", { name: "martes, 18 de agosto de 2026" })).toBeTruthy();
     expect(screen.getByRole("separator", { name: "miércoles, 19 de agosto de 2026" })).toBeTruthy();
+  });
+
+  it("stays anchored at the bottom when sending while older messages are loading", async () => {
+    let resolveOlder!: (value: { items: Message[] }) => void;
+    vi.mocked(mirrorApi.messages)
+      .mockResolvedValueOnce({ items: [original], nextCursor: "older-page" })
+      .mockReturnValueOnce(new Promise((resolve) => { resolveOlder = resolve; }));
+    vi.mocked(mirrorApi.send).mockReturnValue(new Promise(() => undefined));
+
+    const { container } = render(<Thread conversation={conversation} lineStatus="open" />);
+    await screen.findByText("Mensaje original");
+    const messages = container.querySelector<HTMLElement>(".messages")!;
+    expect(messages.scrollTop).toBe(1000);
+
+    act(() => {
+      intersectionCallback?.(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Mensaje" }), {
+      target: { value: "Nuevo mensaje" },
+    });
+    fireEvent.submit(screen.getByRole("textbox", { name: "Mensaje" }).closest("form")!);
+
+    await screen.findByText("Nuevo mensaje");
+    expect(messages.scrollTop).toBe(1000);
+
+    act(() => resolveOlder({ items: [] }));
   });
 });

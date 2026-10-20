@@ -26,8 +26,6 @@ import { useSession } from "../../kernel/auth/session";
 import { useSocket, type ServerEvent } from "../../kernel/api/useSocket";
 import { mirrorApi, type Conversation, type Line, type Message } from "./api";
 import { ConversationList } from "./ConversationList";
-import { ContactDetails } from "./ContactDetails";
-import { DemoMirrorScreen } from "./DemoMirrorScreen";
 import { LineDialog } from "./LineDialog";
 import { LineFilter } from "./LineFilter";
 import { SearchResults } from "./SearchResults";
@@ -35,10 +33,16 @@ import { Thread } from "./Thread";
 import { useInbox } from "./useInbox";
 import type { useThread } from "./useThread";
 import { mirror } from "./module";
+import { operacionesApi } from "../operaciones/api";
+import { NewTripPanel } from "../operaciones/NewTripPanel";
+import { TripBanner } from "../operaciones/TripBanner";
+import { TripPanel } from "../operaciones/TripPanel";
+import type { Control, Payment } from "../operaciones/types";
+import { useTrips } from "../operaciones/useTrips";
 
 /** Lo que el hilo abierto expone hacia arriba para recibir eventos en vivo. */
 type ThreadHandle = ReturnType<typeof useThread>;
-type InboxTab = "all" | "unanswered";
+type InboxTab = "all" | "unread";
 
 interface NewMessageEvent {
   messageId: string;
@@ -59,7 +63,6 @@ interface NewMessageEvent {
 
 export function MirrorScreen() {
   const params = useSearchParams();
-  if (params.get("demo") === "1") return <DemoMirrorScreen />;
   return <LiveMirrorScreen params={params} />;
 }
 
@@ -80,12 +83,42 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
   const [ultimoQR, setUltimoQR] = useState<{ instance: string; qr: string } | null>(null);
   const [tab, setTab] = useState<InboxTab>("all");
   const [detailsOpen, setDetailsOpen] = useState(true);
+  const [actionDraft, setActionDraft] = useState<{ controlId: string; body: string; waMessageId?: string }>();
 
-  const inbox = useInbox(instance, query ? "" : searchValue, tab === "unanswered");
+  const inbox = useInbox(instance, query ? "" : searchValue, tab === "unread");
+  const unreadChats = instance
+    ? lines.find((line) => line.id === instance)?.unread ?? 0
+    : lines.reduce((total, line) => total + line.unread, 0);
+  const contactIds = useMemo(() => inbox.items.map((item) => item.contactId), [inbox.items]);
+  const trips = useTrips(contactIds, open?.contactId);
+
+  const createDraft = async (seed: { destination?: string; departAt?: string; returnAt?: string }) => {
+    if (!open) throw new Error("No hay una conversación abierta");
+    return operacionesApi.createTrip({ contactId: open.contactId, ...seed });
+  };
+
+  const saveNewTrip = async (seed: { destination?: string; departAt?: string; returnAt?: string }) => {
+    await createDraft(seed);
+    await trips.reload();
+  };
+
+  const addFirstPassenger = async (input: { firstName: string; lastName: string }) => {
+    const trip = await createDraft({});
+    await operacionesApi.addPassenger(trip.id, input);
+    await trips.reload();
+  };
+
+  const saveFirstPayment = async (input: Partial<Payment>) => {
+    const trip = await createDraft({});
+    await operacionesApi.putPayment(trip.id, input);
+    await trips.reload();
+  };
 
   useEffect(() => {
     setSearchValue(query);
   }, [query]);
+
+  useEffect(() => { setActionDraft(undefined); }, [openId]);
 
   /** Escribe en la URL sin apilar historial: esto es filtrar, no navegar. */
   const setParams = useCallback(
@@ -168,12 +201,20 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
   // El hilo abierto expone sus acciones acá para que el websocket pueda
   // inyectarle el mensaje que acaba de llegar sin recargarlo entero.
   const threadApi = useRef<ThreadHandle | null>(null);
+  const recentMessageIDs = useRef(new Map<string, string>());
 
   useSocket(
     mirror.name,
     (ev: ServerEvent) => {
       if (ev.type === "message.new") {
         const p = ev.payload as NewMessageEvent;
+        if (p.waMessageId) {
+          recentMessageIDs.current.set(p.waMessageId, p.messageId);
+          if (recentMessageIDs.current.size > 100) {
+            const oldest = recentMessageIDs.current.keys().next().value;
+            if (oldest) recentMessageIDs.current.delete(oldest);
+          }
+        }
         inbox.applyNewMessage(p.conversationId, p.body ?? "", p.type, p.timestamp, p.direction);
         linesDirty.current = true;
 
@@ -205,6 +246,15 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
             threadApi.current?.append(liveMessage, p.waMessageId);
           }
         }
+
+        // El POST de envío devuelve una fila de outbound_messages. La evidencia,
+        // en cambio, apunta a messages, que nace con el eco del webhook. Se
+        // emparejan por waMessageId y recién entonces se cierra el control.
+        if (actionDraft?.waMessageId && p.waMessageId === actionDraft.waMessageId) {
+          const controlID = actionDraft.controlId;
+          setActionDraft(undefined);
+          void operacionesApi.closeControl(controlID, p.messageId).then(trips.reload);
+        }
       }
       if (ev.type === "conversation.read") {
         const p = ev.payload as { conversationId: string };
@@ -233,7 +283,7 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
       }
       if (ev.type === "history.sync") {
         const p = ev.payload as { instance?: string };
-        if (!instance || p.instance === instance) void inbox.reload();
+        if (!instance || p.instance === instance) inbox.scheduleReload();
         linesDirty.current = true;
       }
     },
@@ -250,8 +300,6 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
     }, 5000);
     return () => clearInterval(timer);
   }, [loadLines]);
-
-  const openLine = lines.find((line) => line.id === open?.instanceId);
 
   return (
     <section className="mirror-workspace">
@@ -279,10 +327,10 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
 
           <div className="inbox-tabs" role="tablist" aria-label="Filtrar conversaciones">
             <button type="button" role="tab" aria-selected={tab === "all"} onClick={() => setTab("all")}>
-              Todas
+              Todos
             </button>
-            <button type="button" role="tab" aria-selected={tab === "unanswered"} onClick={() => setTab("unanswered")}>
-              Sin responder
+            <button type="button" role="tab" aria-selected={tab === "unread"} onClick={() => setTab("unread")}>
+              No leídos <span>{unreadChats}</span>
             </button>
           </div>
 
@@ -348,7 +396,7 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
                   <SheetHeader className="sr-only">
                     <SheetTitle>Detalles del contacto</SheetTitle>
                   </SheetHeader>
-                  <ContactDetails conversation={open} line={openLine} mode="sheet" />
+                  {trips.active ? <TripPanel trip={trips.active} onUpdateTrip={async (input) => { await operacionesApi.updateTrip(trips.active!.id, input); await trips.reload(); }} onRunControl={(control) => setActionDraft({ controlId: control.id, body: control.message || "" })} onCloseControl={async (control) => { await operacionesApi.closeControl(control.id); await trips.reload(); }} onReopenControl={async (control) => { await operacionesApi.reopenControl(control.id); await trips.reload(); }} onAddPassenger={async (input) => { await operacionesApi.addPassenger(trips.active!.id, input); await trips.reload(); }} onSavePayment={async (input) => { await operacionesApi.putPayment(trips.active!.id, input); await trips.reload(); }} /> : <NewTripPanel contactName={open.contactName} onCreate={saveNewTrip} onAddPassenger={addFirstPassenger} onSavePayment={saveFirstPayment} />}
                 </SheetContent>
               </Sheet>
             </>
@@ -360,15 +408,32 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
             detailsHidden={!detailsOpen}
             onShowDetails={() => setDetailsOpen(true)}
             threadRef={(thread) => { threadApi.current = thread; }}
+            banner={trips.active ? <TripBanner trip={trips.active} /> : undefined}
+            draft={actionDraft?.body}
+            onMessageSent={(message) => {
+              if (!actionDraft) return;
+              const definitiveID = recentMessageIDs.current.get(message.waMessageId);
+              if (definitiveID) {
+                const controlID = actionDraft.controlId;
+                setActionDraft(undefined);
+                void operacionesApi.closeControl(controlID, definitiveID).then(trips.reload);
+                return;
+              }
+              setActionDraft({ ...actionDraft, waMessageId: message.waMessageId });
+            }}
           />
         </div>
-        <ContactDetails
-          conversation={open}
-          line={openLine}
-          mode="panel"
+        {open && (trips.active ? <TripPanel
+          trip={trips.active}
           collapsed={!detailsOpen}
           onClose={() => setDetailsOpen(false)}
-        />
+          onUpdateTrip={async (input) => { await operacionesApi.updateTrip(trips.active!.id, input); await trips.reload(); }}
+          onRunControl={(control: Control) => setActionDraft({ controlId: control.id, body: control.message || "" })}
+          onCloseControl={async (control: Control) => { await operacionesApi.closeControl(control.id); await trips.reload(); }}
+          onReopenControl={async (control: Control) => { await operacionesApi.reopenControl(control.id); await trips.reload(); }}
+          onAddPassenger={async (input) => { await operacionesApi.addPassenger(trips.active!.id, input); await trips.reload(); }}
+          onSavePayment={async (input: Partial<Payment>) => { await operacionesApi.putPayment(trips.active!.id, input); await trips.reload(); }}
+        /> : <NewTripPanel contactName={open.contactName} collapsed={!detailsOpen} onClose={() => setDetailsOpen(false)} onCreate={saveNewTrip} onAddPassenger={addFirstPassenger} onSavePayment={saveFirstPayment} />)}
       </div>
 
       {(altaAbierta || lineaParaVincular) && (

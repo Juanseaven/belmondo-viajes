@@ -70,7 +70,7 @@ describe("Shell sidebar", () => {
   });
 
   it("groups the inbox under Principal without future placeholders", () => {
-    navigation.query = "demo=1";
+    navigation.query = "";
 
     render(
       <TooltipProvider>
