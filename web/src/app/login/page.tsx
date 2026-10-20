@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { ApiError } from "../../kernel/api/client";
 import { useSession } from "../../kernel/auth/session";
+import { homePath } from "../../modules/registry";
 
 export default function LoginPage() {
   const { user, loading, login } = useSession();
@@ -15,7 +16,7 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!loading && user) router.replace("/");
+    if (!loading && user) router.replace(homePath);
   }, [loading, user, router]);
 
   async function onSubmit(e: FormEvent) {
@@ -24,7 +25,7 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       await login(email, password);
-      router.replace("/");
+      router.replace(homePath);
     } catch (err) {
       // El backend ya devuelve un mensaje que no distingue "email inexistente"
       // de "contraseña incorrecta"; se muestra tal cual.

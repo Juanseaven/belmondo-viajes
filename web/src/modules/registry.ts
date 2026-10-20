@@ -17,6 +17,9 @@ export const modules: ModuleDef[] = [
   operaciones,
 ];
 
+/** Dónde arranca el panel: la bandeja, que es donde la agencia trabaja. */
+export const homePath = mirror.path;
+
 /**
  * Los módulos que este usuario ve: los que el frontend sabe dibujar Y el backend
  * autoriza.

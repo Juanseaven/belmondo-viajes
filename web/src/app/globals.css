@@ -304,15 +304,7 @@ time {
 
 /* Pantallas secundarias */
 
-.page-header { margin-bottom: 24px; }
-.page-header h1 { margin: 0; font-size: var(--fs-20); font-weight: 600; line-height: 1.25; }
-.page-header p { margin: 6px 0 0; color: var(--ink-3); }
 .content > section:not(.mirror-workspace) { padding: 32px; }
-.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
-.card { padding: 16px; border: 1px solid var(--hairline); border-radius: 6px; background: var(--paper); }
-.card:hover { border-color: var(--green-line); }
-.card-icon { display: block; margin-bottom: 12px; color: var(--green); }
-.card p { margin: 4px 0 0; color: var(--ink-3); font-size: var(--fs-12); }
 
 .login {
   display: flex;
