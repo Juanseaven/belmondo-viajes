@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { countryName } from "./countries";
 import { shortInstant } from "./format";
-import type { Country, Requirement, TripDetail } from "./types";
+import type { Citation, Country, PreviewLine, Requirement, TripDetail } from "./types";
 
 const STATUS_LABEL: Record<Requirement["status"], string> = {
   cumple: "Cumple",
@@ -36,6 +36,9 @@ export function RequirementsTab({ trip, countries, onConfirm }: {
 }) {
   const [error, setError] = useState<string>();
   const reqs = trip.requirements ?? [];
+  const preview = trip.passengers.length === 0 ? trip.preview ?? [] : [];
+
+  if (preview.length > 0) return <RequirementsPreview lines={preview} countries={countries} />;
 
   if (reqs.length === 0) {
     return (
@@ -104,8 +107,8 @@ export function RequirementsTab({ trip, countries, onConfirm }: {
   );
 }
 
-function groupByCountry(reqs: Requirement[]): [string, Requirement[]][] {
-  const groups = new Map<string, Requirement[]>();
+function groupByCountry<T extends { country?: string }>(reqs: T[]): [string, T[]][] {
+  const groups = new Map<string, T[]>();
   for (const r of reqs) {
     const code = r.country ?? "";
     groups.set(code, [...(groups.get(code) ?? []), r]);
@@ -113,12 +116,58 @@ function groupByCountry(reqs: Requirement[]): [string, Requirement[]][] {
   return [...groups.entries()];
 }
 
+/**
+ * Antes de cargar pasajeros: lo que piden los países a un pasaporte argentino.
+ * No dice cumple ni falta, porque no hay documento contra el cual medir; solo
+ * marca lo que no se sabe.
+ */
+function RequirementsPreview({ lines, countries }: { lines: PreviewLine[]; countries: Country[] }) {
+  return (
+    <section className="detail-section requirements">
+      <h3>Requisitos para un pasajero con pasaporte argentino</h3>
+      <p className="trip-note">Todavía no hay pasajeros. Cuando los cargues, se evalúa a cada uno con su documento.</p>
+      {groupByCountry(lines).map(([code, own]) => {
+        const name = countryName(countries, code);
+        return (
+          <div key={code} className="requirement-country">
+            <h5>{name}{own[0].role === "escala" ? " · escala" : ""}</h5>
+            {own.some((line) => line.searching) ? (
+              <p className="trip-note">Buscando los requisitos de {name}…</p>
+            ) : (
+              <ul className="requirement-list">
+                {own.map((line, i) => (
+                  <li key={i} className={`requirement${line.verify ? " requirement--verificar" : " requirement--info"}`}>
+                    {line.verify && <span className="requirement-status">Verificar</span>}
+                    <span className="requirement-body">
+                      <span>{line.text}</span>
+                      <SourceLink sources={line.sources} />
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+function SourceLink({ sources }: { sources?: Citation[] }) {
+  const source = sources?.find((s) => s.url);
+  if (!source) return null;
+  return (
+    <small>
+      <a href={source.url} target="_blank" rel="noreferrer">Fuente: {SOURCE_LABEL[source.source] ?? source.source}</a>
+    </small>
+  );
+}
+
 function RequirementLine({ requirement, onConfirm, canConfirm }: {
   requirement: Requirement;
   onConfirm: (requirement: Requirement) => void;
   canConfirm: boolean;
 }) {
-  const source = requirement.sources?.find((s) => s.url);
   const confirmable = canConfirm && requirement.confirmable && requirement.status !== "cumple" && !searching(requirement);
   return (
     <li className={`requirement requirement--${requirement.status}`}>
@@ -128,11 +177,7 @@ function RequirementLine({ requirement, onConfirm, canConfirm }: {
         {requirement.confirmed && (
           <small>Confirmado{requirement.confirmedByName ? ` por ${requirement.confirmedByName}` : ""}{requirement.confirmedAt ? ` · ${shortInstant(requirement.confirmedAt)}` : ""}</small>
         )}
-        {source && (
-          <small>
-            <a href={source.url} target="_blank" rel="noreferrer">Fuente: {SOURCE_LABEL[source.source] ?? source.source}</a>
-          </small>
-        )}
+        <SourceLink sources={requirement.sources} />
       </span>
       {confirmable && (
         <Button size="sm" variant="outline" aria-label={`Confirmar: ${requirement.text}`} onClick={() => onConfirm(requirement)}>

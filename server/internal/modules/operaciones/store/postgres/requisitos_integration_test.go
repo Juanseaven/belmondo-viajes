@@ -218,7 +218,7 @@ func TestLosViajesAbiertosQueUsanUnaRegla(t *testing.T) {
 	s := New(pool)
 	f := escenario(t, ctx, pool, s)
 	pax(t, s, f, "Ana", "2030-01-01")
-	if err := s.PutItinerary(ctx, f.trip, []store.Stop{{Country: "US", Role: "destino"}}); err != nil {
+	if err := s.PutItinerary(ctx, f.trip, store.Itinerary{Stops: []store.Stop{{Country: "US", Role: "destino"}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -239,5 +239,34 @@ func TestLosViajesAbiertosQueUsanUnaRegla(t *testing.T) {
 	}
 	if ids, err := s.OpenTrips(ctx); err != nil || len(ids) != 0 {
 		t.Fatalf("abiertos = %v, %v", ids, err)
+	}
+}
+
+// Un viaje sin pasajeros muestra lo que se le pide a un pasaporte argentino:
+// cuando esa regla cambia, también hay que avisarle.
+func TestUnViajeSinPasajerosUsaLaReglaDelPasaporteArgentino(t *testing.T) {
+	ctx, pool := testDB(t)
+	s := New(pool)
+	f := escenario(t, ctx, pool, s)
+	if err := s.PutItinerary(ctx, f.trip, store.Itinerary{Stops: []store.Stop{{Country: "JP", Role: "destino"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if ids, err := s.OpenTripsUsing(ctx, []reglas.Pair{{Nationality: "AR", Country: "JP"}}); err != nil || len(ids) != 1 {
+		t.Fatalf("viajes = %v, %v", ids, err)
+	}
+	if ids, _ := s.OpenTripsUsing(ctx, []reglas.Pair{{Nationality: "IT", Country: "JP"}}); len(ids) != 0 {
+		t.Fatalf("la vista previa es solo del pasaporte argentino: %v", ids)
+	}
+
+	// Con un pasajero italiano, deja de mostrar la vista previa.
+	if _, err := s.AddPassenger(ctx, store.NewPassenger{TripID: f.trip, FirstName: "Luca", LastName: "Rossi", Kind: "adulto",
+		DocumentType: "Pasaporte", DocumentCountry: "IT", CreatedBy: f.user}); err != nil {
+		t.Fatal(err)
+	}
+	if ids, _ := s.OpenTripsUsing(ctx, []reglas.Pair{{Nationality: "AR", Country: "JP"}}); len(ids) != 0 {
+		t.Fatalf("con pasajeros, la regla argentina ya no la usa: %v", ids)
+	}
+	if ids, _ := s.OpenTripsUsing(ctx, []reglas.Pair{{Nationality: "IT", Country: "JP"}}); len(ids) != 1 {
+		t.Fatalf("la regla italiana sí: %v", ids)
 	}
 }

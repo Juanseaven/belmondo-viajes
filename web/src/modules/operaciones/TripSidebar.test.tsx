@@ -16,7 +16,7 @@ vi.mock("./api", async (importOriginal) => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 beforeEach(() => {
   vi.mocked(operacionesApi.sellers).mockResolvedValue({ items: [{ id: "u-1", name: "Ana Gil" }] });
-  vi.mocked(operacionesApi.countries).mockResolvedValue({ items: [{ code: "AR", name: "Argentina" }] });
+  vi.mocked(operacionesApi.countries).mockResolvedValue({ items: [{ code: "AR", name: "Argentina" }, { code: "CL", name: "Chile" }] });
 });
 
 const active: TripDetail = {
@@ -24,7 +24,7 @@ const active: TripDetail = {
   createdAt: "2026-08-20T12:00:00Z", passengerCount: 1,
   customer: { id: "customer-1", name: "Ana Pérez", customerSince: "2026-08-20", contactIds: ["contact-1"] },
   passengers: [{ id: "p-1", tripId: "trip-1", firstName: "Ana", lastName: "Pérez", kind: "adulto", isHolder: true, residenceCountry: "AR", documents: [], permits: [] }],
-  payment: null, controls: [], itinerary: [], requirements: [],
+  payment: null, controls: [], originCountry: "AR", itinerary: [], requirements: [],
 };
 
 function tripsState(overrides: Partial<ReturnType<typeof useTrips>> = {}): ReturnType<typeof useTrips> {
@@ -47,10 +47,13 @@ it("un viaje nuevo sobre otro existente se crea aparte y queda elegido", async (
 
   fireEvent.click(screen.getByRole("button", { name: "Nuevo viaje" }));
   expect(screen.getByText("Operación nueva")).toBeTruthy();
-  fireEvent.change(screen.getByLabelText("Destino"), { target: { value: "Salta" } });
+  await screen.findAllByRole("option", { name: "Chile" });
+  fireEvent.change(screen.getByLabelText("Destino"), { target: { value: "CL" } });
   fireEvent.click(screen.getByRole("button", { name: "Guardar viaje" }));
 
-  await waitFor(() => expect(operacionesApi.createTrip).toHaveBeenCalledWith({ contactId: "contact-1", destination: "Salta" }));
+  await waitFor(() => expect(operacionesApi.createTrip).toHaveBeenCalledWith({
+    contactId: "contact-1", originCountry: "AR", itinerary: [{ country: "CL", role: "destino" }],
+  }));
   expect(trips.select).toHaveBeenCalledWith("trip-2");
   await waitFor(() => expect(screen.queryByText("Operación nueva")).toBeNull());
 });

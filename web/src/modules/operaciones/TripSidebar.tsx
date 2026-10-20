@@ -2,12 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { operacionesApi, type NewPassenger } from "./api";
-import { NewTripPanel } from "./NewTripPanel";
+import { NewTripPanel, type TripSeed } from "./NewTripPanel";
 import { TripPanel } from "./TripPanel";
 import type { Control, Country, Seller } from "./types";
 import type { useTrips } from "./useTrips";
-
-type TripSeed = { destination?: string; departAt?: string; returnAt?: string };
 
 interface TripSidebarProps {
   contactId: string;
@@ -69,6 +67,7 @@ export function TripSidebar({ contactId, contactName, trips, collapsed, onClose,
     return (
       <NewTripPanel
         contactName={contactName}
+        countries={countries}
         collapsed={collapsed}
         onClose={onClose}
         onCancel={active ? () => setCreating(false) : undefined}
@@ -104,7 +103,7 @@ export function TripSidebar({ contactId, contactName, trips, collapsed, onClose,
       onDeletePassenger={async (passenger) => { await after(operacionesApi.deletePassenger(passenger.id)); }}
       onSavePayment={async (input) => { await after(operacionesApi.putPayment(active.id, input)); }}
       onUpdateCustomer={async (input) => { await after(operacionesApi.updateCustomer(active.customer.id, input)); }}
-      onSaveItinerary={async (itinerary) => { await after(operacionesApi.putItinerary(active.id, itinerary)); }}
+      onSaveItinerary={async (input) => { await after(operacionesApi.putItinerary(active.id, input)); }}
       onAddDocument={async (passengerId, input) => { await after(operacionesApi.addDocument(passengerId, input)); }}
       onUpdateDocument={async (id, input) => { await after(operacionesApi.updateDocument(id, input)); }}
       onDeleteDocument={async (document) => { await after(operacionesApi.deleteDocument(document.id)); }}

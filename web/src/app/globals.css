@@ -1091,9 +1091,16 @@ p.trip-warn, .trip-note { margin: 8px 0 0; font-size: var(--fs-11); }
 .passenger-item { display: flex; align-items: flex-start; gap: 6px; color: var(--ink-2); font-size: var(--fs-12); }
 .passenger-item > span, .passenger-item > label { flex: 1; min-width: 0; }
 .passenger-item small { display: block; color: var(--ink-3); font-size: var(--fs-11); }
-.itinerary-stop { display: grid; gap: 6px; padding-bottom: 8px; border-bottom: 1px solid var(--hairline); }
-.itinerary-stop select { height: 34px; padding: 0 8px; border: 1px solid var(--hairline-strong); border-radius: 6px; color: var(--ink); background: var(--paper); font-size: var(--fs-12); }
-.itinerary-stop > button { justify-self: start; }
+/* De dónde sale y a dónde va: lo primero del viaje, como en un buscador de requisitos. */
+.trip-route { display: grid; gap: 10px; }
+.trip-route-field { display: grid; gap: 4px; min-width: 0; }
+.trip-route-field > small { color: var(--ink-3); font-size: var(--fs-11); font-weight: 600; }
+.trip-route-stop { display: grid; gap: 6px; }
+.trip-route-country { display: flex; align-items: center; gap: 6px; }
+.trip-route-country select { flex: 1; min-width: 0; }
+.trip-route-role { flex: 0 0 auto; padding: 1px 6px; border: 1px solid var(--hairline-strong); border-radius: 10px; color: var(--ink-2); font-size: var(--fs-11); font-weight: 600; }
+.trip-route .trip-form-actions button { color: var(--ink-2); }
+.requirement--info { padding-left: 2px; }
 
 /* Requisitos: el estado siempre en palabras, el color solo lo acompaña. */
 .requirement-passenger { margin-top: 12px; }

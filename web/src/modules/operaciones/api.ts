@@ -11,7 +11,13 @@ function listQuery(params: TripListParams): string {
   return text ? `?${text}` : "";
 }
 
-export interface NewTrip { contactId: string; destination?: string; departAt?: string; returnAt?: string }
+export interface NewTrip {
+  contactId: string; destination?: string; departAt?: string; returnAt?: string;
+  /** Vacío: sale de Argentina. */
+  originCountry?: string; itinerary?: Stop[];
+}
+/** El origen y los países se guardan juntos: el origen no puede estar entre ellos. */
+export interface ItineraryInput { originCountry: string; itinerary: Stop[] }
 export interface NewPassenger {
   firstName: string; lastName: string; kind?: "adulto" | "menor"; isHolder?: boolean;
   birthDate?: string; residenceCountry?: string; travelDocumentId?: string;
@@ -41,8 +47,8 @@ export const operacionesApi = {
   sellers: () => api<{ items: Seller[] }>("/api/operaciones/vendedores"),
   pending: () => api<{ items: PendingRow[] }>("/api/operaciones/pendientes"),
   listTrips: (params: TripListParams) => api<TripPage>(`/api/operaciones/viajes${listQuery(params)}`),
-  putItinerary: (tripId: string, itinerary: Stop[]) =>
-    api<void>(`/api/operaciones/viajes/${tripId}/itinerario`, { method: "PUT", body: JSON.stringify({ itinerary }) }),
+  putItinerary: (tripId: string, input: ItineraryInput) =>
+    api<void>(`/api/operaciones/viajes/${tripId}/itinerario`, { method: "PUT", body: JSON.stringify(input) }),
   addDocument: (passengerId: string, input: DocumentInput) =>
     api<TravelDocument>(`/api/operaciones/pasajeros/${passengerId}/documentos`, { method: "POST", body: JSON.stringify(input) }),
   updateDocument: (id: string, input: Partial<DocumentInput>) =>

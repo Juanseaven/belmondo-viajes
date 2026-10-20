@@ -34,30 +34,47 @@ func optionalDates(fields map[string]dateField) (string, bool) {
 	return "", true
 }
 
+// stopBody es un país del itinerario tal como llega en el cuerpo.
+type stopBody struct {
+	Country  string `json:"country"`
+	Role     string `json:"role"`
+	ArriveAt string `json:"arriveAt"`
+	LeaveAt  string `json:"leaveAt"`
+}
+
+// parseStops traduce el itinerario del cuerpo. Si una fecha es inválida,
+// responde el error y devuelve false.
+func parseStops(w http.ResponseWriter, raw []stopBody) ([]store.Stop, bool) {
+	stops := make([]store.Stop, len(raw))
+	for i, s := range raw {
+		stops[i] = store.Stop{Country: countryCode(s.Country), Role: s.Role}
+		if name, ok := optionalDates(map[string]dateField{
+			"llegada": {s.ArriveAt, &stops[i].ArriveAt}, "salida": {s.LeaveAt, &stops[i].LeaveAt},
+		}); !ok {
+			httpx.BadRequest(w, "fecha de "+name+" inválida")
+			return nil, false
+		}
+	}
+	return stops, true
+}
+
+func countryCode(raw string) string { return strings.ToUpper(strings.TrimSpace(raw)) }
+
 func (m *Module) putItinerary(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Itinerary []struct {
-			Country  string `json:"country"`
-			Role     string `json:"role"`
-			ArriveAt string `json:"arriveAt"`
-			LeaveAt  string `json:"leaveAt"`
-		} `json:"itinerary"`
+		// OriginCountry vacío: el origen no cambia.
+		OriginCountry string     `json:"originCountry"`
+		Itinerary     []stopBody `json:"itinerary"`
 	}
 	if !decode(w, r, &body) {
 		return
 	}
-	stops := make([]store.Stop, len(body.Itinerary))
-	for i, raw := range body.Itinerary {
-		stops[i] = store.Stop{Country: strings.ToUpper(strings.TrimSpace(raw.Country)), Role: raw.Role}
-		if name, ok := optionalDates(map[string]dateField{
-			"llegada": {raw.ArriveAt, &stops[i].ArriveAt}, "salida": {raw.LeaveAt, &stops[i].LeaveAt},
-		}); !ok {
-			httpx.BadRequest(w, "fecha de "+name+" inválida")
-			return
-		}
+	stops, ok := parseStops(w, body.Itinerary)
+	if !ok {
+		return
 	}
 	tripID := r.PathValue("id")
-	if err := m.repo.PutItinerary(r.Context(), tripID, stops); err != nil {
+	if err := m.repo.PutItinerary(r.Context(), tripID, store.Itinerary{Origin: countryCode(body.OriginCountry), Stops: stops}); err != nil {
 		m.storeError(w, "guardando el itinerario", err)
 		return
 	}

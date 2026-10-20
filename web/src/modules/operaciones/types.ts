@@ -136,10 +136,30 @@ export interface Control extends ControlSummary {
   evidence: Evidence[];
 }
 
+/**
+ * Lo que pide un país a un pasaporte argentino, mientras el viaje no tiene
+ * pasajeros. No dice cumple ni falta: no hay documento contra el cual medir.
+ */
+export interface PreviewLine {
+  country: string;
+  role: "destino" | "escala";
+  key: string;
+  text: string;
+  /** No se sabe: hay que verificarlo. */
+  verify?: boolean;
+  /** La regla todavía se está buscando. */
+  searching?: boolean;
+  sources?: Citation[];
+}
+
 export interface TripDetail extends TripSummary {
   customer: Customer;
+  /** De dónde sale el viaje. No se evalúa como entrada. */
+  originCountry: string;
   itinerary: Stop[];
   requirements: Requirement[];
+  /** Solo sin pasajeros: lo que piden los países a un pasaporte argentino. */
+  preview?: PreviewLine[];
   passengers: Passenger[];
   payment: Payment | null;
   controls: Control[];

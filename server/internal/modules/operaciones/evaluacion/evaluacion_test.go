@@ -221,6 +221,18 @@ func TestQuienCumple18DuranteElViajeSaleSiendoMenor(t *testing.T) {
 	}
 }
 
+// La autorización de salida de menores es una regla argentina: un viaje que
+// sale de otro país no la pide.
+func TestUnMenorQueSaleDeChileNoNecesitaLaAutorizacionArgentina(t *testing.T) {
+	menor := ana(pasaporteAR)
+	menor.Minor = true
+	trip := viaje("BR", menor)
+	trip.Origin = "CL"
+	if reqs := Evaluate(trip, regla("AR", "BR", nil), nil); has(reqs, "ana", "", KeyMenor) {
+		t.Fatalf("saliendo de Chile no se pide la autorización argentina: %+v", reqs)
+	}
+}
+
 func TestUnaEscalaEnUnPaisQuePideVisaQuedaEnVerificar(t *testing.T) {
 	rules := merge(regla("AR", "ES", nil), regla("AR", "US", func(f *reglas.Fields) { f.Visa = field(reglas.VisaConsular) }))
 	trip := viaje("ES", ana(pasaporteAR))
@@ -335,6 +347,16 @@ func TestLasVacunasExigidasSeConfirman(t *testing.T) {
 	polio := find(t, reqs, "ana", "AO", "vacuna:poliomielitis")
 	if fa.Status != Falta || !fa.Confirmable || polio.Status != Verificar || !polio.Confirmable {
 		t.Fatalf("vacunas: %+v / %+v", fa, polio)
+	}
+	if !strings.Contains(polio.Text, "sale de Argentina") {
+		t.Errorf("la vacuna por país de riesgo nombra el origen: %q", polio.Text)
+	}
+
+	trip := viaje("AO", ana(pasaporteAR))
+	trip.Origin = "PE"
+	polio = find(t, Evaluate(trip, rules, nil), "ana", "AO", "vacuna:poliomielitis")
+	if polio.Status != Verificar || !strings.Contains(polio.Text, "sale de Perú") {
+		t.Fatalf("saliendo de Perú: %+v", polio)
 	}
 }
 

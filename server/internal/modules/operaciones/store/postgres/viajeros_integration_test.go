@@ -306,11 +306,11 @@ func TestElItinerarioSeGuardaEnOrdenYSeReemplazaEntero(t *testing.T) {
 	s := New(pool)
 	f := escenario(t, ctx, pool, s)
 
-	err := s.PutItinerary(ctx, f.trip, []store.Stop{
+	err := s.PutItinerary(ctx, f.trip, store.Itinerary{Stops: []store.Stop{
 		{Country: "ES", Role: "destino", ArriveAt: ptrTime(fecha("2026-12-11")), LeaveAt: ptrTime(fecha("2026-12-16"))},
 		{Country: "FR", Role: "destino"},
 		{Country: "PA", Role: "escala"},
-	})
+	}})
 	if err != nil {
 		t.Fatalf("itinerario: %v", err)
 	}
@@ -329,7 +329,11 @@ func TestElItinerarioSeGuardaEnOrdenYSeReemplazaEntero(t *testing.T) {
 		t.Errorf("llegada a España = %v", detail.Itinerary[0].ArriveAt)
 	}
 
-	if err := s.PutItinerary(ctx, f.trip, []store.Stop{{Country: "BR", Role: "destino"}}); err != nil {
+	if detail.Destination != "España y Francia" {
+		t.Errorf("nombre = %q, se esperaba que salga de los destinos y no de la escala", detail.Destination)
+	}
+
+	if err := s.PutItinerary(ctx, f.trip, store.Itinerary{Stops: []store.Stop{{Country: "BR", Role: "destino"}}}); err != nil {
 		t.Fatalf("reemplazando: %v", err)
 	}
 	if detail, _ := s.TripDetail(ctx, f.trip); len(detail.Itinerary) != 1 || detail.Itinerary[0].Country != "BR" {
@@ -349,9 +353,80 @@ func TestElItinerarioRechazaDatosInvalidos(t *testing.T) {
 		"el mismo país dos veces":  {{Country: "ES", Role: "destino"}, {Country: "ES", Role: "escala"}},
 	}
 	for nombre, stops := range casos {
-		if err := s.PutItinerary(ctx, f.trip, stops); !errors.Is(err, store.ErrInvalid) {
+		if err := s.PutItinerary(ctx, f.trip, store.Itinerary{Stops: stops}); !errors.Is(err, store.ErrInvalid) {
 			t.Errorf("%s: error = %v, se esperaba ErrInvalid", nombre, err)
 		}
+	}
+}
+
+// El origen no se evalúa como entrada, así que no puede ser también un país del
+// itinerario: ni cargando el país, ni cambiando el origen.
+func TestElOrigenNoPuedeEstarEnElItinerario(t *testing.T) {
+	ctx, pool := testDB(t)
+	s := New(pool)
+	f := escenario(t, ctx, pool, s)
+
+	err := s.PutItinerary(ctx, f.trip, store.Itinerary{Stops: []store.Stop{{Country: "AR", Role: "destino"}}})
+	if !errors.Is(err, store.ErrInvalid) || !strings.Contains(err.Error(), "sale de Argentina") {
+		t.Fatalf("destino igual al origen: error = %v", err)
+	}
+	if err := s.PutItinerary(ctx, f.trip, store.Itinerary{Stops: []store.Stop{{Country: "CL", Role: "destino"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutItinerary(ctx, f.trip, store.Itinerary{Origin: "CL", Stops: []store.Stop{{Country: "CL", Role: "destino"}}}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("origen igual a un destino: error = %v", err)
+	}
+
+	// Cambiar los dos a la vez no choca con el estado intermedio.
+	if err := s.PutItinerary(ctx, f.trip, store.Itinerary{Origin: "CL", Stops: []store.Stop{{Country: "AR", Role: "destino"}}}); err != nil {
+		t.Fatalf("intercambio: %v", err)
+	}
+	detail, err := s.TripDetail(ctx, f.trip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.OriginCountry != "CL" || detail.Itinerary[0].Country != "AR" || detail.Destination != "Argentina" {
+		t.Fatalf("origen = %s, itinerario = %+v, nombre = %q", detail.OriginCountry, detail.Itinerary, detail.Destination)
+	}
+}
+
+func TestUnViajeSeCreaConOrigenItinerarioYFechas(t *testing.T) {
+	ctx, pool := testDB(t)
+	s := New(pool)
+	f := escenario(t, ctx, pool, s)
+
+	trip, err := s.CreateTrip(ctx, store.NewTrip{
+		ContactID: f.contact, Origin: "UY", CreatedBy: f.user,
+		Itinerary: []store.Stop{{Country: "PA", Role: "escala"}, {Country: "MX", Role: "destino"}},
+		DepartAt:  fecha("2026-12-10"), ReturnAt: fecha("2026-12-20"),
+	})
+	if err != nil {
+		t.Fatalf("creando: %v", err)
+	}
+	if trip.Destination != "México" {
+		t.Errorf("nombre devuelto = %q", trip.Destination)
+	}
+	detail, err := s.TripDetail(ctx, trip.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.OriginCountry != "UY" || len(detail.Itinerary) != 2 || detail.Destination != "México" || detail.DepartAt == nil {
+		t.Fatalf("viaje = origen %s, itinerario %+v, nombre %q, salida %v", detail.OriginCountry, detail.Itinerary,
+			detail.Destination, detail.DepartAt)
+	}
+
+	// Sin origen, sale de Argentina.
+	plain, err := s.CreateTrip(ctx, store.NewTrip{ContactID: f.contact, Destination: "Cancún", CreatedBy: f.user})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail, _ := s.TripDetail(ctx, plain.ID); detail.OriginCountry != "AR" || detail.Destination != "Cancún" {
+		t.Fatalf("sin itinerario: origen %s, nombre %q", detail.OriginCountry, detail.Destination)
+	}
+
+	if _, err := s.CreateTrip(ctx, store.NewTrip{ContactID: f.contact, CreatedBy: f.user,
+		Itinerary: []store.Stop{{Country: "AR", Role: "destino"}}}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("destino igual al origen por defecto: error = %v", err)
 	}
 }
 

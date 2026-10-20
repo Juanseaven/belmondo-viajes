@@ -211,3 +211,42 @@ func TestLaFichaTraeElAvisoDeRequisitosArmado(t *testing.T) {
 		t.Errorf("los demás mensajes no cambian: %q", body.Controls[1].Message)
 	}
 }
+
+// Sin pasajeros, la ficha muestra lo que piden los países a un pasaporte
+// argentino. Pedir las reglas también las pone a buscar.
+func TestLaFichaSinPasajerosTraeLaVistaPrevia(t *testing.T) {
+	repo := &evalRepo{detail: store.TripDetailData{Trip: store.Trip{ID: "trip-1"}, OriginCountry: "AR",
+		Itinerary: []store.Stop{{Country: "CA", Role: "destino"}}}}
+	rules := &fakeRules{rules: reglaCanada()}
+	m := evalModule(repo, rules, &[]string{})
+	rec := httptest.NewRecorder()
+
+	m.getTrip(rec, request(http.MethodGet, "/viajes/trip-1", "", "id", "trip-1"))
+
+	var body struct {
+		Preview []evaluacion.PreviewLine `json:"preview"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(rules.asked) != 1 || rules.asked[0] != (reglas.Pair{Nationality: "AR", Country: "CA"}) {
+		t.Fatalf("reglas pedidas = %v", rules.asked)
+	}
+	var visa bool
+	for _, l := range body.Preview {
+		if l.Country == "CA" && l.Key == evaluacion.KeyVisa && strings.Contains(l.Text, "pide visa") {
+			visa = true
+		}
+	}
+	if !visa {
+		t.Fatalf("vista previa = %+v", body.Preview)
+	}
+
+	// Con un pasajero, no hay vista previa.
+	repo.detail.Passengers = []store.Passenger{{ID: "ana"}}
+	rec = httptest.NewRecorder()
+	m.getTrip(rec, request(http.MethodGet, "/viajes/trip-1", "", "id", "trip-1"))
+	if strings.Contains(rec.Body.String(), `"preview"`) {
+		t.Fatalf("con pasajeros: %s", rec.Body.String())
+	}
+}

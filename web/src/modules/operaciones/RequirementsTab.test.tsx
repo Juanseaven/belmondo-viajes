@@ -15,7 +15,7 @@ const base: TripDetail = {
   id: "trip-1", number: 10482, customerId: "customer-1", status: "cotizado", destination: "Canadá",
   departAt: "2026-12-10", returnAt: "2026-12-24", createdAt: "2026-08-20T12:00:00Z", passengerCount: 2,
   customer: { id: "customer-1", name: "Juan Pérez", customerSince: "2026-08-20", contactIds: ["contact-1"] },
-  itinerary: [{ country: "CA", role: "destino" }, { country: "US", role: "escala" }],
+  originCountry: "AR", itinerary: [{ country: "CA", role: "destino" }, { country: "US", role: "escala" }],
   passengers: [
     { id: "maria", tripId: "trip-1", firstName: "María", lastName: "Pérez", kind: "adulto", isHolder: true, residenceCountry: "AR", documents: [], permits: [] },
     { id: "tomas", tripId: "trip-1", firstName: "Tomás", lastName: "Pérez", kind: "menor", isHolder: false, residenceCountry: "AR", documents: [], permits: [] },
@@ -28,6 +28,33 @@ const req = (r: Partial<Requirement>): Requirement => ({ key: "visa", status: "c
 it("sin itinerario ni pasajeros enseña qué cargar", () => {
   render(<RequirementsTab trip={{ ...base, itinerary: [], passengers: [] }} countries={countries} />);
   expect(screen.getByText(/Cargá el país de destino y los pasajeros/)).toBeTruthy();
+});
+
+it("sin pasajeros dice lo que piden los países a un pasaporte argentino, sin cumple ni falta", () => {
+  const trip: TripDetail = { ...base, passengers: [], preview: [
+    { country: "CA", role: "destino", key: "visa", text: "Canadá pide visa, que se tramita antes de viajar",
+      sources: [{ source: "wikipedia", url: "https://es.wikipedia.org" }] },
+    { country: "CA", role: "destino", key: "vigencia", text: "No se sabe cuánta vigencia del pasaporte pide Canadá", verify: true },
+    { country: "US", role: "escala", key: "buscando", text: "Buscando los requisitos de Estados Unidos", searching: true },
+  ] };
+  render(<RequirementsTab trip={trip} countries={countries} />);
+
+  expect(screen.getByText("Requisitos para un pasajero con pasaporte argentino")).toBeTruthy();
+  expect(screen.getByText("Canadá pide visa, que se tramita antes de viajar")).toBeTruthy();
+  expect(screen.getByText("Fuente: Wikipedia")).toBeTruthy();
+  expect(screen.getAllByText("Verificar")).toHaveLength(1);
+  expect(screen.queryByText("Cumple")).toBeNull();
+  expect(screen.queryByText("Falta")).toBeNull();
+  expect(screen.getByText("Buscando los requisitos de Estados Unidos…")).toBeTruthy();
+});
+
+it("con pasajeros, la vista previa no se muestra", () => {
+  const trip: TripDetail = { ...base, preview: [{ country: "CA", role: "destino", key: "visa", text: "Canadá pide visa" }],
+    requirements: [req({ passengerId: "maria", country: "CA", text: "Tiene visa de Canadá" })] };
+  render(<RequirementsTab trip={trip} countries={countries} />);
+
+  expect(screen.queryByText(/pasaporte argentino/)).toBeNull();
+  expect(screen.getByText("Tiene visa de Canadá")).toBeTruthy();
 });
 
 it("agrupa por pasajero y país y dice cada requisito con palabras", () => {

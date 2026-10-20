@@ -29,6 +29,7 @@ type fakeRepo struct {
 
 	err            error
 	itinerary      []store.Stop
+	origin         string
 	newDocument    store.NewDocument
 	documentPatch  store.DocumentPatch
 	newPermit      store.NewPermit
@@ -177,6 +178,25 @@ func TestAltaHTTPPermiteCrearUnBorradorSinDatosDeViaje(t *testing.T) {
 	}
 }
 
+// El borrador manda de dónde sale y a dónde va: el viaje nace con su itinerario.
+func TestAltaHTTPCreaElViajeConOrigenEItinerario(t *testing.T) {
+	repo := &fakeRepo{trip: store.Trip{ID: "trip-1"}}
+	m := testModule(repo, &[]string{})
+	req := httptest.NewRequest(http.MethodPost, "/viajes", bytes.NewBufferString(
+		`{"contactId":"contact-1","originCountry":"uy","itinerary":[{"country":"pa","role":"escala"},{"country":"MX","role":"destino"}]}`))
+	rec := httptest.NewRecorder()
+
+	m.createTrip(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if repo.created.Origin != "UY" || len(repo.created.Itinerary) != 2 || repo.created.Itinerary[0].Country != "PA" ||
+		repo.created.Itinerary[1].Role != "destino" {
+		t.Fatalf("alta traducida: %#v", repo.created)
+	}
+}
+
 func TestAltaHTTPRechazaFechasInvalidasAntesDelStore(t *testing.T) {
 	repo := &fakeRepo{}
 	var events []string
@@ -216,9 +236,10 @@ func TestNombreYMigracionesDelModuloSonEstables(t *testing.T) {
 		t.Fatalf("nombre = %q", m.Name())
 	}
 	entries, err := fs.ReadDir(m.Migrations(), ".")
-	if err != nil || len(entries) != 6 || entries[0].Name() != "0001_init.sql" || entries[1].Name() != "0002_trip_drafts.sql" ||
+	if err != nil || len(entries) != 7 || entries[0].Name() != "0001_init.sql" || entries[1].Name() != "0002_trip_drafts.sql" ||
 		entries[2].Name() != "0003_documentos_vigentes.sql" || entries[3].Name() != "0004_estado_consulta.sql" ||
-		entries[4].Name() != "0005_viajeros.sql" || entries[5].Name() != "0006_requisitos.sql" {
+		entries[4].Name() != "0005_viajeros.sql" || entries[5].Name() != "0006_requisitos.sql" ||
+		entries[6].Name() != "0007_origen.sql" {
 		t.Fatalf("migraciones = %v, err = %v", entries, err)
 	}
 }

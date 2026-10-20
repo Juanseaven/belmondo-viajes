@@ -11,7 +11,7 @@ const trip: TripDetail = {
   destination: "Iguazú", departAt: "2026-09-12T00:00:00Z", returnAt: "2026-09-15T00:00:00Z",
   createdAt: "2026-08-20T12:00:00Z", passengerCount: 0,
   customer: { id: "customer-1", name: "Ana Pérez", customerSince: "2026-08-20", contactIds: ["contact-1"] },
-  itinerary: [], requirements: [],
+  originCountry: "AR", itinerary: [], requirements: [],
   passengers: [], payment: null,
   controls: [
     { id: "normal", itemId: "normal", stage: "carga", closing: "manual", title: "Revisar nombres", critical: false, status: "abierto", dueAt: "2026-08-19", evidence: [] },
@@ -56,10 +56,11 @@ it("permite completar el destino de una operación ya creada", async () => {
   } as Parameters<typeof TripPanel>[0];
 
   render(<TripPanel {...props} />);
-  fireEvent.change(screen.getByLabelText("Destino"), { target: { value: "Salta" } });
+  expect(screen.getByText(/Sin países cargados/)).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Salida"), { target: { value: "2026-12-10" } });
   fireEvent.click(screen.getByRole("button", { name: "Guardar viaje" }));
 
-  await waitFor(() => expect(onUpdateTrip).toHaveBeenCalledWith({ destination: "Salta" }));
+  await waitFor(() => expect(onUpdateTrip).toHaveBeenCalledWith({ departAt: "2026-12-10" }));
   expect(screen.queryByText(/0001/)).toBeNull();
 });
 
@@ -213,20 +214,49 @@ it("la fecha de nacimiento y la residencia se cargan en el pasajero", async () =
   await waitFor(() => expect(onUpdatePassenger).toHaveBeenCalledWith("p-1", { birthDate: "2010-04-02", residenceCountry: "ES" }));
 });
 
-it("el itinerario se carga por país, como destino o escala", async () => {
+it("el viaje se carga como sale de, va a y escalas, con un solo botón", async () => {
   const onSaveItinerary = vi.fn().mockResolvedValue(undefined);
-  render(<TripPanel trip={trip} countries={countries} onSaveItinerary={onSaveItinerary} {...noop} />);
+  const onUpdateTrip = vi.fn().mockResolvedValue(undefined);
+  render(<TripPanel trip={trip} countries={countries} onSaveItinerary={onSaveItinerary} onUpdateTrip={onUpdateTrip} {...noop} />);
 
-  fireEvent.click(screen.getByRole("button", { name: "Agregar país" }));
-  fireEvent.change(screen.getByLabelText("País 1"), { target: { value: "ES" } });
-  fireEvent.click(screen.getByRole("button", { name: "Agregar país" }));
-  fireEvent.change(screen.getByLabelText("País 2"), { target: { value: "PA" } });
-  fireEvent.change(screen.getByLabelText("Rol de País 2"), { target: { value: "escala" } });
-  fireEvent.click(screen.getByRole("button", { name: "Guardar países" }));
+  fireEvent.click(screen.getByRole("button", { name: "Agregar destino" }));
+  fireEvent.change(screen.getByLabelText("Destino"), { target: { value: "ES" } });
+  fireEvent.click(screen.getByRole("button", { name: "Agregar destino" }));
+  fireEvent.change(screen.getByLabelText("Destino 2"), { target: { value: "IT" } });
+  fireEvent.click(screen.getByRole("button", { name: "Agregar escala" }));
+  fireEvent.change(screen.getByLabelText("Escala"), { target: { value: "PA" } });
+  fireEvent.click(screen.getByRole("button", { name: "Fechas en cada país" }));
+  fireEvent.change(screen.getByLabelText("Llega a Destino 1"), { target: { value: "2026-09-12" } });
+  fireEvent.click(screen.getByRole("button", { name: "Guardar viaje" }));
 
-  await waitFor(() => expect(onSaveItinerary).toHaveBeenCalledWith([
-    { country: "ES", role: "destino" }, { country: "PA", role: "escala" },
-  ]));
+  await waitFor(() => expect(onSaveItinerary).toHaveBeenCalledWith({ originCountry: "AR", itinerary: [
+    { country: "ES", role: "destino", arriveAt: "2026-09-12" }, { country: "IT", role: "destino" }, { country: "PA", role: "escala" },
+  ] }));
+  // Las fechas del viaje no cambiaron: no se tocan.
+  expect(onUpdateTrip).not.toHaveBeenCalled();
+});
+
+it("cambiar de dónde sale se guarda con los países", async () => {
+  const onSaveItinerary = vi.fn().mockResolvedValue(undefined);
+  const conPais: TripDetail = { ...trip, itinerary: [{ country: "ES", role: "destino" }] };
+  render(<TripPanel trip={conPais} countries={countries} onSaveItinerary={onSaveItinerary} {...noop} />);
+
+  expect((screen.getByLabelText("Sale de") as HTMLSelectElement).value).toBe("AR");
+  fireEvent.change(screen.getByLabelText("Sale de"), { target: { value: "US" } });
+  fireEvent.click(screen.getByRole("button", { name: "Guardar viaje" }));
+
+  await waitFor(() => expect(onSaveItinerary).toHaveBeenCalledWith({ originCountry: "US", itinerary: [{ country: "ES", role: "destino" }] }));
+});
+
+it("si el servidor rechaza el origen, lo dice", async () => {
+  const onSaveItinerary = vi.fn().mockRejectedValue(new Error("el viaje sale de España, no puede ser también destino"));
+  const conPais: TripDetail = { ...trip, itinerary: [{ country: "ES", role: "destino" }] };
+  render(<TripPanel trip={conPais} countries={countries} onSaveItinerary={onSaveItinerary} {...noop} />);
+
+  fireEvent.change(screen.getByLabelText("Sale de"), { target: { value: "ES" } });
+  fireEvent.click(screen.getByRole("button", { name: "Guardar viaje" }));
+
+  expect((await screen.findByRole("alert")).textContent).toContain("no puede ser también destino");
 });
 
 it("los requisitos tienen su pestaña", () => {

@@ -45,7 +45,7 @@ type repository interface {
 	Sellers(context.Context) ([]store.Seller, error)
 	Pending(context.Context, time.Time) ([]store.PendingRow, error)
 	ListTrips(context.Context, store.TripFilter) (store.TripPage, error)
-	PutItinerary(context.Context, string, []store.Stop) error
+	PutItinerary(context.Context, string, store.Itinerary) error
 	AddDocument(context.Context, store.NewDocument) (store.Document, error)
 	UpdateDocument(context.Context, string, store.DocumentPatch) (store.Document, error)
 	DeleteDocument(context.Context, string) (string, error)

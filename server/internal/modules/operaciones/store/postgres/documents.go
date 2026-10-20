@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/juanseaven/viajes-crm/server/internal/modules/operaciones/store"
+	reglas "github.com/juanseaven/viajes-crm/server/internal/modules/requisitos/domain"
 )
 
 // AddDocument carga un documento del pasajero. Si todavía no viajaba con
@@ -186,9 +188,42 @@ func documentError(action string, err error) error {
 
 var isoCountry = regexp.MustCompile(`^[A-Z]{2}$`)
 
-// PutItinerary reemplaza el itinerario entero. Es una lista corta que se edita
-// como una sola cosa: guardarla de a filas solo agregaría estados intermedios.
-func (s *Store) PutItinerary(ctx context.Context, tripID string, stops []store.Stop) error {
+// PutItinerary reemplaza el itinerario entero y, si viene, el origen. Es una
+// lista corta que se edita como una sola cosa: guardarla de a filas solo
+// agregaría estados intermedios.
+func (s *Store) PutItinerary(ctx context.Context, tripID string, it store.Itinerary) error {
+	if err := validItinerary(it.Origin, it.Stops); err != nil {
+		return err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// El bloqueo serializa dos ediciones simultáneas del mismo itinerario.
+	var origin string
+	if err := tx.QueryRow(ctx, `SELECT origin_country FROM trips WHERE id = $1 FOR UPDATE`, tripID).Scan(&origin); err != nil {
+		return writeError("leyendo el viaje", err)
+	}
+	if it.Origin != "" {
+		origin = it.Origin
+	}
+	if err := writeItinerary(ctx, tx, tripID, origin, it.Stops); err != nil {
+		return err
+	}
+	if err := refreshDerived(ctx, tx, tripID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// validItinerary revisa lo que no necesita la base. Que el origen no esté entre
+// los países lo revisa writeItinerary, que es quien sabe el origen guardado.
+func validItinerary(origin string, stops []store.Stop) error {
+	if origin != "" && !isoCountry.MatchString(origin) {
+		return fmt.Errorf("%w: %q no es un código de país", store.ErrInvalid, origin)
+	}
 	seen := make(map[string]bool, len(stops))
 	for _, stop := range stops {
 		switch {
@@ -203,17 +238,17 @@ func (s *Store) PutItinerary(ctx context.Context, tripID string, stops []store.S
 		}
 		seen[stop.Country] = true
 	}
+	return nil
+}
 
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	// El bloqueo serializa dos ediciones simultáneas del mismo itinerario.
-	var locked string
-	if err := tx.QueryRow(ctx, `SELECT id FROM trips WHERE id = $1 FOR UPDATE`, tripID).Scan(&locked); err != nil {
-		return writeError("leyendo el viaje", err)
+// writeItinerary guarda el origen, los países y el nombre del viaje, que se
+// arma con los destinos.
+func writeItinerary(ctx context.Context, tx pgx.Tx, tripID, origin string, stops []store.Stop) error {
+	for _, stop := range stops {
+		if stop.Country == origin {
+			name := countryName(origin)
+			return fmt.Errorf("%w: el viaje sale de %s, no puede ser también %s", store.ErrInvalid, name, stop.Role)
+		}
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM trip_countries WHERE trip_id = $1`, tripID); err != nil {
 		return fmt.Errorf("vaciando el itinerario: %w", err)
@@ -226,10 +261,41 @@ func (s *Store) PutItinerary(ctx context.Context, tripID string, stops []store.S
 			return writeError("guardando el itinerario", err)
 		}
 	}
-	if err := refreshDerived(ctx, tx, tripID); err != nil {
-		return err
+	if _, err := tx.Exec(ctx,
+		`UPDATE trips SET origin_country = $2, destination = nullif($3, '') WHERE id = $1`,
+		tripID, origin, TripName(stops)); err != nil {
+		return writeError("guardando el origen", err)
 	}
-	return tx.Commit(ctx)
+	return nil
+}
+
+// TripName es el nombre del viaje: sus destinos en orden, sin las escalas.
+// «México», «Italia y Francia», «Francia e Italia».
+func TripName(stops []store.Stop) string {
+	var names []string
+	for _, stop := range stops {
+		if stop.Role == "destino" {
+			names = append(names, countryName(stop.Country))
+		}
+	}
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	last := names[len(names)-1]
+	// «y» pasa a «e» antes del sonido i: «Francia e Italia».
+	and := " y "
+	if lower := strings.ToLower(last); (strings.HasPrefix(lower, "i") || strings.HasPrefix(lower, "í") ||
+		strings.HasPrefix(lower, "hi")) && !strings.HasPrefix(lower, "hie") && !strings.HasPrefix(lower, "hia") {
+		and = " e "
+	}
+	return strings.Join(names[:len(names)-1], ", ") + and + last
+}
+
+func countryName(code string) string {
+	if c, ok := reglas.CountryByCode(code); ok {
+		return c.Name
+	}
+	return code
 }
 
 func readItinerary(ctx context.Context, q querier, tripID string) ([]store.Stop, error) {

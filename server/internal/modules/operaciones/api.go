@@ -148,12 +148,18 @@ func (m *Module) listTrips(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) createTrip(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		ContactID   string `json:"contactId"`
-		Destination string `json:"destination"`
-		DepartAt    string `json:"departAt"`
-		ReturnAt    string `json:"returnAt"`
+		ContactID     string     `json:"contactId"`
+		Destination   string     `json:"destination"`
+		OriginCountry string     `json:"originCountry"`
+		Itinerary     []stopBody `json:"itinerary"`
+		DepartAt      string     `json:"departAt"`
+		ReturnAt      string     `json:"returnAt"`
 	}
 	if !decode(w, r, &body) {
+		return
+	}
+	stops, ok := parseStops(w, body.Itinerary)
+	if !ok {
 		return
 	}
 	var departAt, returnAt time.Time
@@ -178,6 +184,7 @@ func (m *Module) createTrip(w http.ResponseWriter, r *http.Request) {
 	}
 	trip, err := m.repo.CreateTrip(r.Context(), store.NewTrip{
 		ContactID: body.ContactID, Destination: strings.TrimSpace(body.Destination),
+		Origin: countryCode(body.OriginCountry), Itinerary: stops,
 		DepartAt: departAt, ReturnAt: returnAt, CreatedBy: auth.UserID(r.Context()),
 	})
 	if err != nil {
@@ -196,6 +203,7 @@ func (m *Module) getTrip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	withNotice(&detail)
+	m.withPreview(r.Context(), &detail)
 	httpx.JSON(w, http.StatusOK, detail)
 }
 

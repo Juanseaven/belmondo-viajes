@@ -65,10 +65,27 @@ type Requirement struct {
 }
 
 type Trip struct {
+	// Origin es de dónde sale el viaje. Vacío: Argentina, como en la base.
+	Origin     string
 	DepartAt   *time.Time
 	ReturnAt   *time.Time
 	Itinerary  []Stop
 	Passengers []Passenger
+}
+
+// Argentina es el origen por defecto y la nacionalidad de la vista previa: la
+// agencia vende desde ahí, y el pasaporte argentino es el caso más común.
+const Argentina = "AR"
+
+// PreviewNationality es la nacionalidad con la que se muestra lo que piden los
+// países mientras el viaje no tiene pasajeros.
+const PreviewNationality = Argentina
+
+func (t Trip) origin() string {
+	if t.Origin == "" {
+		return Argentina
+	}
+	return t.Origin
 }
 
 type Stop struct {
@@ -110,17 +127,25 @@ type Confirmation struct {
 	FieldHash   string
 }
 
-// Pairs son las reglas que hacen falta para evaluar el viaje.
+// Pairs son las reglas que hacen falta para evaluar el viaje. Sin pasajeros,
+// las de un pasaporte argentino, que son las de la vista previa: así la
+// búsqueda arranca apenas se carga el destino.
 func Pairs(t Trip) []reglas.Pair {
+	nationalities := []string{}
+	for _, p := range t.Passengers {
+		if p.Doc != nil {
+			nationalities = append(nationalities, p.Doc.Country)
+		}
+	}
+	if len(t.Passengers) == 0 {
+		nationalities = append(nationalities, PreviewNationality)
+	}
 	seen := map[reglas.Pair]bool{}
 	var out []reglas.Pair
-	for _, p := range t.Passengers {
-		if p.Doc == nil {
-			continue
-		}
+	for _, nationality := range nationalities {
 		for _, stop := range t.Itinerary {
-			pair := reglas.Pair{Nationality: p.Doc.Country, Country: stop.Country}
-			if stop.Country != p.Doc.Country && !seen[pair] {
+			pair := reglas.Pair{Nationality: nationality, Country: stop.Country}
+			if stop.Country != nationality && !seen[pair] {
 				seen[pair] = true
 				out = append(out, pair)
 			}
@@ -136,7 +161,9 @@ func Evaluate(t Trip, rules map[reglas.Pair]reglas.Rule, confirmed []Confirmatio
 			Text: "Falta cargar el país de destino del viaje"})
 	}
 	for _, p := range t.Passengers {
-		if p.Minor {
+		// La autorización de salida de menores es una regla argentina: las de
+		// salida de los demás países no se modelan.
+		if p.Minor && t.origin() == Argentina {
 			out = append(out, Requirement{PassengerID: p.ID, Key: KeyMenor, Status: Falta, Confirmable: true,
 				FieldHash:  hash(KeyMenor),
 				Text:       "Es menor: necesita la autorización de viaje si no viaja con ambos padres",
@@ -157,7 +184,7 @@ func Evaluate(t Trip, rules map[reglas.Pair]reglas.Rule, confirmed []Confirmatio
 			if rule, ok := rules[reglas.Pair{Nationality: p.Doc.Country, Country: stop.Country}]; ok {
 				f = rule.Effective()
 			}
-			e := evaluator{p: p, stop: stop, f: f, name: countryName(stop.Country)}
+			e := evaluator{p: p, stop: stop, f: f, name: countryName(stop.Country), origin: t.origin()}
 			e.arrive, e.leave = stopDates(t, stop)
 			if stop.Role == "escala" {
 				out = append(out, e.transito())
@@ -208,6 +235,7 @@ type evaluator struct {
 	stop          Stop
 	f             reglas.Fields
 	name          string
+	origin        string
 	arrive, leave *time.Time
 }
 
@@ -451,8 +479,8 @@ func (e evaluator) vacunas() []Requirement {
 		r.ClientText = fmt.Sprintf("para %s necesita la vacuna de %s, con su certificado", e.name, v.Name)
 		if v.Scope == reglas.VacunaDesdePaisRiesgo {
 			r.Status = Verificar
-			r.Text = fmt.Sprintf("%s pide la vacuna de %s a quienes llegan desde países de riesgo; la OMS considera de riesgo parte de la Argentina",
-				e.name, v.Name)
+			r.Text = fmt.Sprintf("%s pide la vacuna de %s a quienes llegan desde países de riesgo; %s",
+				e.name, v.Name, riskOrigin(e.origin))
 		}
 		out = append(out, r)
 	}
@@ -477,6 +505,16 @@ func countryName(code string) string {
 		return c.Name
 	}
 	return code
+}
+
+// riskOrigin dice qué se sabe del país de salida para una vacuna que se pide a
+// quienes vienen de país de riesgo. No hay lista de países de riesgo: fuera de
+// la Argentina, solo se dice cuál hay que mirar.
+func riskOrigin(origin string) string {
+	if origin == Argentina {
+		return "el viaje sale de Argentina, que la OMS considera de riesgo en parte"
+	}
+	return fmt.Sprintf("el viaje sale de %s: hay que ver si es de riesgo", countryName(origin))
 }
 
 func kindLabel(kind string) string {

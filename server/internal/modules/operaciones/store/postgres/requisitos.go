@@ -114,8 +114,8 @@ func (s *Store) Confirm(ctx context.Context, c store.NewConfirmation) error {
 // EvaluationInput junta lo que la evaluación necesita del viaje.
 func (s *Store) EvaluationInput(ctx context.Context, tripID string) (store.EvaluationInput, error) {
 	var in store.EvaluationInput
-	err := s.pool.QueryRow(ctx, `SELECT depart_at, return_at FROM trips WHERE id = $1`, tripID).
-		Scan(&in.Trip.DepartAt, &in.Trip.ReturnAt)
+	err := s.pool.QueryRow(ctx, `SELECT origin_country, depart_at, return_at FROM trips WHERE id = $1`, tripID).
+		Scan(&in.Trip.Origin, &in.Trip.DepartAt, &in.Trip.ReturnAt)
 	if err != nil {
 		return store.EvaluationInput{}, writeError("leyendo el viaje", err)
 	}
@@ -168,7 +168,8 @@ func ToEvaluation(p store.Passenger) evaluacion.Passenger {
 }
 
 // OpenTripsUsing devuelve los viajes no cerrados en los que algún pasajero
-// viaja con un documento de esa nacionalidad a ese país.
+// viaja con un documento de esa nacionalidad a ese país, y los que todavía no
+// tienen pasajeros y muestran lo que se le pide a un pasaporte argentino.
 func (s *Store) OpenTripsUsing(ctx context.Context, pairs []reglas.Pair) ([]string, error) {
 	nats := make([]string, len(pairs))
 	countries := make([]string, len(pairs))
@@ -179,11 +180,13 @@ func (s *Store) OpenTripsUsing(ctx context.Context, pairs []reglas.Pair) ([]stri
 		`SELECT DISTINCT t.id::text
 		   FROM trips t
 		   JOIN trip_countries tc ON tc.trip_id = t.id
-		   JOIN passengers p ON p.trip_id = t.id
-		   JOIN passenger_documents d ON d.id = p.travel_document_id
-		   JOIN unnest($1::text[], $2::text[]) AS r(nationality, country)
-		     ON r.nationality = d.country AND r.country = tc.country
-		  WHERE t.status <> 'cerrado'`, nats, countries)
+		   JOIN unnest($1::text[], $2::text[]) AS r(nationality, country) ON r.country = tc.country
+		  WHERE t.status <> 'cerrado'
+		    AND (EXISTS (SELECT 1 FROM passengers p
+		                   JOIN passenger_documents d ON d.id = p.travel_document_id
+		                  WHERE p.trip_id = t.id AND d.country = r.nationality)
+		         OR (r.nationality = '`+evaluacion.PreviewNationality+`'
+		             AND NOT EXISTS (SELECT 1 FROM passengers p WHERE p.trip_id = t.id)))`, nats, countries)
 }
 
 // OpenTrips devuelve todos los viajes no cerrados, para evaluarlos al arrancar.

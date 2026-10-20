@@ -10,8 +10,8 @@ import (
 	"github.com/juanseaven/viajes-crm/server/internal/modules/operaciones/store"
 )
 
-func (f *fakeRepo) PutItinerary(_ context.Context, _ string, stops []store.Stop) error {
-	f.itinerary = stops
+func (f *fakeRepo) PutItinerary(_ context.Context, _ string, it store.Itinerary) error {
+	f.itinerary, f.origin = it.Stops, it.Origin
 	return f.err
 }
 func (f *fakeRepo) AddDocument(_ context.Context, n store.NewDocument) (store.Document, error) {
@@ -60,6 +60,19 @@ func TestItinerarioHTTPTraduceLosPaisesYEmite(t *testing.T) {
 	}
 	if len(events) != 2 || events[0] != "trip.updated" || events[1] != "requirements.changed" {
 		t.Fatalf("eventos = %v", events)
+	}
+}
+
+func TestItinerarioHTTPGuardaElOrigenConLosPaises(t *testing.T) {
+	repo := &fakeRepo{}
+	m := testModule(repo, &[]string{})
+	rec := httptest.NewRecorder()
+
+	m.putItinerary(rec, request(http.MethodPut, "/viajes/trip-1/itinerario",
+		`{"originCountry":" cl ","itinerary":[{"country":"AR","role":"destino"}]}`, "id", "trip-1"))
+
+	if rec.Code != http.StatusNoContent || repo.origin != "CL" || len(repo.itinerary) != 1 {
+		t.Fatalf("status = %d, origen = %q, itinerario = %#v", rec.Code, repo.origin, repo.itinerary)
 	}
 }
 

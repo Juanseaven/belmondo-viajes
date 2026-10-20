@@ -53,18 +53,32 @@ type CloseControl struct {
 	MessageID string
 }
 
-// NewTrip es el alta mínima: tres campos y quién la hace.
+// NewTrip es el alta mínima: de dónde sale, a dónde va, cuándo y quién la hace.
 //
 // Es corta a propósito. La lapicera le gana a cualquier formulario en velocidad
 // de entrada; si abrir un viaje costara más que anotarlo en la planilla, la
 // agencia volvería al papel. Todo lo demás —pasajeros, plata, documentos— se
 // carga después y de a poco.
 type NewTrip struct {
-	ContactID   string
+	ContactID string
+	// Destination es el nombre de un viaje sin itinerario; con itinerario, el
+	// nombre se arma con sus destinos.
 	Destination string
-	DepartAt    time.Time
-	ReturnAt    time.Time
-	CreatedBy   string
+	// Origin vacío: sale de Argentina.
+	Origin    string
+	Itinerary []Stop
+	DepartAt  time.Time
+	ReturnAt  time.Time
+	CreatedBy string
+}
+
+// Itinerary es lo que se guarda junto: de dónde sale el viaje y los países por
+// los que pasa. Van juntos porque el origen no puede estar entre los países, y
+// cambiar los dos a la vez no tiene que chocar con el estado intermedio.
+type Itinerary struct {
+	// Origin vacío: no cambia.
+	Origin string
+	Stops  []Stop
 }
 
 // Trip es el expediente tal como sale de la base.
@@ -307,9 +321,13 @@ type TripSummary struct {
 
 type TripDetailData struct {
 	Trip
-	Customer     Customer          `json:"customer"`
-	Itinerary    []Stop            `json:"itinerary"`
-	Requirements []TripRequirement `json:"requirements"`
+	Customer      Customer          `json:"customer"`
+	OriginCountry string            `json:"originCountry"`
+	Itinerary     []Stop            `json:"itinerary"`
+	Requirements  []TripRequirement `json:"requirements"`
+	// Preview es lo que piden los países a un pasaporte argentino, mientras el
+	// viaje no tiene pasajeros. No se guarda: es una vista de las reglas.
+	Preview []evaluacion.PreviewLine `json:"preview,omitempty"`
 	Passengers   []Passenger       `json:"passengers"`
 	Payment      *Payment          `json:"payment,omitempty"`
 	Controls     []Control         `json:"controls"`

@@ -99,6 +99,28 @@ func (m *Module) confirmRequirement(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// withPreview agrega, a un viaje con países y sin pasajeros, lo que esos países
+// piden a un pasaporte argentino. Pedir las reglas también las pone a buscar si
+// no existían. Si falla, la ficha sale igual, sin la vista previa.
+func (m *Module) withPreview(ctx context.Context, d *store.TripDetailData) {
+	if m.rules == nil || len(d.Passengers) > 0 || len(d.Itinerary) == 0 {
+		return
+	}
+	trip := evaluacion.Trip{Origin: d.OriginCountry}
+	for _, s := range d.Itinerary {
+		trip.Itinerary = append(trip.Itinerary, evaluacion.Stop{Country: s.Country, Role: s.Role})
+	}
+	rules := map[reglas.Pair]reglas.Rule{}
+	if pairs := evaluacion.Pairs(trip); len(pairs) > 0 {
+		var err error
+		if rules, err = m.rules.Rules(ctx, pairs); err != nil {
+			m.log.Error("no se pudo leer las reglas de la vista previa", "trip", d.ID, "error", err)
+			return
+		}
+	}
+	d.Preview = evaluacion.Preview(trip, rules)
+}
+
 // withNotice arma el mensaje de «Requisitos migratorios» con lo que falta de
 // cada pasajero, en lugar del texto genérico de la plantilla.
 func withNotice(d *store.TripDetailData) {

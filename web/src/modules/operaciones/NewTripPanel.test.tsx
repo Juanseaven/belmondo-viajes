@@ -18,14 +18,45 @@ it("muestra la ficha editable sin crear una operación al abrir el chat", () => 
   expect(onCreate).not.toHaveBeenCalled();
 });
 
-it("crea la operación al guardar el primer dato del viaje", async () => {
-  const onCreate = vi.fn().mockResolvedValue(undefined);
-  render(<NewTripPanel contactName="Maso" onCreate={onCreate} />);
+const countries = [
+  { code: "AR", name: "Argentina" }, { code: "UY", name: "Uruguay" }, { code: "MX", name: "México" },
+  { code: "PA", name: "Panamá" },
+];
 
-  fireEvent.change(screen.getByLabelText("Destino"), { target: { value: "Iguazú" } });
+it("pide de dónde sale y a dónde va, sin texto libre de destino", () => {
+  render(<NewTripPanel contactName="Maso" countries={countries} onCreate={vi.fn()} />);
+
+  expect((screen.getByLabelText("Sale de") as HTMLSelectElement).value).toBe("AR");
+  expect(screen.getByLabelText("Destino").tagName).toBe("SELECT");
+  expect(screen.queryByPlaceholderText("Sin completar")).toBeNull();
+  expect((screen.getByRole("button", { name: "Guardar viaje" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it("crea la operación con origen, países y fechas en un solo guardado", async () => {
+  const onCreate = vi.fn().mockResolvedValue(undefined);
+  render(<NewTripPanel contactName="Maso" countries={countries} onCreate={onCreate} />);
+
+  fireEvent.change(screen.getByLabelText("Sale de"), { target: { value: "UY" } });
+  fireEvent.change(screen.getByLabelText("Destino"), { target: { value: "MX" } });
+  fireEvent.click(screen.getByRole("button", { name: "Agregar escala" }));
+  fireEvent.change(screen.getByLabelText("Escala"), { target: { value: "PA" } });
+  fireEvent.change(screen.getByLabelText("Salida"), { target: { value: "2026-12-10" } });
   fireEvent.click(screen.getByRole("button", { name: "Guardar viaje" }));
 
-  await waitFor(() => expect(onCreate).toHaveBeenCalledWith({ destination: "Iguazú" }));
+  await waitFor(() => expect(onCreate).toHaveBeenCalledWith({
+    originCountry: "UY", departAt: "2026-12-10",
+    itinerary: [{ country: "MX", role: "destino" }, { country: "PA", role: "escala" }],
+  }));
+});
+
+it("las fechas solas también crean la operación, saliendo de Argentina", async () => {
+  const onCreate = vi.fn().mockResolvedValue(undefined);
+  render(<NewTripPanel contactName="Maso" countries={countries} onCreate={onCreate} />);
+
+  fireEvent.change(screen.getByLabelText("Salida"), { target: { value: "2026-12-10" } });
+  fireEvent.click(screen.getByRole("button", { name: "Guardar viaje" }));
+
+  await waitFor(() => expect(onCreate).toHaveBeenCalledWith({ originCountry: "AR", departAt: "2026-12-10" }));
 });
 
 it("permite que un pasajero sea el primer dato de la operación", async () => {

@@ -18,7 +18,7 @@ func (s *Store) TripDetail(ctx context.Context, tripID string) (store.TripDetail
 	err := s.pool.QueryRow(ctx,
 		`SELECT t.id, t.number, t.customer_id, t.status, coalesce(t.destination, ''), t.depart_at,
 		        t.return_at, coalesce(t.seller_user_id::text, ''), coalesce(su.full_name, ''),
-		        coalesce(cu2.full_name, ''), t.created_at,
+		        coalesce(cu2.full_name, ''), t.created_at, t.origin_country,
 		        cu.id, cu.name, coalesce(cu.email, ''), coalesce(cu.phone_number, ''),
 		        coalesce(cu.document_type, ''), coalesce(cu.document_number, ''), cu.customer_since,
 		        coalesce(array_agg(cc.contact_id::text) FILTER (WHERE cc.contact_id IS NOT NULL), '{}')
@@ -30,7 +30,7 @@ func (s *Store) TripDetail(ctx context.Context, tripID string) (store.TripDetail
 		  WHERE t.id = $1
 		  GROUP BY t.id, cu.id, su.full_name, cu2.full_name`, tripID,
 	).Scan(&d.ID, &d.Number, &d.CustomerID, &d.Status, &d.Destination, &d.DepartAt,
-		&d.ReturnAt, &d.SellerUserID, &d.SellerName, &d.CreatedByName, &d.CreatedAt,
+		&d.ReturnAt, &d.SellerUserID, &d.SellerName, &d.CreatedByName, &d.CreatedAt, &d.OriginCountry,
 		&d.Customer.ID, &d.Customer.Name, &d.Customer.Email, &d.Customer.PhoneNumber,
 		&d.Customer.DocumentType, &d.Customer.DocumentNumber, &d.Customer.CustomerSince,
 		&d.Customer.ContactIDs)

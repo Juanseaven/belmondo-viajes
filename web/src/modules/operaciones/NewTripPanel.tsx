@@ -4,12 +4,15 @@ import { useState } from "react";
 import { ArrowLeft, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { PaymentInput } from "./api";
+import { DEFAULT_ORIGIN, TripRoute, emptyStop, toStops, type StopDraft } from "./TripRoute";
+import type { Country, Stop } from "./types";
 
 type Tab = "resumen" | "pasajeros" | "pagos" | "controles";
-type TripSeed = { destination?: string; departAt?: string; returnAt?: string };
+export type TripSeed = { originCountry?: string; itinerary?: Stop[]; departAt?: string; returnAt?: string };
 
 interface NewTripPanelProps {
   contactName: string;
+  countries?: Country[];
   collapsed?: boolean;
   onClose?: () => void;
   /** Presente cuando el contacto ya tiene un viaje: vuelve a él sin crear nada. */
@@ -19,9 +22,10 @@ interface NewTripPanelProps {
   onSavePayment?: (input: PaymentInput) => Promise<void>;
 }
 
-export function NewTripPanel({ contactName, collapsed, onClose, onCancel, onCreate, onAddPassenger, onSavePayment }: NewTripPanelProps) {
+export function NewTripPanel({ contactName, countries = [], collapsed, onClose, onCancel, onCreate, onAddPassenger, onSavePayment }: NewTripPanelProps) {
   const [tab, setTab] = useState<Tab>("resumen");
-  const [destination, setDestination] = useState("");
+  const [origin, setOrigin] = useState(DEFAULT_ORIGIN);
+  const [stops, setStops] = useState<StopDraft[]>([emptyStop("destino")]);
   const [departAt, setDepartAt] = useState("");
   const [returnAt, setReturnAt] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -30,6 +34,7 @@ export function NewTripPanel({ contactName, collapsed, onClose, onCancel, onCrea
   const [method, setMethod] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
+  const itinerary = toStops(stops);
 
   const save = async (action: () => Promise<void>) => {
     setSaving(true);
@@ -66,18 +71,18 @@ export function NewTripPanel({ contactName, collapsed, onClose, onCancel, onCrea
             <h3>Viaje</h3>
             <form className="trip-details-form" onSubmit={(event) => {
               event.preventDefault();
-              const input: TripSeed = {};
-              if (destination.trim()) input.destination = destination.trim();
+              const input: TripSeed = { originCountry: origin };
+              if (itinerary.length > 0) input.itinerary = itinerary;
               if (departAt) input.departAt = departAt;
               if (returnAt) input.returnAt = returnAt;
               void save(() => onCreate(input));
             }}>
-              <label>Destino<input value={destination} onChange={(event) => setDestination(event.target.value)} placeholder="Sin completar" /></label>
+              <TripRoute origin={origin} stops={stops} countries={countries} onOrigin={setOrigin} onStops={setStops} />
               <div className="trip-date-fields">
                 <label>Salida<input type="date" value={departAt} onChange={(event) => setDepartAt(event.target.value)} /></label>
                 <label>Regreso<input type="date" value={returnAt} onChange={(event) => setReturnAt(event.target.value)} /></label>
               </div>
-              <Button size="sm" type="submit" disabled={saving || (!destination.trim() && !departAt && !returnAt)}>{saving ? "Guardando…" : "Guardar viaje"}</Button>
+              <Button size="sm" type="submit" disabled={saving || (itinerary.length === 0 && !departAt && !returnAt)}>{saving ? "Guardando…" : "Guardar viaje"}</Button>
             </form>
           </section>
           <section className="detail-section">

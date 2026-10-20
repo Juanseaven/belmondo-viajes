@@ -22,6 +22,12 @@ type Store struct{ pool *pgxpool.Pool }
 func New(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 
 func (s *Store) CreateTrip(ctx context.Context, n store.NewTrip) (store.Trip, error) {
+	if n.Origin == "" {
+		n.Origin = "AR"
+	}
+	if err := validItinerary(n.Origin, n.Itinerary); err != nil {
+		return store.Trip{}, err
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return store.Trip{}, err
@@ -35,19 +41,28 @@ func (s *Store) CreateTrip(ctx context.Context, n store.NewTrip) (store.Trip, er
 
 	var t store.Trip
 	err = tx.QueryRow(ctx,
-		`INSERT INTO trips (customer_id, destination, depart_at, return_at,
+		`INSERT INTO trips (customer_id, destination, origin_country, depart_at, return_at,
 		                    seller_user_id, created_by)
-		 VALUES ($1, nullif(btrim($2), ''), nullif($3, '0001-01-01'::date),
-		         nullif($4, '0001-01-01'::date), $5, $5)
+		 VALUES ($1, nullif(btrim($2), ''), $3, nullif($4, '0001-01-01'::date),
+		         nullif($5, '0001-01-01'::date), $6, $6)
 		 RETURNING id, number, customer_id, status, coalesce(destination, ''), depart_at,
 		           return_at, created_at`,
-		customerID, n.Destination, n.DepartAt, n.ReturnAt, n.CreatedBy,
+		customerID, n.Destination, n.Origin, n.DepartAt, n.ReturnAt, n.CreatedBy,
 	).Scan(&t.ID, &t.Number, &t.CustomerID, &t.Status, &t.Destination,
 		&t.DepartAt, &t.ReturnAt, &t.CreatedAt)
 	if err != nil {
 		return store.Trip{}, fmt.Errorf("insertando el viaje: %w", err)
 	}
 	t.SellerUserID = n.CreatedBy
+
+	// Sin países, queda el nombre que vino: el viaje se puede empezar por un
+	// pasajero o un pago, y el itinerario llega después.
+	if len(n.Itinerary) > 0 {
+		if err := writeItinerary(ctx, tx, t.ID, n.Origin, n.Itinerary); err != nil {
+			return store.Trip{}, err
+		}
+		t.Destination = TripName(n.Itinerary)
+	}
 
 	if err := materializeChecklist(ctx, tx, t); err != nil {
 		return store.Trip{}, err

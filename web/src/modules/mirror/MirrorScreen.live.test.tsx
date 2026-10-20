@@ -31,7 +31,7 @@ const activeTrip = {
   destination: "Iguazú", departAt: "2026-09-12", returnAt: "2026-09-15",
   createdAt: "2026-08-20", passengerCount: 0,
   customer: { id: "customer-real", name: "Contacto Real", customerSince: "2026-08-20", contactIds: ["real-contact"] },
-  passengers: [], payment: null, itinerary: [], requirements: [],
+  passengers: [], payment: null, originCountry: "AR", itinerary: [], requirements: [],
   controls: [{ id: "control-real", itemId: "visa", stage: "control" as const, closing: "accion" as const, title: "Avisar por visa", actionLabel: "Avisar al pasajero", message: "Revisemos la visa.", critical: true, status: "abierto" as const, dueAt: "2026-08-19", evidence: [] }],
 };
 
