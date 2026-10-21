@@ -18,6 +18,10 @@ var ErrDuplicate = errors.New("evento duplicado")
 // ErrNotFound se devuelve cuando una fila esperada no existe.
 var ErrNotFound = errors.New("no encontrado")
 
+// ErrMediaAlreadyClaimed evita que una copia atrasada del mismo job vuelva a
+// subir un adjunto que otro worker ya tomó de la cola durable.
+var ErrMediaAlreadyClaimed = errors.New("media ya reclamada")
+
 // EventStore es la barrera de idempotencia y la bitácora forense.
 type EventStore interface {
 	// Insert registra el webhook crudo. Devuelve ErrDuplicate si dedupeKey ya
@@ -100,6 +104,7 @@ type PendingMedia struct {
 	Data         []byte
 	SourceURL    string
 	Attempts     int
+	Claimed      bool // NextPending ya cambió la fila a processing de forma atómica.
 }
 
 // PanelSendTracker distingue los salientes del panel de los del teléfono del

@@ -20,17 +20,26 @@ func NewMedia(db *pgxpool.Pool) *Media { return &Media{db: db} }
 // cola a la vez sin repartirse el mismo trabajo ni bloquearse entre ellas.
 func (m *Media) NextPending(ctx context.Context, limit int) ([]store.PendingMedia, error) {
 	const q = `
-		SELECT ma.id, ma.message_id, i.evolution_name, msg.wa_message_id,
-		       COALESCE(ma.mime_type,''), COALESCE(ma.file_name,''),
-		       COALESCE(ma.source_data, ''::bytea), COALESCE(ma.source_url,''), ma.attempts
-		  FROM media_assets ma
-		  JOIN messages  msg ON msg.id = ma.message_id
-		  JOIN instances i   ON i.id   = msg.instance_id
-		 WHERE ma.storage_status IN ('pending','failed')
-		   AND ma.attempts < 5
-		 ORDER BY ma.created_at
-		 LIMIT $1
-		   FOR UPDATE OF ma SKIP LOCKED`
+		WITH candidates AS (
+			SELECT ma.id
+			  FROM media_assets ma
+			 WHERE (ma.storage_status IN ('pending','failed')
+			        OR (ma.storage_status = 'processing'
+			            AND ma.updated_at < now() - interval '10 minutes'))
+			   AND ma.attempts < 5
+			 ORDER BY ma.created_at
+			 LIMIT $1
+			   FOR UPDATE OF ma SKIP LOCKED
+		)
+		UPDATE media_assets ma
+		   SET storage_status = 'processing', attempts = ma.attempts + 1
+		  FROM candidates c, messages msg, instances i
+		 WHERE ma.id = c.id
+		   AND msg.id = ma.message_id
+		   AND i.id = msg.instance_id
+		RETURNING ma.id, ma.message_id, i.evolution_name, msg.wa_message_id,
+		          COALESCE(ma.mime_type,''), COALESCE(ma.file_name,''),
+		          COALESCE(ma.source_data, ''::bytea), COALESCE(ma.source_url,''), ma.attempts`
 
 	rows, err := m.db.Query(ctx, q, limit)
 	if err != nil {
@@ -45,6 +54,7 @@ func (m *Media) NextPending(ctx context.Context, limit int) ([]store.PendingMedi
 			&p.WAMessageID, &p.MimeType, &p.FileName, &p.Data, &p.SourceURL, &p.Attempts); err != nil {
 			return nil, err
 		}
+		p.Claimed = true
 		out = append(out, p)
 	}
 	return out, rows.Err()
@@ -54,8 +64,11 @@ func (m *Media) MarkProcessing(ctx context.Context, id string) error {
 	const q = `
 		UPDATE media_assets
 		   SET storage_status = 'processing', attempts = attempts + 1
-		 WHERE id = $1`
-	_, err := m.db.Exec(ctx, q, id)
+		 WHERE id = $1 AND storage_status IN ('pending','failed')`
+	tag, err := m.db.Exec(ctx, q, id)
+	if err == nil && tag.RowsAffected() == 0 {
+		return store.ErrMediaAlreadyClaimed
+	}
 	return err
 }
 

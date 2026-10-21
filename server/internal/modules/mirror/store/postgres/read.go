@@ -92,6 +92,9 @@ func scanInbox(row pgx.Row) (store.InboxItem, error) {
 		&it.ContactName, &it.PhoneNumber, &it.AvatarURL,
 		&it.IsGroup, &it.LastMessageAt, &it.Preview, &it.LastType, &it.Unread,
 		&it.NeedsReply)
+	if err == nil {
+		it.AvatarURL = "/api/mirror/conversations/" + it.ID + "/avatar"
+	}
 	return it, err
 }
 

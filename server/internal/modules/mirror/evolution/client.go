@@ -263,6 +263,27 @@ func (c *Client) Contacts(ctx context.Context, instance string) ([]domain.Contac
 	return contacts, nil
 }
 
+// AvatarURL asks Evolution Go for the temporary WhatsApp-hosted profile image
+// visible to a specific linked line.
+func (c *Client) AvatarURL(ctx context.Context, instance, jid string) (string, error) {
+	body := struct {
+		Number  string `json:"number"`
+		Preview bool   `json:"preview"`
+	}{Number: jid, Preview: true}
+	var out struct {
+		Data struct {
+			URL string `json:"URL"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodPost, "/user/avatar", c.instanceToken(instance), body, &out); err != nil {
+		return "", err
+	}
+	if out.Data.URL == "" {
+		return "", fmt.Errorf("Evolution Go no devolvió una URL de avatar")
+	}
+	return out.Data.URL, nil
+}
+
 // Evolution Go needs the original protobuf message, not just its WhatsApp ID,
 // to download media. Inbound media is therefore transported through the
 // webhook's mediaUrl (MinIO) and copied by the media pipeline instead.

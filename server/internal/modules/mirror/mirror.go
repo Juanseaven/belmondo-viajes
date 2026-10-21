@@ -9,6 +9,7 @@ package mirror
 import (
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -47,6 +48,7 @@ type Module struct {
 	upkeep    store.Maintenance
 	contacts  store.ContactStore
 	directory lineDirectory
+	avatars   *AvatarService
 	log       *slog.Logger
 
 	// Escritura.
@@ -62,6 +64,9 @@ type Module struct {
 
 	stopRecovery context.CancelFunc
 	recoveryDone chan struct{}
+
+	stopMediaRecovery context.CancelFunc
+	mediaRecoveryDone chan struct{}
 }
 
 // New cablea el módulo. Construye sus propias dependencias (el cliente de
@@ -97,6 +102,7 @@ func New(k *kernel.Kernel) *Module {
 		upkeep:    postgres.NewMaintenance(k.DB),
 		contacts:  contacts,
 		directory: evo,
+		avatars:   NewAvatarService(outbound, evo, nil),
 		log:       log,
 
 		send:        NewSendService(outbound, panelSends, evo, k.Blobs, cfg.R2SignedURLTTL, log),
@@ -130,6 +136,7 @@ func (m *Module) Mount(r modules.Router) {
 	r.Authed("GET /lines", http.HandlerFunc(m.listLines))
 	r.Authed("GET /conversations", http.HandlerFunc(m.listConversations))
 	r.Authed("GET /conversations/{id}", http.HandlerFunc(m.getConversation))
+	r.Authed("GET /conversations/{id}/avatar", http.HandlerFunc(m.serveAvatar))
 	r.Authed("GET /conversations/{id}/messages", http.HandlerFunc(m.listMessages))
 	r.Authed("POST /conversations/{id}/messages", http.HandlerFunc(m.sendMessage))
 	r.Authed("POST /conversations/{id}/read", http.HandlerFunc(m.markRead))
@@ -144,6 +151,23 @@ func (m *Module) Mount(r modules.Router) {
 	r.Authed("GET /lines/{id}/qr", auth.RequireAdmin(http.HandlerFunc(m.lineQR)))
 }
 
+func (m *Module) serveAvatar(w http.ResponseWriter, r *http.Request) {
+	image, err := m.avatars.Load(r.Context(), r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) || errors.Is(err, ErrAvatarUnavailable) {
+			w.Header().Set("Cache-Control", "private, max-age=900")
+			httpx.NotFound(w, "avatar no disponible")
+			return
+		}
+		httpx.Internal(w, m.log, "no se pudo cargar el avatar", err)
+		return
+	}
+	w.Header().Set("Content-Type", image.ContentType)
+	w.Header().Set("Cache-Control", "private, max-age=21600")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(image.Data)
+}
+
 func (m *Module) Start(ctx context.Context) error {
 	m.mediaSvc.Start(ctx, m.k.Cfg.MediaWorkers)
 	m.pool.Start(ctx)
@@ -153,6 +177,18 @@ func (m *Module) Start(ctx context.Context) error {
 	if err := m.mediaSvc.Requeue(ctx, 200); err != nil {
 		m.log.Warn("no se pudo reencolar el media pendiente", "error", err)
 	}
+	mediaRecoveryCtx, stopMediaRecovery := context.WithCancel(context.WithoutCancel(ctx))
+	m.stopMediaRecovery = stopMediaRecovery
+	m.mediaRecoveryDone = make(chan struct{})
+	go func() {
+		defer close(m.mediaRecoveryDone)
+		runMediaRecoveryLoop(mediaRecoveryCtx, mediaRecoveryInterval, func(loopCtx context.Context) error {
+			if err := m.mediaSvc.Requeue(loopCtx, 200); err != nil && loopCtx.Err() == nil {
+				m.log.Warn("no se pudo reencolar el media pendiente", "error", err)
+			}
+			return nil
+		})
+	}()
 
 	upkeepCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	m.stopUpkeep = cancel
@@ -186,6 +222,15 @@ func (m *Module) refreshLineDirectories(ctx context.Context) {
 // Shutdown drena en el orden que evita perder trabajo: primero el pool de eventos
 // (que produce trabajo de media) y después el pipeline de media.
 func (m *Module) Shutdown(ctx context.Context) error {
+	if m.stopMediaRecovery != nil {
+		m.stopMediaRecovery()
+		select {
+		case <-m.mediaRecoveryDone:
+		case <-ctx.Done():
+			m.log.Warn("el barrido de media no terminó a tiempo; se abandona")
+		}
+	}
+
 	if m.stopRecovery != nil {
 		m.stopRecovery()
 		select {

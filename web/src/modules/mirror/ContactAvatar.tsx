@@ -1,4 +1,9 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { apiBlob } from "@/kernel/api/client";
 import { cn } from "@/lib/utils";
 
 function initials(name: string): string {
@@ -18,9 +23,40 @@ export function ContactAvatar({
   size?: "sm" | "default" | "lg";
   className?: string;
 }) {
+  const internal = src?.startsWith("/api/") ?? false;
+  const [loaded, setLoaded] = useState<{ source: string; url: string }>();
+  const resolvedSrc = internal ? (loaded && loaded.source === src ? loaded.url : undefined) : src;
+
+  useEffect(() => {
+    let active = true;
+    let objectURL: string | undefined;
+
+    if (!src || !src.startsWith("/api/")) {
+      setLoaded(undefined);
+      return () => {
+        active = false;
+      };
+    }
+
+    void apiBlob(src)
+      .then((blob) => {
+        if (!active) return;
+        objectURL = URL.createObjectURL(blob);
+        setLoaded({ source: src, url: objectURL });
+      })
+      .catch(() => {
+        if (active) setLoaded(undefined);
+      });
+
+    return () => {
+      active = false;
+      if (objectURL) URL.revokeObjectURL(objectURL);
+    };
+  }, [src]);
+
   return (
     <Avatar size={size} className={cn("contact-avatar", className)}>
-      {src && <AvatarImage src={src} alt={name} />}
+      {resolvedSrc && <AvatarImage src={resolvedSrc} alt={name} />}
       <AvatarFallback>{initials(name)}</AvatarFallback>
     </Avatar>
   );

@@ -31,7 +31,11 @@ export const token = {
   clear: () => window.localStorage.removeItem(TOKEN_KEY),
 };
 
-export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function authenticatedFetch(
+  path: string,
+  init: RequestInit,
+  defaultJSONContentType: boolean,
+): Promise<Response> {
   const jwt = token.get();
 
   // Con FormData el Content-Type lo tiene que poner el navegador: lleva el
@@ -39,30 +43,44 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   // servidor sin poder separar las partes.
   const isForm = init.body instanceof FormData;
 
-  const res = await fetch(`${API_URL}${path}`, {
+  return fetch(`${API_URL}${path}`, {
     ...init,
     headers: {
-      ...(isForm ? {} : { "Content-Type": "application/json" }),
+      ...(!isForm && defaultJSONContentType ? { "Content-Type": "application/json" } : {}),
       ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}),
       ...init.headers,
     },
   });
+}
+
+async function throwApiError(res: Response): Promise<never> {
+  const body = await res.json().catch(() => null);
+  throw new ApiError(
+    res.status,
+    body?.error?.code ?? "UNKNOWN",
+    body?.error?.message ?? `Error ${res.status}`,
+  );
+}
+
+export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await authenticatedFetch(path, init, true);
 
   if (res.status === 204) return undefined as T;
-
-  const body = await res.json().catch(() => null);
 
   if (!res.ok) {
     // Si el cuerpo no trae la forma esperada (un 502 de un proxy, por ejemplo),
     // se sintetiza un error con la misma forma para que quien llama no tenga que
     // distinguir los dos casos.
-    throw new ApiError(
-      res.status,
-      body?.error?.code ?? "UNKNOWN",
-      body?.error?.message ?? `Error ${res.status}`,
-    );
+    return throwApiError(res);
   }
+  const body = await res.json().catch(() => null);
   return body as T;
+}
+
+export async function apiBlob(path: string, init: RequestInit = {}): Promise<Blob> {
+  const res = await authenticatedFetch(path, init, false);
+  if (!res.ok) return throwApiError(res);
+  return res.blob();
 }
 
 export const apiUrl = API_URL;

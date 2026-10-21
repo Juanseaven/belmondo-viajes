@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -89,11 +90,19 @@ func (s *Service) run(ctx context.Context, id int) {
 }
 
 func (s *Service) process(ctx context.Context, job store.PendingMedia) error {
-	if job.Attempts >= maxAttempts {
+	// NextPending incrementa el intento al reclamar atómicamente. Un job
+	// reclamado con Attempts == maxAttempts todavía debe ejecutar ese último
+	// intento; uno directo, en cambio, aún no fue incrementado.
+	if !job.Claimed && job.Attempts >= maxAttempts {
 		return fmt.Errorf("agotados los %d intentos", maxAttempts)
 	}
-	if err := s.store.MarkProcessing(ctx, job.ID); err != nil {
-		return fmt.Errorf("marcando en proceso: %w", err)
+	if !job.Claimed {
+		if err := s.store.MarkProcessing(ctx, job.ID); err != nil {
+			if errors.Is(err, store.ErrMediaAlreadyClaimed) {
+				return nil
+			}
+			return fmt.Errorf("marcando en proceso: %w", err)
+		}
 	}
 
 	data, mimeType := job.Data, job.MimeType

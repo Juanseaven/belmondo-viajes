@@ -37,7 +37,8 @@ func (e *Events) Insert(ctx context.Context, instance, event, dedupeKey string, 
 func (e *Events) MarkProcessed(ctx context.Context, id int64) error {
 	const q = `
 		UPDATE webhook_events
-		   SET status = 'processed', processed_at = now()
+		   SET status = 'processed', processed_at = now(),
+		       payload = payload #- '{data,Message,base64}' #- '{data,Message,mediaUrl}'
 		 WHERE id = $1`
 	_, err := e.db.Exec(ctx, q, id)
 	return err

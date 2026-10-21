@@ -41,6 +41,55 @@ func TestContactsReturnsTheNamesSavedInTheLineAddressBook(t *testing.T) {
 	}
 }
 
+func TestAvatarURLUsesTheInstanceTokenAndReadsEvolutionURL(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/user/avatar" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		if got, want := r.Header.Get("apikey"), InstanceToken("global-secret", "juanse-abc"); got != want {
+			t.Fatalf("apikey = %q, want %q", got, want)
+		}
+		var body struct {
+			Number  string `json:"number"`
+			Preview bool   `json:"preview"`
+		}
+		decodeRequest(t, r, &body)
+		if body.Number != "5491126437432@s.whatsapp.net" || !body.Preview {
+			t.Fatalf("avatar body = %+v", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"URL":"https://pps.whatsapp.net/avatar.jpg"}}`))
+	}))
+	defer server.Close()
+
+	got, err := New(server.URL, "global-secret", "").AvatarURL(
+		context.Background(), "juanse-abc", "5491126437432@s.whatsapp.net",
+	)
+	if err != nil {
+		t.Fatalf("AvatarURL: %v", err)
+	}
+	if got != "https://pps.whatsapp.net/avatar.jpg" {
+		t.Fatalf("avatar URL = %q", got)
+	}
+}
+
+func TestAvatarURLErrorsWhenEvolutionReturnsNoURL(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"data":{"URL":""}}`))
+	}))
+	defer server.Close()
+
+	if _, err := New(server.URL, "global-secret", "").AvatarURL(
+		context.Background(), "juanse-abc", "5491126437432@s.whatsapp.net",
+	); err == nil {
+		t.Fatal("AvatarURL error = nil, want missing URL error")
+	}
+}
+
 func TestConfigureWebhookUpdatesSubscriptionsForAnExistingLine(t *testing.T) {
 	t.Parallel()
 

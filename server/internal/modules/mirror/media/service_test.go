@@ -52,12 +52,18 @@ func (*mediaBlobsFake) SignedURL(context.Context, string, time.Duration) (string
 }
 func (*mediaBlobsFake) DeletePrefix(context.Context, string) error { return nil }
 
-type mediaStoreFake struct{ storedID string }
+type mediaStoreFake struct {
+	storedID        string
+	processingCalls int
+}
 
 func (*mediaStoreFake) NextPending(context.Context, int) ([]store.PendingMedia, error) {
 	return nil, nil
 }
-func (*mediaStoreFake) MarkProcessing(context.Context, string) error { return nil }
+func (f *mediaStoreFake) MarkProcessing(context.Context, string) error {
+	f.processingCalls++
+	return nil
+}
 func (f *mediaStoreFake) MarkStored(_ context.Context, id, _, _ string, _ int64) error {
 	f.storedID = id
 	return nil
@@ -65,4 +71,21 @@ func (f *mediaStoreFake) MarkStored(_ context.Context, id, _, _ string, _ int64)
 func (*mediaStoreFake) MarkFailed(context.Context, string, string) error { return nil }
 func (*mediaStoreFake) StorageKey(context.Context, string) (string, string, error) {
 	return "", "", nil
+}
+
+func TestProcessDoesNotClaimRecoveredMediaTwice(t *testing.T) {
+	database := &mediaStoreFake{}
+	service := NewService(&mediaDownloaderFake{}, &mediaBlobsFake{}, database, 1,
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	err := service.process(context.Background(), store.PendingMedia{
+		ID: "media-claimed", InstanceName: "juanse", WAMessageID: "WA-CLAIMED",
+		MimeType: "image/jpeg", Data: []byte("image bytes"), Attempts: 5, Claimed: true,
+	})
+	if err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	if database.processingCalls != 0 {
+		t.Fatalf("MarkProcessing calls = %d, want 0", database.processingCalls)
+	}
 }

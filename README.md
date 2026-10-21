@@ -49,6 +49,7 @@ respuesta trae `nextCursor` y se devuelve tal cual en la petición siguiente.
 GET    /lines                          líneas + sin-revisar de cada una
 GET    /conversations                  ?instance= ?q= ?cursor= ?limit=
 GET    /conversations/{id}
+GET    /conversations/{id}/avatar     foto temporal autenticada
 GET    /conversations/{id}/messages    ?before= | ?around=<messageId>
 POST   /conversations/{id}/messages    JSON para texto, multipart con adjunto
 POST   /conversations/{id}/read
@@ -149,6 +150,30 @@ aplica lo que falte, cada archivo en su propia transacción.
 El primer login usa `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`, que solo se
 tienen en cuenta si la tabla `users` está vacía. Después de entrar, cambiá la
 contraseña desde el panel y sacá esas dos líneas del `.env`.
+
+### Activar Cloudflare R2 para los adjuntos
+
+R2 es opcional en desarrollo. Sin configuración, los adjuntos quedan en el
+volumen Docker privado `blobs`; con R2, el backend sigue entregando únicamente
+URLs firmadas y el bucket nunca necesita acceso público.
+
+1. Crear un bucket R2 **privado** y un token S3 limitado a lectura/escritura de
+   ese bucket.
+2. Antes de cambiar el store, hacer una copia puntual del volumen `blobs` si se
+   quieren conservar los adjuntos actuales. El backend no migra objetos entre
+   stores automáticamente: al activar R2, las filas existentes siguen apuntando
+   a claves que todavía sólo existen en el volumen local.
+3. Completar juntas en `.env` `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
+   `R2_SECRET_ACCESS_KEY` y `R2_BUCKET`. No commitear esos valores. Una
+   configuración parcial es inválida y el backend debe rechazarla.
+4. Recrear el backend con `docker compose up -d --build backend` y enviar una
+   imagen nueva por WhatsApp. Abrirla desde el panel confirma tanto el upload
+   como la firma; que el proceso arranque no demuestra que las credenciales
+   puedan operar sobre el bucket.
+
+La copia previa del volumen es una operación deliberada y separada porque los
+objetos actuales pueden contener documentación sensible. No se habilita una
+migración automática ni un bucket público para simplificarla.
 
 ## Dar de alta la línea de un vendedor
 

@@ -905,6 +905,22 @@ func TestConversacionInexistenteDaErrNotFound(t *testing.T) {
 	}
 }
 
+func TestConversationUsesAuthenticatedAvatarEndpoint(t *testing.T) {
+	ctx, p := testDB(t)
+	lineID := seedLine(t, ctx, p, "avatar-line", "Avatar line")
+	contactID := seedContact(t, ctx, p, "5491112345678@s.whatsapp.net", "Ana", "5491112345678")
+	conversationID := seedConversation(t, ctx, p, lineID, contactID, time.Now(), 0)
+
+	conversation, err := NewRead(p).Conversation(ctx, conversationID)
+	if err != nil {
+		t.Fatalf("Conversation: %v", err)
+	}
+	want := "/api/mirror/conversations/" + conversationID + "/avatar"
+	if conversation.AvatarURL != want {
+		t.Fatalf("AvatarURL = %q, want %q", conversation.AvatarURL, want)
+	}
+}
+
 // --- Búsqueda ---------------------------------------------------------------
 
 func TestBusquedaEncuentraYRecorta(t *testing.T) {
