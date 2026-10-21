@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Viajes — propuesta v3</title>
+<style>
+:root{
+  --font:"Segoe UI","Helvetica Neue",Helvetica,Arial,sans-serif;
+  --paper:#fff;--canvas:#f4f4f3;--sunken:#ebebe9;--hair:#e4e4e2;--hair2:#d4d4d1;
+  --ink:#17191c;--ink2:#45484c;--ink3:#6a6e73;--ink4:#9a9da0;
+  --green:#1d7a5f;--green2:#155c47;--gtint:#e8f4ef;--gline:#c6e2d7;
+  --warn:#b0521c;--wtint:#faefe6;--wline:#eed3bf;
+  --late:#b3261e;--ltint:#f9e9e7;--lline:#ecc9c5;
+  --blue:#3c5a85;--btint:#eef1f6;--bline:#d5ddea;
+  --violet:#6a4c93;--vtint:#f2eef8;--vline:#e0d6ee;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font);color:var(--ink);background:#d9dbd9;font-size:14px}
+.page{padding:24px;display:flex;flex-direction:column;gap:20px;width:1488px}
+.intro h1{font-size:20px;font-weight:600;margin:0 0 6px}
+.intro p{margin:0;color:var(--ink2);line-height:1.5;max-width:900px}
+svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+
+.app{width:1440px;display:grid;grid-template-columns:56px minmax(0,1fr);height:820px;background:var(--canvas);border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08),0 12px 32px rgba(0,0,0,.08)}
+.rail{background:#17191c;display:flex;flex-direction:column;align-items:center;padding:12px 0;gap:6px}
+.rail a{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;color:#9ea3a7;position:relative}
+.rail a.on{background:#232629;color:#fff}
+.rail a.on::before{content:"";position:absolute;left:-8px;top:10px;bottom:10px;width:3px;border-radius:2px;background:#35b98d}
+.rail svg{width:20px;height:20px}
+.rail .sp{flex:1}
+
+.main{display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.top{background:var(--paper);border-bottom:1px solid var(--hair);padding:18px 28px 0}
+.top h2{margin:0 0 12px;font-size:22px;font-weight:600}
+.seg{display:flex;gap:24px}
+.seg>span{padding:0 0 10px;font-size:14px;color:var(--ink3);border-bottom:2px solid transparent;display:flex;gap:6px;align-items:center}
+.seg>span.on{color:var(--ink);font-weight:600;border-color:var(--green)}
+.tabcount{font-size:11.5px;min-width:20px;height:20px;border-radius:10px;background:var(--sunken);color:var(--ink2);display:grid;place-items:center;padding:0 6px;font-weight:600}
+.tabcount.bad{background:var(--late);color:#fff}
+.body{padding:20px 28px;overflow:hidden;flex:1}
+
+/* pendientes */
+.cols{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;max-width:1080px}
+.grp h3{margin:0 0 8px;font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
+.grp h3 .sw{width:10px;height:10px;border-radius:3px}
+.grp h3 small{font-weight:400;color:var(--ink3);font-size:13px}
+.list{background:var(--paper);border:1px solid var(--hair);border-radius:8px;overflow:hidden}
+.item{display:grid;grid-template-columns:36px minmax(0,1fr) auto auto;gap:14px;align-items:center;padding:12px 16px;border-top:1px solid var(--hair)}
+.item:first-child{border-top:0}
+.av{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-weight:600;font-size:13px;color:#fff}
+.a1{background:#5b7f95}.a2{background:#a35d7a}.a3{background:#7a8a4e}.a4{background:#8a6a4f}.a5{background:#4f7f74}.a6{background:#6d6a9a}.a7{background:#9a7a3d}
+.item strong{display:block;font-size:14.5px;font-weight:600}
+.item .sub{display:flex;align-items:center;gap:8px;margin-top:3px;color:var(--ink3);font-size:13px;white-space:nowrap;overflow:hidden}
+.item .sub b{font-weight:600;color:var(--ink2)}
+.item .sub svg{width:13px;height:13px}
+.when{font-size:13px;font-weight:600;white-space:nowrap;text-align:right}
+.when small{display:block;font-weight:400;color:var(--ink4);font-size:12px}
+.late{color:var(--late)}.soon{color:var(--warn)}
+.btn{height:32px;padding:0 12px;border-radius:6px;border:1px solid var(--hair2);background:var(--paper);font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px;color:var(--ink);white-space:nowrap}
+.btn.pri{background:var(--green);border-color:var(--green);color:#fff}
+.btn svg{width:15px;height:15px}
+.more{display:inline-flex;height:20px;align-items:center;padding:0 7px;border-radius:4px;background:var(--canvas);border:1px solid var(--hair);font-size:12px;color:var(--ink2)}
+
+/* todos */
+.filters{display:flex;flex-direction:column;gap:12px;margin-bottom:14px}
+.frow{display:flex;gap:10px;align-items:center}
+.search{flex:1;max-width:520px;height:36px;border-radius:8px;background:var(--paper);border:1px solid var(--hair2);display:flex;align-items:center;gap:10px;padding:0 12px;color:var(--ink4)}
+.drop{height:36px;padding:0 12px;border:1px solid var(--hair2);background:var(--paper);border-radius:8px;display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink2)}
+.drop b{font-weight:600;color:var(--ink)}
+.drop svg{width:14px;height:14px;color:var(--ink4)}
+.chip{height:30px;padding:0 12px;border-radius:15px;border:1px solid var(--hair2);background:var(--paper);display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink2)}
+.chip.on{background:var(--gtint);border-color:var(--gline);color:var(--green2);font-weight:600}
+.chip.alert{color:var(--late)}
+.chip.alert i{width:7px;height:7px;border-radius:50%;background:var(--late)}
+.chip em{font-style:normal;color:var(--ink4);font-weight:400}
+.vsep{width:1px;height:20px;background:var(--hair2);margin:0 4px}
+.count{font-size:13px;color:var(--ink3);margin:0 0 8px}
+table{width:100%;border-collapse:separate;border-spacing:0;background:var(--paper);border:1px solid var(--hair);border-radius:8px;overflow:hidden}
+th{text-align:left;font-size:12.5px;font-weight:600;color:var(--ink3);padding:10px 14px;border-bottom:1px solid var(--hair);background:#fafaf9;white-space:nowrap}
+th.r,td.r{text-align:right}
+th svg{width:12px;height:12px;vertical-align:-1px;margin-left:3px}
+td{padding:10px 14px;border-bottom:1px solid var(--hair);vertical-align:middle;font-size:14px}
+tr:last-child td{border-bottom:0}
+tr.hov td{background:#f8f9f8}
+td small{display:block;color:var(--ink3);font-size:12.5px;margin-top:2px}
+.numc{font-variant-numeric:tabular-nums;color:var(--ink3)}
+.who{display:flex;gap:10px;align-items:center}
+.who .av{width:32px;height:32px;font-size:12px}
+.who strong{font-weight:600}
+.tab{font-variant-numeric:tabular-nums}
+.st{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:11px;font-size:12px;font-weight:600;border:1px solid}
+.s-consulta{background:var(--canvas);color:var(--ink2);border-color:var(--hair2)}
+.s-cotizado{background:var(--btint);color:var(--blue);border-color:var(--bline)}
+.s-confirmado{background:var(--gtint);color:var(--green2);border-color:var(--gline)}
+.s-viaje{background:var(--vtint);color:var(--violet);border-color:var(--vline)}
+.s-cerrado{background:transparent;color:var(--ink4);border-color:var(--hair)}
+.dest{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+.next{display:flex;gap:8px;align-items:flex-start}
+.dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none}
+.ok{color:var(--green)}
+.chev{color:var(--ink4)}
+.dim{color:var(--ink4)}
+
+.wrap{display:flex;flex-direction:column;gap:16px}
+.notes{width:1440px;background:var(--paper);border-radius:10px;padding:18px 20px;font-size:13.5px;line-height:1.5;color:var(--ink2)}
+.notes h2{font-size:15px;margin:0 0 10px;color:var(--ink)}
+.notes ol{margin:0;padding-left:20px;columns:2;column-gap:40px}
+.notes li{break-inside:avoid;margin-bottom:10px}
+.notes b{color:var(--ink);font-weight:600}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="intro">
+    <h1>Pantalla Viajes — propuesta v3</h1>
+    <p>Las dos pestañas que ya existen, con el mismo lenguaje de la bandeja: cada viaje se reconoce por la cara del cliente, el estado por su color y lo urgente por el rojo. Abajo de cada una, qué cambia.</p>
+  </div>
+
+  <!-- PENDIENTES -->
+  <div class="wrap">
+  <div class="app">
+    <nav class="rail">
+      <a><svg viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg></a>
+      <a class="on"><svg viewBox="0 0 24 24"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></a>
+      <span class="sp"></span>
+      <a><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg></a>
+    </nav>
+    <div class="main">
+      <div class="top">
+        <h2>Viajes</h2>
+        <div class="seg"><span class="on">Pendientes <span class="tabcount bad">5</span></span><span>Todos los viajes</span></div>
+      </div>
+      <div class="body">
+        <div class="cols">
+          <section class="grp">
+            <h3><span class="sw" style="background:var(--late)"></span>Atrasado <small>2 viajes</small></h3>
+            <div class="list">
+              <div class="item">
+                <div class="av a5">B</div>
+                <div><strong>Revisar orden de nombre y apellido</strong><div class="sub"><b>Beto</b>#4 · Estados Unidos · sale el jue 29 oct <span class="more">y 2 cosas más</span></div></div>
+                <div class="when late">Hace 1 día<small>era para el 20/10</small></div>
+                <span class="btn pri"><svg viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>Abrir chat</span>
+              </div>
+              <div class="item">
+                <div class="av a2">AA</div>
+                <div><strong>Cobrar la seña</strong><div class="sub"><b>Agus Alonso</b>#2 · Cancún · sale el jue 10 dic</div></div>
+                <div class="when late">Hace 3 días<small>era para el 18/10</small></div>
+                <span class="btn pri"><svg viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>Abrir chat</span>
+              </div>
+            </div>
+          </section>
+          <section class="grp">
+            <h3><span class="sw" style="background:var(--warn)"></span>Esta semana <small>3 viajes</small></h3>
+            <div class="list">
+              <div class="item">
+                <div class="av a3">LM</div>
+                <div><strong>Pedir foto del pasaporte</strong><div class="sub"><b>Lucía Méndez</b>#7 · Italia, Francia · sale el sáb 14 nov</div></div>
+                <div class="when soon">Mañana<small>jue 22/10</small></div>
+                <span class="btn pri"><svg viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>Abrir chat</span>
+              </div>
+              <div class="item">
+                <div class="av a6">CR</div>
+                <div><strong>Enviar la cotización</strong><div class="sub"><b>Carlos Ruiz</b>#9 · Brasil · sin fecha de salida</div></div>
+                <div class="when soon">Viernes<small>vie 23/10</small></div>
+                <span class="btn pri"><svg viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>Abrir chat</span>
+              </div>
+              <div class="item">
+                <div class="av a4">MP</div>
+                <div><strong>Confirmar requisitos migratorios</strong><div class="sub"><b>Marta Pérez</b>#5 · Japón · sale el lun 2 nov <span class="more">y 1 cosa más</span></div></div>
+                <div class="when soon">Domingo<small>dom 25/10</small></div>
+                <span class="btn" title="El cliente no tiene ninguna conversación con las líneas de la agencia" style="color:var(--ink4)">Sin chat</span>
+              </div>
+            </div>
+          </section>
+          <section class="grp">
+            <h3><span class="sw" style="background:var(--ink4)"></span>Salen en los próximos 14 días <small>1 viaje, todo listo</small></h3>
+            <div class="list">
+              <div class="item">
+                <div class="av a1">SG</div>
+                <div><strong class="ok">Todo listo</strong><div class="sub"><b>Sofía Gómez</b>#3 · Chile · sale el mar 27 oct · 2 pasajeros</div></div>
+                <div class="when">En 6 días<small>mar 27/10</small></div>
+                <span class="btn"><svg viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>Abrir chat</span>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="notes">
+    <h2>Pendientes: qué cambia</h2>
+    <ol>
+      <li><b>La cara del cliente</b> (o sus iniciales) en cada renglón, como en la bandeja: se reconoce quién es antes de leer.</li>
+      <li><b>El plazo pasa a su propia columna a la derecha</b>, en palabras («Hace 1 día», «Mañana», «Viernes») y con la fecha chica abajo. Hoy va pegado a la tarea y se pierde.</li>
+      <li><b>Cada grupo con su color y cuántos viajes tiene</b>: rojo atrasado, ocre esta semana, gris los que salen.</li>
+      <li><b>El nombre del cliente en negrita</b> dentro de la línea gris, y fechas de salida con día de la semana.</li>
+      <li><b>«y 2 cosas más»</b> como etiqueta chica, para que no se lea como parte del texto.</li>
+      <li><b>El número de la pestaña en rojo</b> cuando hay algo atrasado; en gris si solo hay cosas de la semana.</li>
+    </ol>
+  </div>
+  </div>
+
+  <!-- TODOS -->
+  <div class="wrap">
+  <div class="app">
+    <nav class="rail">
+      <a><svg viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg></a>
+      <a class="on"><svg viewBox="0 0 24 24"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></a>
+      <span class="sp"></span>
+      <a><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg></a>
+    </nav>
+    <div class="main">
+      <div class="top">
+        <h2>Viajes</h2>
+        <div class="seg"><span>Pendientes <span class="tabcount bad">5</span></span><span class="on">Todos los viajes</span></div>
+      </div>
+      <div class="body">
+        <div class="filters">
+          <div class="frow">
+            <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>Buscar por cliente, pasajero, destino o número</div>
+            <span class="drop">Salida: <b>Próximos 30 días</b><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
+            <span class="drop">Vendedor: <b>Todos</b><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
+          </div>
+          <div class="frow">
+            <span class="chip on">Abiertos <em>8</em></span>
+            <span class="chip">Consultas <em>3</em></span>
+            <span class="chip">Cotizados <em>2</em></span>
+            <span class="chip">Confirmados <em>2</em></span>
+            <span class="chip">En viaje <em>1</em></span>
+            <span class="chip">Cerrados <em>14</em></span>
+            <span class="vsep"></span>
+            <span class="chip alert"><i></i>Con algo atrasado</span>
+          </div>
+        </div>
+        <p class="count">8 viajes · ordenados por salida</p>
+        <table>
+          <thead><tr>
+            <th style="width:56px">#</th><th>Cliente</th><th>Destino</th>
+            <th>Salida<svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></th>
+            <th class="r">Total</th><th>Lo que sigue</th><th style="width:36px"></th>
+          </tr></thead>
+          <tbody>
+            <tr><td class="numc">3</td><td><div class="who"><div class="av a1">SG</div><div><strong>Sofía Gómez</strong><small>2 pasajeros · Juanse</small></div></div></td><td><div class="dest">Chile<span class="st s-confirmado">Confirmado</span></div></td><td class="tab">mar 27/10<small>vuelve el 03/11</small></td><td class="r tab">USD 2.480<small class="ok">seña cobrada</small></td><td><div class="next"><span class="dot" style="background:var(--green)"></span><div class="ok">Al día</div></div></td><td class="chev"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></td></tr>
+            <tr class="hov"><td class="numc">4</td><td><div class="who"><div class="av a5">B</div><div><strong>Betoaven</strong><small>1 pasajero · Administrador</small></div></div></td><td><div class="dest">Estados Unidos<span class="st s-consulta">Consulta</span></div></td><td class="tab">jue 29/10<small>vuelve el 07/11</small></td><td class="r tab dim">Sin cotizar</td><td><div class="next"><span class="dot" style="background:var(--late)"></span><div><span class="late">Revisar orden de nombre y apellido</span><small>Hace 1 día</small></div></div></td><td class="chev"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></td></tr>
+            <tr><td class="numc">5</td><td><div class="who"><div class="av a4">MP</div><div><strong>Marta Pérez</strong><small>3 pasajeros · Juanse</small></div></div></td><td><div class="dest">Japón<span class="st s-cotizado">Cotizado</span></div></td><td class="tab">lun 02/11<small>vuelve el 20/11</small></td><td class="r tab">USD 9.150<small class="soon">seña vence el viernes</small></td><td><div class="next"><span class="dot" style="background:var(--warn)"></span><div><span class="soon">Confirmar requisitos migratorios</span><small>Domingo</small></div></div></td><td class="chev"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></td></tr>
+            <tr><td class="numc">7</td><td><div class="who"><div class="av a3">LM</div><div><strong>Lucía Méndez</strong><small>2 pasajeros · Sin asignar</small></div></div></td><td><div class="dest">Italia, Francia<span class="st s-confirmado">Confirmado</span></div></td><td class="tab">sáb 14/11<small>vuelve el 30/11</small></td><td class="r tab">USD 6.300<small class="ok">seña cobrada</small></td><td><div class="next"><span class="dot" style="background:var(--warn)"></span><div><span class="soon">Pedir foto del pasaporte</span><small>Mañana</small></div></div></td><td class="chev"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></td></tr>
+            <tr><td class="numc">2</td><td><div class="who"><div class="av a2">AA</div><div><strong>Agus Alonso</strong><small>4 pasajeros · Administrador</small></div></div></td><td><div class="dest">Cancún<span class="st s-cotizado">Cotizado</span></div></td><td class="tab">jue 10/12<small>vuelve el 17/12</small></td><td class="r tab">USD 5.120<small class="late">seña vencida</small></td><td><div class="next"><span class="dot" style="background:var(--late)"></span><div><span class="late">Cobrar la seña</span><small>Hace 3 días</small></div></div></td><td class="chev"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></td></tr>
+            <tr><td class="numc">9</td><td><div class="who"><div class="av a6">CR</div><div><strong>Carlos Ruiz</strong><small>Sin pasajeros · Juanse</small></div></div></td><td><div class="dest">Brasil<span class="st s-consulta">Consulta</span></div></td><td class="dim">Sin fecha</td><td class="r tab dim">Sin cotizar</td><td><div class="next"><span class="dot" style="background:var(--warn)"></span><div><span class="soon">Enviar la cotización</span><small>Viernes</small></div></div></td><td class="chev"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="notes">
+    <h2>Todos los viajes: qué cambia</h2>
+    <ol>
+      <li><b>Filtros en dos renglones</b>: arriba lo que se escribe o se elige de una lista (buscar, salida, vendedor); abajo los estados como botones con cuántos viajes hay en cada uno. «Con algo atrasado» queda separado, en rojo.</li>
+      <li><b>Los desplegables dicen lo elegido</b> («Salida: Próximos 30 días») en vez de un rótulo arriba y el valor abajo.</li>
+      <li><b>El estado como etiqueta de color</b> debajo del destino: gris consulta, azul cotizado, verde confirmado, violeta en viaje, gris claro cerrado. Los mismos colores que en el panel del viaje.</li>
+      <li><b>Iniciales del cliente</b> al lado del nombre; abajo, cuántos pasajeros con la palabra entera y el vendedor.</li>
+      <li><b>«Lo que sigue» con un punto de color</b> (rojo atrasado, ocre esta semana, verde al día) y el plazo en palabras. Los montos alineados a la derecha, como se lee la plata.</li>
+      <li><b>Lo que falta dice qué falta</b> («Sin cotizar», «Sin fecha») en gris, en vez de una raya. Una raya no dice si es cero, si no se sabe o si no aplica.</li>
+      <li><b>La fila marca que se puede abrir</b>: se resalta al pasar el mouse y tiene una flecha a la derecha. Hoy no hay nada que diga que se puede tocar.</li>
+    </ol>
+  </div>
+  </div>
+</div>
+</body>
+</html>
