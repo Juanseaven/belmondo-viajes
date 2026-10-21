@@ -2,6 +2,8 @@ package requisitos
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"log/slog"
@@ -181,6 +183,35 @@ func TestSiElTextoNoCambioNoSeVuelveAExtraer(t *testing.T) {
 	}
 }
 
+// Cuando la extracción aprende a sacar algo nuevo, las reglas ya guardadas se
+// vuelven a extraer aunque el texto de Wikipedia no haya cambiado.
+func TestUnaExtraccionNuevaVuelveALeerElMismoTexto(t *testing.T) {
+	e := nuevoEscenario(t)
+	_ = e.r.Refresh(context.Background(), canada)
+	text, _ := fuentes.Snippet(pagina(t), mustCountry(t, "CA"))
+	viejo := e.rule(canada)
+	sum := sha256.Sum256([]byte(text)) // como se guardaba antes de versionar la extracción
+	viejo.WikiHash = hex.EncodeToString(sum[:])
+	e.store.rules[canada] = viejo
+	e.now = e.now.Add(8 * 24 * time.Hour)
+
+	if err := e.r.Refresh(context.Background(), canada); err != nil {
+		t.Fatal(err)
+	}
+	if e.claude.calls != 2 {
+		t.Fatalf("extracciones = %d, se esperaba volver a extraer", e.claude.calls)
+	}
+}
+
+func mustCountry(t *testing.T, code string) domain.Country {
+	t.Helper()
+	c, ok := domain.CountryByCode(code)
+	if !ok {
+		t.Fatalf("%s no está en el catálogo", code)
+	}
+	return c
+}
+
 // Un cambio en la fila que tiene menos de 72 horas no se usa: las ediciones
 // malas se suelen revertir antes.
 func TestUnCambioRecienteNoSeUsaHastaQueSobreviva72Horas(t *testing.T) {
@@ -287,7 +318,7 @@ func TestLosConflictosConPassportIndexSeRegistran(t *testing.T) {
 	if got := e.rule(canada); !got.Fields.Visa.Verify {
 		t.Fatalf("visa = %+v, se esperaba verificar", got.Fields.Visa)
 	}
-	if len(e.store.conflicts) != 1 || e.store.conflicts[0].PassportIndex != "visa free" {
+	if len(e.store.conflicts) != 1 || e.store.conflicts[0].Other != "visa free" {
 		t.Fatalf("conflictos = %+v", e.store.conflicts)
 	}
 }

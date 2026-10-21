@@ -73,6 +73,12 @@ type Config struct {
 	// PassportIndexEnabled enciende la segunda opinión sobre la visa. Se apaga
 	// si sus datos quedan viejos y solo generan conflictos.
 	PassportIndexEnabled bool
+	// RequisitosResearch enciende la búsqueda del detalle en páginas oficiales.
+	// Apagada por defecto: cada búsqueda cuesta entre 1 y 3 dólares.
+	RequisitosResearch bool
+	// RequisitosResearchModel es el modelo que busca el detalle en las páginas
+	// oficiales. Vacío: el de por defecto (Opus).
+	RequisitosResearchModel string
 }
 
 func Load() (*Config, error) {
@@ -117,6 +123,9 @@ func Load() (*Config, error) {
 		AnthropicAPIKey:      os.Getenv("ANTHROPIC_API_KEY"),
 		RequisitosContact:    os.Getenv("REQUISITOS_CONTACTO"),
 		PassportIndexEnabled: envBool("REQUISITOS_PASSPORT_INDEX", true),
+
+		RequisitosResearch:      envBool("REQUISITOS_BUSQUEDA_OFICIAL", false),
+		RequisitosResearchModel: os.Getenv("REQUISITOS_MODELO_BUSQUEDA"),
 	}
 
 	// Si WEBHOOK_API_KEY no se define, se usa la de Evolution: es la que esa

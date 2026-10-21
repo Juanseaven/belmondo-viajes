@@ -206,7 +206,7 @@ func TestLaFichaTraeElAvisoDeRequisitosArmado(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if msg := body.Controls[0].Message; !strings.Contains(msg, "para Canadá necesita visa") || !strings.HasPrefix(msg, "Ana") {
+	if msg := body.Controls[0].Message; !strings.Contains(msg, "Para Canadá necesita visa.") || !strings.HasPrefix(msg, "Ana") {
 		t.Fatalf("aviso = %q", msg)
 	}
 	if body.Controls[1].Message != "{pax}, te envío la Flight Plus" {

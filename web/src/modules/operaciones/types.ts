@@ -89,7 +89,27 @@ export interface Stop {
 
 export interface Country { code: string; name: string }
 
-export interface Citation { source: string; quote?: string; url?: string; revision?: string }
+export interface Citation {
+  source: string; quote?: string; url?: string; revision?: string;
+  /** Día en que se leyó una página oficial (AAAA-MM-DD). */
+  readAt?: string;
+}
+
+/** Una frase del detalle; la que sale de una fuente la lleva. */
+export interface DetailLine { text: string; source?: Citation }
+
+/**
+ * Lo que explica un renglón: qué pide el país, el trámite, qué tiene el
+ * pasajero y qué hacer. `oficial` dice si el detalle de las páginas oficiales
+ * todavía se busca o no se encontró.
+ */
+export interface RequirementDetail {
+  pide?: DetailLine[];
+  tramite?: DetailLine[];
+  tiene?: string[];
+  hacer?: string[];
+  oficial?: "buscando" | "sin_datos";
+}
 
 /** Una línea del panel de requisitos: qué cumple, qué falta y qué verificar. */
 export interface Requirement {
@@ -99,8 +119,13 @@ export interface Requirement {
   country?: string;
   role?: "destino" | "escala" | "";
   key: string;
-  status: "cumple" | "falta" | "verificar";
+  /** «aviso» es una recomendación: no es un faltante. */
+  status: "cumple" | "falta" | "verificar" | "aviso";
+  /** El nombre del requisito; el detalle lo explica. */
   text: string;
+  detail?: RequirementDetail;
+  /** La regla del país todavía se está buscando. */
+  searching?: boolean;
   confirmable: boolean;
   confirmed?: boolean;
   missingData?: boolean;
@@ -152,6 +177,8 @@ export interface PreviewLine {
   /** La regla todavía se está buscando. */
   searching?: boolean;
   sources?: Citation[];
+  /** Lo que suman las páginas oficiales: la regla explicada y el trámite. */
+  detail?: RequirementDetail;
 }
 
 export interface TripDetail extends TripSummary {

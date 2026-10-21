@@ -1114,6 +1114,15 @@ p.trip-warn, .trip-note { margin: 8px 0 0; font-size: var(--fs-11); }
 .requirement--cumple .requirement-status { border-color: var(--green); color: var(--green); }
 .requirement--falta .requirement-status { border-color: var(--late-line); color: var(--late); background: var(--late-tint); }
 .requirement--verificar .requirement-status { border-color: var(--warn-line); color: var(--warn-ink); background: var(--warn-tint); }
+/* Una recomendación no es un faltante: sin rojo ni naranja. */
+.requirement--aviso .requirement-status { border-color: var(--hairline-strong); color: var(--ink-2); background: var(--paper, transparent); }
+.requirement-title { display: block; font-weight: 600; }
+/* Pide · Trámite · Tiene · Hacer: etiqueta angosta a la izquierda, el texto ocupa el resto. */
+.requirement-detail { display: grid; gap: 3px; margin: 4px 0 0; }
+.requirement-detail > div { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 6px; }
+.requirement-detail dt { padding-top: 1px; color: var(--ink-3); font-size: var(--fs-11); font-weight: 600; }
+.requirement-detail dd { display: grid; gap: 2px; margin: 0; color: var(--ink-2); line-height: 1.4; overflow-wrap: anywhere; }
+.requirement-body .requirement-sources { margin-top: 4px; overflow-wrap: anywhere; }
 
 @media (max-width: 700px) {
   .trip-inline-form { grid-template-columns: 1fr; }

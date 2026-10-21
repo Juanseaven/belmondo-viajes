@@ -82,12 +82,42 @@ const (
 	VacunaDesdePaisRiesgo = "desde_pais_de_riesgo"
 )
 
+// Condicion es algo más que el país pide para entrar o quedarse y que no entra
+// en los demás campos: registrarse al llegar, mostrar el pasaje de regreso, un
+// seguro…
+type Condicion struct {
+	Kind string `json:"kind"`
+	// Text la dice en español, en infinitivo: «Registrarse en la policía
+	// dentro de las 24 horas de llegar».
+	Text string `json:"text"`
+}
+
+// Los tipos de condición.
+const (
+	CondicionRegistro        = "registro"
+	CondicionPreregistro     = "preregistro"
+	CondicionPasajeRegreso   = "pasaje_regreso"
+	CondicionFondos          = "fondos"
+	CondicionAlojamiento     = "alojamiento"
+	CondicionSeguro          = "seguro"
+	CondicionTarjetaTurista  = "tarjeta_turista"
+	CondicionPuertoDeEntrada = "puerto_de_entrada"
+	CondicionPaginasEnBlanco = "paginas_en_blanco"
+	CondicionOtra            = "otra"
+)
+
+var CondicionKinds = []string{CondicionRegistro, CondicionPreregistro, CondicionPasajeRegreso, CondicionFondos,
+	CondicionAlojamiento, CondicionSeguro, CondicionTarjetaTurista, CondicionPuertoDeEntrada,
+	CondicionPaginasEnBlanco, CondicionOtra}
+
 // Citation es de dónde salió un dato: la fuente, la cita textual y su enlace.
 type Citation struct {
 	Source   string `json:"source"`
 	Quote    string `json:"quote,omitempty"`
 	URL      string `json:"url,omitempty"`
 	Revision string `json:"revision,omitempty"`
+	// ReadAt es el día en que se leyó una página oficial (AAAA-MM-DD).
+	ReadAt string `json:"readAt,omitempty"`
 }
 
 // Fuentes conocidas.
@@ -95,6 +125,9 @@ const (
 	SourceWikipedia     = "wikipedia"
 	SourcePassportIndex = "passport_index"
 	SourceConstante     = "constante"
+	// SourceOficial es una página de gobierno, embajada o consulado que leyó la
+	// búsqueda.
+	SourceOficial = "oficial"
 )
 
 // Field es un dato de la regla. O tiene valor, o está en «verificar» con el
@@ -124,6 +157,9 @@ type Fields struct {
 	EmisionMaxAnios Field[int]        `json:"emisionMaxAnios"`
 	Exenciones      Field[[]Exencion] `json:"exenciones"`
 	Vacunas         Field[[]Vacuna]   `json:"vacunas"`
+	// Condiciones: sin valor ni «verificar» es una regla de antes de que se
+	// extrajeran, que todavía no se volvió a leer.
+	Condiciones Field[[]Condicion] `json:"condiciones"`
 }
 
 // AllVerify es la regla de la que no se sabe nada: todo en «verificar».
@@ -136,6 +172,7 @@ func AllVerify(reason string) Fields {
 		EmisionMaxAnios: verify[int](reason),
 		Exenciones:      verify[[]Exencion](reason),
 		Vacunas:         verify[[]Vacuna](reason),
+		Condiciones:     verify[[]Condicion](reason),
 	}
 }
 
@@ -146,6 +183,9 @@ type Rule struct {
 	Fields    Fields     `json:"fields"`
 	Version   int        `json:"version"`
 	UpdatedAt time.Time  `json:"updatedAt"`
+	// Details es el detalle de las páginas oficiales. Va aparte de los campos:
+	// que cambie la redacción no sube la versión ni invalida confirmaciones.
+	Details Detalles `json:"details"`
 }
 
 // Effective devuelve los campos que valen para evaluar: una regla que todavía

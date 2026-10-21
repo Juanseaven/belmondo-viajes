@@ -26,13 +26,26 @@ type StoredRule struct {
 	// horas: la regla sigue con el texto anterior y se vuelve a mirar cada día.
 	PendingSince *time.Time
 	CheckedAt    *time.Time
+	// Research es la última búsqueda en páginas oficiales que pasó la
+	// comprobación. Nil: nunca se encontró nada.
+	Research *domain.Research
+	// ResearchDueAt es cuándo toca buscar de nuevo. Nil: no se busca (no hay
+	// buscador configurado).
+	ResearchDueAt    *time.Time
+	ResearchFailures int
 }
 
-// Usage es el consumo de una extracción.
+// Usage es el consumo de una extracción o de una búsqueda.
 type Usage struct {
 	Model        string
 	InputTokens  int64
 	OutputTokens int64
+	WebSearches  int64
+	// Lo leído y lo escrito en la caché, que input_tokens no incluye.
+	CacheReadTokens  int64
+	CacheWriteTokens int64
+	// Purpose es «wikipedia» (la extracción) u «oficial» (la búsqueda).
+	Purpose string
 }
 
 // Save es lo que se guarda después de refrescar una regla.

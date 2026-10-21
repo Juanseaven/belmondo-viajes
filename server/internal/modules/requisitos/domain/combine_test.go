@@ -77,9 +77,9 @@ func TestLasCitasFallidasSiempreTiranHaciaLoMasExigente(t *testing.T) {
 // cualquiera de la fila no puede sostener «no requiere visa».
 func TestLaCitaTieneQueDecirLoQueSeExtrajo(t *testing.T) {
 	ex := Extraction{
-		Visa:           Extracted[Visa]{Value: ptr(VisaNoRequiere), Quote: "{{flag|Canada}}"},
-		EstadiaMaxDias: Extracted[int]{Value: ptr(90), Quote: "Visa required"},
-		Documento:      Extracted[Documento]{Value: ptr(DocumentoDNIOPasaporte), Quote: "Visa required"},
+		Visa:      Extracted[Visa]{Value: ptr(VisaNoRequiere), Quote: "{{flag|Canada}}"},
+		Estadia:   Extracted[Estadia]{Value: &Estadia{90, "dias"}, Quote: "Visa required"},
+		Documento: Extracted[Documento]{Value: ptr(DocumentoDNIOPasaporte), Quote: "Visa required"},
 		Exenciones: []ExencionCitada{
 			// El país de la exención tiene que estar en la cita.
 			{Exencion: Exencion{PermitCountry: "GB", Visa: VisaAutorizacionElectronica},
@@ -130,6 +130,136 @@ func TestLasCitasQueSostienenCadaCategoria(t *testing.T) {
 	}
 }
 
+const vigenciaPasaporte = `Countries requiring passports to be valid at least 6 months on arrival include [[Afghanistan]], [[Algeria]].
+
+Other countries require either a passport valid on arrival or passport valid throughout the period of intended stay.`
+
+func TestLaVigenciaSaleDeLaSeccionDePasaportes(t *testing.T) {
+	seisMeses := FromWikipedia(Extraction{Vigencia: Extracted[Vigencia]{
+		Value: &Vigencia{Amount: 6, Unit: "meses", Base: "llegada"},
+		Quote: "Countries requiring passports to be valid at least 6 months on arrival include",
+	}}, vigenciaPasaporte, wiki)
+	if seisMeses.Vigencia.Verify || seisMeses.Vigencia.Value == nil || seisMeses.Vigencia.Value.Amount != 6 {
+		t.Errorf("vigencia = %+v, se esperaban 6 meses", seisMeses.Vigencia)
+	}
+
+	// «Durante toda la estadía» es cero días desde la salida del país.
+	estadia := FromWikipedia(Extraction{Vigencia: Extracted[Vigencia]{
+		Value: &Vigencia{Amount: 0, Unit: "dias", Base: "salida_del_pais"},
+		Quote: "passport valid throughout the period of intended stay",
+	}}, vigenciaPasaporte, wiki)
+	if estadia.Vigencia.Verify || estadia.Vigencia.Value == nil || estadia.Vigencia.Value.Base != "salida_del_pais" {
+		t.Errorf("vigencia = %+v, se esperaba toda la estadía", estadia.Vigencia)
+	}
+
+	// Cero días con una cita que no habla de la estadía no vale.
+	sinSosten := FromWikipedia(Extraction{Vigencia: Extracted[Vigencia]{
+		Value: &Vigencia{Amount: 0, Unit: "dias", Base: "salida_del_pais"},
+		Quote: "Other countries require either a passport valid on arrival",
+	}}, vigenciaPasaporte, wiki)
+	if !sinSosten.Vigencia.Verify {
+		t.Errorf("vigencia = %+v, la cita no dice «toda la estadía»", sinSosten.Vigencia)
+	}
+}
+
+// La columna de estadía dice «3 months», «6 weeks» o «1 year» en muchas filas:
+// se pasa a días y se dice de dónde salió la cuenta.
+func TestLaEstadiaEnMesesSePasaADias(t *testing.T) {
+	fila := "| {{flag|Bahamas}}\n| {{yes|Visa not required}}\n| 3 months\n|\n| {{flag|Kenya}}\n| 6 weeks"
+	casos := []struct {
+		estadia Estadia
+		quote   string
+		dias    int
+	}{
+		{Estadia{3, "meses"}, "3 months", 90},
+		{Estadia{6, "semanas"}, "6 weeks", 42},
+		{Estadia{90, "dias"}, "Visa not required", 0},
+	}
+	for _, c := range casos {
+		got := FromWikipedia(Extraction{Estadia: Extracted[Estadia]{Value: &c.estadia, Quote: c.quote}}, fila, wiki)
+		if c.dias == 0 {
+			if !got.EstadiaMaxDias.Verify {
+				t.Errorf("%+v con %q: la cita no tiene el número, debería quedar en verificar", c.estadia, c.quote)
+			}
+			continue
+		}
+		if got.EstadiaMaxDias.Value == nil || *got.EstadiaMaxDias.Value != c.dias {
+			t.Errorf("%+v = %+v, se esperaban %d días", c.estadia, got.EstadiaMaxDias, c.dias)
+		}
+		if !strings.Contains(got.EstadiaMaxDias.Reason, c.quote) {
+			t.Errorf("motivo = %q, debería decir de dónde sale la cuenta", got.EstadiaMaxDias.Reason)
+		}
+	}
+}
+
+const filaCuba = `| {{flag|Cuba}}
+| {{yes2|Tourist card required}}
+| 30 days
+|
+* Cuba requires travelers to purchase a tourist card prior to arrival, which can be obtained from the airline or a Cuban diplomatic mission.
+* Cuba requires travelers to have health insurance valid in Cuba, which can be purchased from the airline.
+* Registration with the local police within 24 hours of arrival is mandatory.`
+
+func TestLasCondicionesDeLasNotasSeGuardanConSuCita(t *testing.T) {
+	ex := Extraction{Condiciones: []CondicionCitada{
+		{Condicion: Condicion{Kind: CondicionSeguro, Text: "Tener seguro médico válido en Cuba"},
+			Quote: "Cuba requires travelers to have health insurance valid in Cuba"},
+		{Condicion: Condicion{Kind: CondicionTarjetaTurista, Text: "Comprar la tarjeta turista antes de llegar"},
+			Quote: "purchase a tourist card prior to arrival"},
+		{Condicion: Condicion{Kind: CondicionRegistro, Text: "Registrarse en la policía dentro de las 24 horas de llegar"},
+			Quote: "Registration with the local police within 24 hours of arrival is mandatory."},
+	}}
+
+	got := FromWikipedia(ex, filaCuba, wiki)
+
+	if got.Condiciones.Verify || got.Condiciones.Value == nil || len(*got.Condiciones.Value) != 3 {
+		t.Fatalf("condiciones = %+v", got.Condiciones)
+	}
+	if len(got.Condiciones.Sources) != 3 || got.Condiciones.Sources[1].Quote != "purchase a tourist card prior to arrival" {
+		t.Errorf("fuentes = %+v, una por condición y en orden", got.Condiciones.Sources)
+	}
+}
+
+// Una condición exige algo: si su cita falla, el campo queda en verificar,
+// como las vacunas.
+func TestUnaCondicionSinSostenDejaLasCondicionesEnVerificar(t *testing.T) {
+	casos := map[string]CondicionCitada{
+		"cita inventada": {Condicion: Condicion{Kind: CondicionSeguro, Text: "Tener seguro"},
+			Quote: "travel insurance is mandatory"},
+		"la cita no habla de eso": {Condicion: Condicion{Kind: CondicionFondos, Text: "Mostrar fondos"},
+			Quote: "Registration with the local police"},
+		"texto con un enlace": {Condicion: Condicion{Kind: CondicionOtra, Text: "Pagar en https://example.com"},
+			Quote: "Registration with the local police"},
+	}
+	for name, c := range casos {
+		got := FromWikipedia(Extraction{Condiciones: []CondicionCitada{c}}, filaCuba, wiki)
+		if !got.Condiciones.Verify {
+			t.Errorf("%s: condiciones = %+v, debería quedar en verificar", name, got.Condiciones)
+		}
+	}
+}
+
+func TestLaVacunaParaQuienesVienenDePaisesEndemicosEsPorPaisDeRiesgo(t *testing.T) {
+	quote := "Travellers from polio-endemic countries (Pakistan) need [[Carte Jaune]] proof of polio vaccination"
+	got := FromWikipedia(Extraction{Vacunas: []VacunaCitada{{
+		Vacuna: Vacuna{Name: "poliomielitis", Scope: VacunaDesdePaisRiesgo}, Quote: quote}}}, quote, wiki)
+	if got.Vacunas.Verify {
+		t.Fatalf("vacunas = %+v", got.Vacunas)
+	}
+}
+
+func TestUnaVacunaSinSostenNoSeLlevaLasCondiciones(t *testing.T) {
+	ex := Extraction{
+		Vacunas: []VacunaCitada{{Vacuna: Vacuna{Name: "fiebre amarilla", Scope: VacunaParaTodos}, Quote: "inventada"}},
+		Condiciones: []CondicionCitada{{Condicion: Condicion{Kind: CondicionSeguro, Text: "Tener seguro médico válido en Cuba"},
+			Quote: "Cuba requires travelers to have health insurance valid in Cuba"}},
+	}
+	got := FromWikipedia(ex, filaCuba, wiki)
+	if !got.Vacunas.Verify || got.Condiciones.Value == nil || len(*got.Condiciones.Value) != 1 {
+		t.Fatalf("vacunas = %+v, condiciones = %+v", got.Vacunas, got.Condiciones)
+	}
+}
+
 func TestLoQueWikipediaNoDiceQuedaEnVerificarSiEsExigible(t *testing.T) {
 	got := FromWikipedia(Extraction{}, filaCanada, wiki)
 
@@ -140,8 +270,9 @@ func TestLoQueWikipediaNoDiceQuedaEnVerificarSiEsExigible(t *testing.T) {
 	if got.EstadiaMaxDias.Verify || got.EstadiaMaxDias.Value != nil || got.EmisionMaxAnios.Verify {
 		t.Errorf("estadía o emisión sin dato no deberían exigir nada: %+v / %+v", got.EstadiaMaxDias, got.EmisionMaxAnios)
 	}
-	if got.Exenciones.Value == nil || len(*got.Exenciones.Value) != 0 || got.Vacunas.Value == nil || len(*got.Vacunas.Value) != 0 {
-		t.Errorf("listas vacías son «no hay»: %+v / %+v", got.Exenciones, got.Vacunas)
+	if got.Exenciones.Value == nil || len(*got.Exenciones.Value) != 0 || got.Vacunas.Value == nil || len(*got.Vacunas.Value) != 0 ||
+		got.Condiciones.Value == nil || len(*got.Condiciones.Value) != 0 {
+		t.Errorf("listas vacías son «no hay»: %+v / %+v / %+v", got.Exenciones, got.Vacunas, got.Condiciones)
 	}
 }
 
@@ -273,5 +404,27 @@ func TestBuscandoYSinFuentesNoSabenNada(t *testing.T) {
 		if !f.Visa.Verify || !f.Documento.Verify {
 			t.Errorf("%s: %+v", status, f)
 		}
+	}
+}
+
+// Estados Unidos pide 6 meses de vigencia después de la estadía, salvo a los
+// países de la lista de la CBP, que solo necesitan el pasaporte vigente
+// durante la estadía. Es una regla fija, con su fuente.
+func TestEstadosUnidosPideSeisMesesSalvoALaListaDeExceptuados(t *testing.T) {
+	ar, _ := Combine(Pair{Nationality: "AR", Country: "US"}, Fields{Vigencia: verify[Vigencia]("x")}, nil)
+	v := ar.Vigencia
+	if v.Verify || v.Value == nil || v.Value.Amount != 0 || v.Value.Base != "salida_del_pais" ||
+		len(v.Sources) != 1 || v.Sources[0].Source != SourceConstante || !strings.Contains(v.Reason, "exceptuad") {
+		t.Fatalf("argentino: %+v", v)
+	}
+
+	cn, _ := Combine(Pair{Nationality: "CN", Country: "US"}, Fields{}, nil)
+	if v := cn.Vigencia; v.Value == nil || v.Value.Amount != 6 || v.Value.Unit != "meses" || v.Value.Base != "salida_del_pais" {
+		t.Fatalf("chino: %+v", v)
+	}
+
+	// A otro destino no se aplica.
+	if br, _ := Combine(Pair{Nationality: "CN", Country: "BR"}, Fields{Vigencia: verify[Vigencia]("x")}, nil); !br.Vigencia.Verify {
+		t.Fatalf("Brasil: %+v", br.Vigencia)
 	}
 }

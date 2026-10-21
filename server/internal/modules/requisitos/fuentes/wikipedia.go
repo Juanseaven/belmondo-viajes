@@ -54,11 +54,7 @@ func (w *Wikipedia) Revision(ctx context.Context, title string, at time.Time) (R
 	if err != nil {
 		return Revision{}, err
 	}
-	agent := "viajes-crm/1.0"
-	if w.Contact != "" {
-		agent += " (" + w.Contact + ")"
-	}
-	req.Header.Set("User-Agent", agent)
+	req.Header.Set("User-Agent", userAgent(w.Contact))
 
 	resp, err := w.HTTP.Do(req)
 	if err != nil {
@@ -103,7 +99,8 @@ func (w *Wikipedia) Revision(ctx context.Context, title string, at time.Time) (R
 
 // Snippet recorta de la página de una nacionalidad lo que importa para un país:
 // su fila en la tabla de visas, la sección de documentos que reemplazan al
-// pasaporte y sus filas en las tablas de vacunación.
+// pasaporte, la de vigencia del pasaporte y sus filas en las tablas de
+// vacunación.
 //
 // El recorte es lo que se compara para la espera de 72 horas y lo que lee
 // Claude: una edición en la fila de otro país no lo cambia.
@@ -119,6 +116,12 @@ func Snippet(wikitext string, c domain.Country) (string, bool) {
 	if dni := section(wikitext, "===Passport not required==="); dni != "" {
 		b.WriteString("\n\nDocumentos aceptados en lugar del pasaporte:\n===Passport not required===\n")
 		b.WriteString(strings.TrimSpace(dni))
+	}
+	// La vigencia no está en la fila: la página la da en una lista general,
+	// por meses, con una frase para los países que no están en ninguna.
+	if vigencia := section(wikitext, "===Passport validity length==="); vigencia != "" {
+		b.WriteString("\n\nVigencia del pasaporte:\n===Passport validity length===\n")
+		b.WriteString(strings.TrimSpace(vigencia))
 	}
 	if vacunas := vaccinationRows(section(wikitext, "==Vaccination requirements=="), c); vacunas != "" {
 		b.WriteString("\n\nVacunación:\n")
@@ -216,4 +219,13 @@ func vaccinationRows(sectionText string, c domain.Country) string {
 		}
 	}
 	return strings.TrimSpace(b.String())
+}
+
+// userAgent identifica al sistema ante los sitios que consulta, con un
+// contacto si está configurado.
+func userAgent(contact string) string {
+	if contact == "" {
+		return "viajes-crm/1.0"
+	}
+	return "viajes-crm/1.0 (" + contact + ")"
 }

@@ -65,6 +65,26 @@ func TestElRecorteTraeLasVacunasDelPais(t *testing.T) {
 	}
 }
 
+// La vigencia del pasaporte no está en la fila sino en una sección aparte, con
+// listas de países por meses y una frase para los que no están en ninguna.
+func TestElRecorteTraeLaVigenciaDelPasaporte(t *testing.T) {
+	text, ok := Snippet(page(t), country(t, "US"))
+	if !ok {
+		t.Fatal("Estados Unidos está en la tabla")
+	}
+	for _, want := range []string{
+		"Countries requiring passports to be valid at least 6 months on arrival include",
+		"Other countries require either a passport valid on arrival or passport valid throughout the period of intended stay.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("falta %q en el recorte:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "Medical passport") {
+		t.Error("el recorte trae la sección siguiente")
+	}
+}
+
 func TestSinCodigoLaFilaSeBuscaPorNombre(t *testing.T) {
 	wikitext := "==Visa requirements==\n{|\n|-\n| {{flag|Georgia}}\n| {{yes|Visa not required}}\n| 365 days\n|-\n| {{flag|Germany}}\n| {{yes|Visa not required}}\n|}\n"
 	text, ok := Snippet(wikitext, country(t, "GE"))

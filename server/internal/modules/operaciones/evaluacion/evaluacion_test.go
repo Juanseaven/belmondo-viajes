@@ -97,7 +97,7 @@ func TestElDNIArgentinoCumpleEnBrasilYFaltaEnEstadosUnidos(t *testing.T) {
 
 	us := Evaluate(viaje("US", ana(dni)), rules, nil)
 	r := find(t, us, "ana", "US", KeyDocumento)
-	if r.Status != Falta || !strings.Contains(r.Text, "pasaporte") || r.Confirmable {
+	if r.Status != Falta || !strings.Contains(said(r), "pasaporte") || r.Confirmable {
 		t.Errorf("EE.UU. con DNI: %+v", r)
 	}
 }
@@ -117,7 +117,7 @@ func TestCanadaPideVisaSalvoExencionPorVisaDeEstadosUnidos(t *testing.T) {
 	visaUS := Permit{Kind: "visa", Country: "US", ExpiresAt: d("2032-01-01")}
 	conVisaUS := Evaluate(viaje("CA", ana(pasaporteAR, visaUS)), rules, nil)
 	r := find(t, conVisaUS, "ana", "CA", KeyVisa)
-	if r.Status != Falta || !strings.Contains(r.Text, "autorización electrónica") {
+	if r.Status != Falta || !strings.Contains(said(r), "autorización electrónica") {
 		t.Fatalf("con visa de EE.UU. y sin eTA: %+v, debería pedir la autorización electrónica", r)
 	}
 
@@ -139,7 +139,7 @@ func TestUnaVisaQueVenceDuranteElViajeNoAlcanza(t *testing.T) {
 	visa := Permit{Kind: "visa", Country: "US", ExpiresAt: d("2026-12-15")}
 
 	r := find(t, Evaluate(viaje("US", ana(pasaporteAR, visa)), rules, nil), "ana", "US", KeyVisa)
-	if r.Status != Falta || !strings.Contains(r.Text, "15/12/2026") {
+	if r.Status != Falta || !strings.Contains(said(r), "15/12/2026") {
 		t.Fatalf("visa que vence en el viaje: %+v", r)
 	}
 }
@@ -157,7 +157,7 @@ func TestLaDobleNacionalidadSeEvaluaConElDocumentoDeViaje(t *testing.T) {
 		t.Fatalf("combinaciones = %v", pairs)
 	}
 	r := find(t, Evaluate(trip, rules, nil), "ana", "US", KeyVisa)
-	if r.Status != Falta || !strings.Contains(r.Text, "autorización electrónica") {
+	if r.Status != Falta || !strings.Contains(said(r), "autorización electrónica") {
 		t.Fatalf("italiano a EE.UU.: %+v", r)
 	}
 }
@@ -170,7 +170,7 @@ func TestSchengenMideVigenciaYAntiguedadDelPasaporte(t *testing.T) {
 
 	corto := &Document{Type: "Pasaporte", Country: "AR", IssuedAt: d("2020-01-01"), ExpiresAt: d("2027-02-20")}
 	r := find(t, Evaluate(viaje("ES", ana(corto)), rules, nil), "ana", "ES", KeyVigencia)
-	if r.Status != Falta || !strings.Contains(r.Text, "24/03/2027") {
+	if r.Status != Falta || !strings.Contains(said(r), "24/03/2027") {
 		t.Fatalf("vence 2 meses después de salir: %+v", r)
 	}
 
@@ -181,7 +181,7 @@ func TestSchengenMideVigenciaYAntiguedadDelPasaporte(t *testing.T) {
 
 	sinEmision := &Document{Type: "Pasaporte", Country: "AR", ExpiresAt: d("2031-01-01")}
 	r = find(t, Evaluate(viaje("ES", ana(sinEmision)), rules, nil), "ana", "ES", KeyAntiguedad)
-	if r.Status != Falta || r.Confirmable || !strings.Contains(r.Text, "emisión") {
+	if r.Status != Falta || r.Confirmable || !strings.Contains(said(r), "emisión") {
 		t.Fatalf("sin fecha de emisión: %+v", r)
 	}
 
@@ -196,7 +196,7 @@ func TestUnCampoEnVerificarNuncaCumple(t *testing.T) {
 	rules := regla("AR", "JP", func(f *reglas.Fields) { f.Visa = verificar[reglas.Visa]("las fuentes no coinciden") })
 
 	r := find(t, Evaluate(viaje("JP", ana(pasaporteAR)), rules, nil), "ana", "JP", KeyVisa)
-	if r.Status != Verificar || !r.Confirmable || !strings.Contains(r.Text, "no coinciden") {
+	if r.Status != Verificar || !r.Confirmable || !strings.Contains(said(r), "no coinciden") {
 		t.Fatalf("visa en verificar: %+v", r)
 	}
 }
@@ -204,7 +204,7 @@ func TestUnCampoEnVerificarNuncaCumple(t *testing.T) {
 // Una regla que todavía se busca no sabe nada: todo queda en verificar.
 func TestSinReglaTodoQuedaEnVerificar(t *testing.T) {
 	reqs := Evaluate(viaje("JP", ana(pasaporteAR)), map[reglas.Pair]reglas.Rule{}, nil)
-	if r := find(t, reqs, "ana", "JP", KeyVisa); r.Status != Verificar || !strings.Contains(r.Text, "buscando") {
+	if r := find(t, reqs, "ana", "JP", KeyVisa); r.Status != Verificar || !strings.Contains(said(r), "buscando") {
 		t.Fatalf("sin regla: %+v", r)
 	}
 }
@@ -213,7 +213,7 @@ func TestQuienCumple18DuranteElViajeSaleSiendoMenor(t *testing.T) {
 	menor := ana(pasaporteAR)
 	menor.Minor = true
 	r := find(t, Evaluate(viaje("BR", menor), regla("AR", "BR", nil), nil), "ana", "", KeyMenor)
-	if r.Status != Falta || !r.Confirmable || !strings.Contains(r.Text, "autorización") {
+	if r.Status != Falta || !r.Confirmable || !strings.Contains(said(r), "autorización") {
 		t.Fatalf("menor: %+v", r)
 	}
 	if has(Evaluate(viaje("BR", ana(pasaporteAR)), regla("AR", "BR", nil), nil), "ana", "", KeyMenor) {
@@ -240,7 +240,7 @@ func TestUnaEscalaEnUnPaisQuePideVisaQuedaEnVerificar(t *testing.T) {
 
 	reqs := Evaluate(trip, rules, nil)
 	r := find(t, reqs, "ana", "US", KeyTransito)
-	if r.Status != Verificar || !strings.Contains(r.Text, "tránsito") {
+	if r.Status != Verificar || !strings.Contains(said(r), "tránsito") {
 		t.Fatalf("escala en EE.UU.: %+v", r)
 	}
 	// En una escala solo se mira el tránsito.
@@ -306,13 +306,13 @@ func TestSinItinerarioNiDocumentoFaltaCargarlos(t *testing.T) {
 func TestVisaALaLlegadaCumpleYNoAdmitidoFalta(t *testing.T) {
 	llegada := regla("AR", "EG", func(f *reglas.Fields) { f.Visa = field(reglas.VisaALaLlegada) })
 	if r := find(t, Evaluate(viaje("EG", ana(pasaporteAR)), llegada, nil), "ana", "EG", KeyVisa); r.Status != Cumple ||
-		!strings.Contains(r.Text, "al llegar") {
+		!strings.Contains(said(r), "al llegar") {
 		t.Fatalf("visa a la llegada: %+v", r)
 	}
 
 	prohibido := regla("AR", "KP", func(f *reglas.Fields) { f.Visa = field(reglas.VisaNoAdmitido) })
 	r := find(t, Evaluate(viaje("KP", ana(pasaporteAR)), prohibido, nil), "ana", "KP", KeyVisa)
-	if r.Status != Falta || r.Confirmable || !strings.Contains(r.Text, "no admite") {
+	if r.Status != Falta || r.Confirmable || !strings.Contains(said(r), "no admite") {
 		t.Fatalf("no admitido: %+v", r)
 	}
 }
@@ -332,8 +332,75 @@ func TestLaEstadiaQueSePasaDelMaximoFalta(t *testing.T) {
 	trip.ReturnAt = d("2027-02-10")
 
 	r := find(t, Evaluate(trip, rules, nil), "ana", "TH", KeyEstadia)
-	if r.Status != Falta || !strings.Contains(r.Text, "30") {
+	if r.Status != Falta || !strings.Contains(said(r), "30") {
 		t.Fatalf("estadía larga: %+v", r)
+	}
+}
+
+func condiciones(cs ...reglas.Condicion) reglas.Field[[]reglas.Condicion] {
+	f := field(cs)
+	f.Sources = nil
+	for i := range cs {
+		f.Sources = append(f.Sources, reglas.Citation{Source: reglas.SourceWikipedia, Quote: "cita " + cs[i].Kind})
+	}
+	return f
+}
+
+// Las condiciones de las notas: lo que el pasajero tiene que tener o hacer
+// falta hasta que alguien lo confirme y va al aviso del cliente; el pasaje de
+// regreso cumple si el viaje tiene regreso; el puerto de entrada lo revisa la
+// agencia contra los vuelos.
+func TestLasCondicionesDelPaisSeEvaluanSegunQueSon(t *testing.T) {
+	rules := regla("AR", "CU", func(f *reglas.Fields) {
+		f.Condiciones = condiciones(
+			reglas.Condicion{Kind: reglas.CondicionSeguro, Text: "Tener seguro médico válido en Cuba"},
+			reglas.Condicion{Kind: reglas.CondicionPasajeRegreso, Text: "Mostrar el pasaje de regreso"},
+			reglas.Condicion{Kind: reglas.CondicionPuertoDeEntrada, Text: "Entrar por el aeropuerto de La Habana"},
+			reglas.Condicion{Kind: reglas.CondicionOtra, Text: "Declarar la moneda extranjera"},
+			reglas.Condicion{Kind: reglas.CondicionOtra, Text: "Llevar el formulario D'Viajeros"},
+		)
+	})
+	reqs := Evaluate(viaje("CU", ana(pasaporteAR)), rules, nil)
+
+	otra := find(t, reqs, "ana", "CU", "condicion:otra")
+	if otra.Status != Falta || !otra.Confirmable || !strings.Contains(said(otra), "Para Cuba hay que declarar la moneda extranjera") ||
+		!strings.Contains(otra.ClientText, "declarar la moneda") {
+		t.Errorf("otra: %+v", otra)
+	}
+	if len(otra.Sources) != 1 || otra.Sources[0].Quote != "cita otra" {
+		t.Errorf("cada condición lleva su cita: %+v", otra.Sources)
+	}
+	// La agencia emite asistencia médica en todos los viajes: el seguro es
+	// tarea suya, no del cliente.
+	if r := find(t, reqs, "ana", "CU", "condicion:seguro"); r.Status != Verificar || !r.Confirmable || r.ClientText != "" ||
+		!strings.Contains(said(r), "asistencia") {
+		t.Errorf("seguro: %+v", r)
+	}
+	if r := find(t, reqs, "ana", "CU", "condicion:pasaje_regreso"); r.Status != Cumple || !strings.Contains(said(r), "24/12/2026") {
+		t.Errorf("pasaje de regreso: %+v", r)
+	}
+	if r := find(t, reqs, "ana", "CU", "condicion:puerto_de_entrada"); r.Status != Verificar || !r.Confirmable || r.ClientText != "" {
+		t.Errorf("puerto de entrada: %+v", r)
+	}
+	// Dos condiciones del mismo tipo no comparten clave.
+	if !has(reqs, "ana", "CU", "condicion:otra") || !has(reqs, "ana", "CU", "condicion:otra:2") {
+		t.Errorf("las dos «otra»: %+v", reqs)
+	}
+
+	sinRegreso := viaje("CU", ana(pasaporteAR))
+	sinRegreso.ReturnAt = nil
+	if r := find(t, Evaluate(sinRegreso, rules, nil), "ana", "CU", "condicion:pasaje_regreso"); r.Status != Falta {
+		t.Errorf("sin regreso cargado: %+v", r)
+	}
+}
+
+func TestCondicionesQueNoSeSabenQuedanEnVerificar(t *testing.T) {
+	rules := regla("AR", "CU", func(f *reglas.Fields) {
+		f.Condiciones = verificar[[]reglas.Condicion]("la cita no aparece en Wikipedia")
+	})
+	r := find(t, Evaluate(viaje("CU", ana(pasaporteAR)), rules, nil), "ana", "CU", KeyCondiciones)
+	if r.Status != Verificar || !strings.Contains(said(r), "la cita no aparece") {
+		t.Fatalf("condiciones: %+v", r)
 	}
 }
 
@@ -348,14 +415,14 @@ func TestLasVacunasExigidasSeConfirman(t *testing.T) {
 	if fa.Status != Falta || !fa.Confirmable || polio.Status != Verificar || !polio.Confirmable {
 		t.Fatalf("vacunas: %+v / %+v", fa, polio)
 	}
-	if !strings.Contains(polio.Text, "sale de Argentina") {
-		t.Errorf("la vacuna por país de riesgo nombra el origen: %q", polio.Text)
+	if !strings.Contains(said(polio), "sale de Argentina") {
+		t.Errorf("la vacuna por país de riesgo nombra el origen: %q", said(polio))
 	}
 
 	trip := viaje("AO", ana(pasaporteAR))
 	trip.Origin = "PE"
 	polio = find(t, Evaluate(trip, rules, nil), "ana", "AO", "vacuna:poliomielitis")
-	if polio.Status != Verificar || !strings.Contains(polio.Text, "sale de Perú") {
+	if polio.Status != Verificar || !strings.Contains(said(polio), "sale de Perú") {
 		t.Fatalf("saliendo de Perú: %+v", polio)
 	}
 }

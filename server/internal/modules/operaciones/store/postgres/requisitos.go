@@ -49,12 +49,17 @@ func (s *Store) SaveRequirements(ctx context.Context, tripID string, reqs []eval
 		if r.Sources == nil {
 			sources = []byte("[]")
 		}
+		detail, err := json.Marshal(r.Detail)
+		if err != nil {
+			return err
+		}
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO trip_requirements (trip_id, position, passenger_id, country, role, key, status, text,
-			                                client_text, confirmable, confirmed, missing_data, sources, field_hash)
-			 VALUES ($1, $2, nullif($3, '')::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+			                                client_text, confirmable, confirmed, missing_data, sources, field_hash,
+			                                detail, searching)
+			 VALUES ($1, $2, nullif($3, '')::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
 			tripID, i, r.PassengerID, r.Country, r.Role, r.Key, r.Status, r.Text, r.ClientText,
-			r.Confirmable, r.Confirmed, r.MissingData, sources, r.FieldHash); err != nil {
+			r.Confirmable, r.Confirmed, r.MissingData, sources, r.FieldHash, detail, r.Searching); err != nil {
 			return writeError("guardando la evaluación", err)
 		}
 	}
@@ -67,7 +72,7 @@ func (s *Store) SaveRequirements(ctx context.Context, tripID string, reqs []eval
 func readRequirements(ctx context.Context, q querier, tripID string) ([]store.TripRequirement, error) {
 	rows, err := q.Query(ctx,
 		`SELECT coalesce(r.passenger_id::text, ''), r.country, r.role, r.key, r.status, r.text, r.client_text,
-		        r.confirmable, r.confirmed, r.missing_data, r.sources, r.field_hash,
+		        r.confirmable, r.confirmed, r.missing_data, r.sources, r.field_hash, r.detail, r.searching,
 		        coalesce(u.full_name, ''), c.confirmed_at
 		   FROM trip_requirements r
 		   LEFT JOIN LATERAL (
@@ -83,11 +88,15 @@ func readRequirements(ctx context.Context, q querier, tripID string) ([]store.Tr
 	}
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (store.TripRequirement, error) {
 		var r store.TripRequirement
-		var sources []byte
+		var sources, detail []byte
 		err := row.Scan(&r.PassengerID, &r.Country, &r.Role, &r.Key, &r.Status, &r.Text, &r.ClientText,
-			&r.Confirmable, &r.Confirmed, &r.MissingData, &sources, &r.FieldHash, &r.ConfirmedByName, &r.ConfirmedAt)
+			&r.Confirmable, &r.Confirmed, &r.MissingData, &sources, &r.FieldHash, &detail, &r.Searching,
+			&r.ConfirmedByName, &r.ConfirmedAt)
 		if err == nil {
 			err = json.Unmarshal(sources, &r.Sources)
+		}
+		if err == nil {
+			err = json.Unmarshal(detail, &r.Detail)
 		}
 		return r, err
 	})
@@ -168,7 +177,8 @@ func ToEvaluation(p store.Passenger) evaluacion.Passenger {
 	out := evaluacion.Passenger{ID: p.ID, Name: p.FirstName, Minor: p.Kind == "menor", ResidenceCountry: p.ResidenceCountry,
 		DocManual: p.TravelDocumentManual}
 	for _, d := range p.Documents {
-		doc := evaluacion.Document{ID: d.ID, Type: d.Type, Country: d.Country, IssuedAt: d.IssuedAt, ExpiresAt: d.ExpiresAt}
+		doc := evaluacion.Document{ID: d.ID, Type: d.Type, Country: d.Country, Number: d.Number,
+			IssuedAt: d.IssuedAt, ExpiresAt: d.ExpiresAt}
 		out.Docs = append(out.Docs, doc)
 		if d.ID == p.TravelDocumentID {
 			out.Doc = &doc
@@ -220,7 +230,7 @@ func (s *Store) tripIDs(ctx context.Context, sql string, args ...any) ([]string,
 
 // notifiedRequirements son los requisitos en falta al momento de un aviso de
 // requisitos migratorios. Falla si queda algo por verificar: eso es trabajo de
-// la agencia y el aviso no lo cubre.
+// la agencia y el aviso no lo cubre. Las recomendaciones no son faltantes.
 func notifiedRequirements(ctx context.Context, tx pgx.Tx, tripID string) ([]byte, error) {
 	var pendingVerify bool
 	var notified []string
@@ -228,7 +238,7 @@ func notifiedRequirements(ctx context.Context, tx pgx.Tx, tripID string) ([]byte
 		`SELECT coalesce(bool_or(status = 'verificar'), false),
 		        coalesce(array_agg(`+requirementID+`) FILTER (WHERE status = 'falta'), '{}')
 		   FROM trip_requirements r
-		  WHERE trip_id = $1 AND status <> 'cumple' AND key NOT IN ('vigencia', 'antiguedad')`,
+		  WHERE trip_id = $1 AND status NOT IN ('cumple', 'aviso') AND key NOT IN ('vigencia', 'antiguedad')`,
 		tripID).Scan(&pendingVerify, &notified)
 	if err != nil {
 		return nil, fmt.Errorf("leyendo los requisitos avisados: %w", err)

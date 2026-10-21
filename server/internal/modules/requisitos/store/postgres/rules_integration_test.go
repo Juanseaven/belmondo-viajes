@@ -67,7 +67,7 @@ func TestUnaReglaGuardadaSeLeeEntera(t *testing.T) {
 	err := s.SaveRule(ctx, store.Save{At: now,
 		Rule: store.StoredRule{Rule: domain.Rule{Pair: canada, Status: domain.RuleVigente, Fields: fields, Version: 1, UpdatedAt: now},
 			WikiFields: &fields, WikiHash: "abc", WikiRevision: "200", WikiURL: "https://wiki", CheckedAt: &now},
-		Conflicts: []domain.Conflict{{Pair: canada, Field: "visa", Wikipedia: "visa_consular", PassportIndex: "visa free", DataDate: "2026-02-17"}},
+		Conflicts: []domain.Conflict{{Pair: canada, Field: "visa", Wikipedia: "visa_consular", Other: "visa free", Source: domain.SourcePassportIndex, DataDate: "2026-02-17"}},
 		Usage:     &store.Usage{Model: "claude-opus-5-5", InputTokens: 1200, OutputTokens: 300},
 	})
 	if err != nil {
@@ -184,5 +184,64 @@ func TestLasReglasSeLeenPorCombinacion(t *testing.T) {
 	rules, err := s.Rules(ctx, []domain.Pair{canada, {Nationality: "AR", Country: "JP"}})
 	if err != nil || len(rules) != 1 || rules[canada].Pair != canada {
 		t.Fatalf("reglas = %+v, %v", rules, err)
+	}
+}
+
+// La búsqueda en páginas oficiales se guarda con la regla: el detalle que ve
+// la ficha, la búsqueda comprobada y cuándo toca la próxima. Una búsqueda
+// vencida pone a la regla en la cola.
+func TestLaBusquedaOficialSeGuardaYVuelveALaColaCuandoToca(t *testing.T) {
+	ctx, pool := testDB(t)
+	s := New(pool)
+	if _, _, err := s.Ensure(ctx, []domain.Pair{canada}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	due := now.Add(30 * 24 * time.Hour)
+	checked := due.Add(-48 * time.Hour)
+	ircc := domain.Citation{Source: domain.SourceOficial, URL: "https://www.canada.ca/visit", Quote: "visitor visa", ReadAt: "2026-10-20"}
+	grupos := map[string]domain.Grupo{domain.GrupoVisa: {Tramite: []domain.Frase{{Text: "Se pide online.", Source: ircc}}}}
+	err := s.SaveRule(ctx, store.Save{At: now,
+		Rule: store.StoredRule{Rule: domain.Rule{Pair: canada, Status: domain.RuleVigente, Version: 1, UpdatedAt: now,
+			Details: domain.Detalles{Status: domain.DetallesListo, Grupos: grupos}},
+			// Revisada hace poco: lo único que la pone en la cola es la búsqueda.
+			CheckedAt: &checked, ResearchDueAt: &due, ResearchFailures: 1,
+			Research: &domain.Research{ReadAt: "2026-10-20", Grupos: grupos, Seen: map[string]string{"visa": "abc"}}},
+		Conflicts: []domain.Conflict{{Pair: canada, Field: "visa", Wikipedia: "visa_consular", Other: "no_requiere",
+			Source: domain.SourceOficial, DataDate: "2026-10-20"}},
+		Usage: &store.Usage{Model: "claude-opus-5-5", InputTokens: 9000, OutputTokens: 700, WebSearches: 4, Purpose: "oficial",
+			CacheReadTokens: 50000, CacheWriteTokens: 8000},
+	})
+	if err != nil {
+		t.Fatalf("guardando: %v", err)
+	}
+
+	got, err := s.StoredRule(ctx, canada)
+	if err != nil {
+		t.Fatalf("leyendo: %v", err)
+	}
+	if got.Research == nil || got.Research.Seen["visa"] != "abc" || got.ResearchFailures != 1 ||
+		got.ResearchDueAt == nil || !got.ResearchDueAt.Equal(due) || got.Details.Status != domain.DetallesListo {
+		t.Fatalf("regla = %+v", got)
+	}
+	rules, err := s.Rules(ctx, []domain.Pair{canada})
+	if err != nil || len(rules[canada].Details.Grupos[domain.GrupoVisa].Tramite) != 1 {
+		t.Fatalf("la regla pública lleva el detalle: %+v, %v", rules[canada].Details, err)
+	}
+
+	var source, purpose string
+	var searches, cacheRead, cacheWrite int
+	_ = pool.QueryRow(ctx, `SELECT source FROM source_conflicts`).Scan(&source)
+	_ = pool.QueryRow(ctx, `SELECT purpose, web_searches, cache_read_tokens, cache_write_tokens FROM extraction_usage`).
+		Scan(&purpose, &searches, &cacheRead, &cacheWrite)
+	if source != domain.SourceOficial || purpose != "oficial" || searches != 4 || cacheRead != 50000 || cacheWrite != 8000 {
+		t.Fatalf("conflicto de %q, consumo %q con %d búsquedas", source, purpose, searches)
+	}
+
+	if pairs, _ := s.Due(ctx, now.Add(24*time.Hour), 10); len(pairs) != 0 {
+		t.Fatalf("antes de que toque: %v", pairs)
+	}
+	if pairs, _ := s.Due(ctx, due, 10); len(pairs) != 1 {
+		t.Fatalf("cuando toca la búsqueda: %v", pairs)
 	}
 }

@@ -29,9 +29,9 @@ func fakeAnthropic(t *testing.T, response string) (*httptest.Server, *map[string
 }
 
 const extraccionCanada = `{"documento":{"value":null,"quote":""},"visa":{"value":"visa_consular","quote":"Visa required"},
-"estadiaMaxDias":{"value":null,"quote":""},"vigencia":{"value":null,"quote":""},"emisionMaxAnios":{"value":null,"quote":""},
+"estadia":{"value":null,"quote":""},"vigencia":{"value":null,"quote":""},"emisionMaxAnios":{"value":null,"quote":""},
 "exenciones":[{"permitKinds":["visa"],"permitCountry":"US","visa":"autorizacion_electronica","quote":"hold a valid United States non-immigrant visa"}],
-"vacunas":[]}`
+"vacunas":[],"condiciones":[{"kind":"seguro","text":"Tener seguro","quote":"insurance"}]}`
 
 func message(text, stop string) string {
 	raw, _ := json.Marshal(text)
@@ -48,7 +48,7 @@ func TestClaudeDevuelveLaExtraccionYElConsumo(t *testing.T) {
 		t.Fatalf("extracción: %v", err)
 	}
 	if ex.Visa.Value == nil || *ex.Visa.Value != domain.VisaConsular || len(ex.Exenciones) != 1 ||
-		ex.Exenciones[0].PermitCountry != "US" {
+		ex.Exenciones[0].PermitCountry != "US" || len(ex.Condiciones) != 1 || ex.Condiciones[0].Kind != domain.CondicionSeguro {
 		t.Fatalf("extracción = %+v", ex)
 	}
 	if usage.InputTokens != 1200 || usage.OutputTokens != 300 || usage.Model != "claude-opus-5-5" {

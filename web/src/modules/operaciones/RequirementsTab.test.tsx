@@ -41,7 +41,7 @@ it("sin pasajeros dice lo que piden los países a un pasaporte argentino, sin cu
 
   expect(screen.getByText("Requisitos para un pasajero con pasaporte argentino")).toBeTruthy();
   expect(screen.getByText("Canadá pide visa, que se tramita antes de viajar")).toBeTruthy();
-  expect(screen.getByText("Fuente: Wikipedia")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Wikipedia" })).toBeTruthy();
   expect(screen.getAllByText("Verificar")).toHaveLength(1);
   expect(screen.queryByText("Cumple")).toBeNull();
   expect(screen.queryByText("Falta")).toBeNull();
@@ -71,7 +71,7 @@ it("agrupa por pasajero y país y dice cada requisito con palabras", () => {
   expect(within(maria).getByText("Estados Unidos · escala")).toBeTruthy();
   expect(within(maria).getByText("Canadá pide visa y no está cargada")).toBeTruthy();
   expect(within(maria).getByText("Falta")).toBeTruthy();
-  const link = within(maria).getByRole("link", { name: "Fuente: Wikipedia" });
+  const link = within(maria).getByRole("link", { name: "Wikipedia" });
   expect(link.getAttribute("href")).toBe("https://en.wikipedia.org/w/index.php?oldid=1");
 
   const tomas = screen.getByRole("region", { name: "Tomás Pérez" });
@@ -105,11 +105,71 @@ it("lo confirmado dice quién lo confirmó", () => {
 
 it("mientras se buscan los requisitos de un país lo dice una sola vez", () => {
   const buscando = (key: string) => req({ passengerId: "maria", country: "CA", key, status: "verificar", confirmable: true,
-    text: `No se sabe ${key} de Canadá: buscando requisitos` });
+    text: key, searching: true });
   const trip = { ...base, itinerary: [{ country: "CA", role: "destino" as const }],
     requirements: [buscando("visa"), buscando("documento"), buscando("vacunas")] };
   render(<RequirementsTab trip={trip} countries={countries} onConfirm={vi.fn()} />);
 
   expect(screen.getByText("Buscando los requisitos de Canadá…")).toBeTruthy();
   expect(screen.queryByRole("button", { name: /^Confirmar/ })).toBeNull();
+});
+
+it("cada renglón dice qué pide el país, el trámite, qué tiene el pasajero y qué hacer", () => {
+  const trip = { ...base, itinerary: [{ country: "US", role: "destino" as const }], requirements: [
+    req({ passengerId: "maria", country: "US", key: "visa", status: "falta", text: "Visa", detail: {
+      pide: [{ text: "Estados Unidos pide visa consular." }],
+      tramite: [{ text: "Para turismo es la visa B1/B2.", source: { source: "oficial", url: "https://travel.state.gov/visas", quote: "B-2 visa", readAt: "2026-10-21" } }],
+      tiene: ["No tiene visa de Estados Unidos cargada."],
+      hacer: ["Si ya tiene la visa, cargarla; si no, tramitarla."],
+    }, sources: [
+      { source: "wikipedia", url: "https://en.wikipedia.org/w/index.php?oldid=1", quote: "Visa required" },
+      { source: "oficial", url: "https://travel.state.gov/visas", quote: "B-2 visa", readAt: "2026-10-21" },
+    ] }),
+    req({ passengerId: "maria", country: "US", key: "documento", status: "cumple", text: "Documento", detail: {
+      pide: [{ text: "Estados Unidos pide pasaporte." }], tiene: ["Viaja con pasaporte N° AAB123456."],
+    } }),
+  ] };
+  render(<RequirementsTab trip={trip} countries={countries} />);
+
+  const visa = screen.getByRole("listitem", { name: "Visa" });
+  expect(within(visa).getByText("Falta")).toBeTruthy();
+  expect(within(visa).getByText("Pide")).toBeTruthy();
+  expect(within(visa).getByText("Estados Unidos pide visa consular.")).toBeTruthy();
+  expect(within(visa).getByText("Trámite")).toBeTruthy();
+  expect(within(visa).getByText("Para turismo es la visa B1/B2.")).toBeTruthy();
+  expect(within(visa).getByText("Tiene")).toBeTruthy();
+  expect(within(visa).getByText("Hacer")).toBeTruthy();
+  const oficial = within(visa).getByRole("link", { name: "travel.state.gov · 21/10/2026" });
+  expect(oficial.getAttribute("href")).toBe("https://travel.state.gov/visas");
+  expect(oficial.getAttribute("title")).toBe("«B-2 visa»");
+  expect(within(visa).getByRole("link", { name: "Wikipedia" })).toBeTruthy();
+
+  // Una parte vacía no se muestra.
+  const documento = screen.getByRole("listitem", { name: "Documento" });
+  expect(within(documento).queryByText("Hacer")).toBeNull();
+  expect(within(documento).queryByText("Trámite")).toBeNull();
+});
+
+it("la recomendación de renovar va arriba de los países, sin rojo", () => {
+  const trip = { ...base, itinerary: [{ country: "US", role: "destino" as const }], requirements: [
+    req({ passengerId: "maria", key: "renovar_documento", status: "aviso", text: "Renovación del pasaporte",
+      detail: { tiene: ["El pasaporte vence el 24/04/2027, a menos de 6 meses de la vuelta (24/12/2026)."] } }),
+    req({ passengerId: "maria", country: "US", key: "visa", status: "cumple", text: "Visa" }),
+  ] };
+  render(<RequirementsTab trip={trip} countries={countries} />);
+
+  const aviso = screen.getByRole("listitem", { name: "Renovación del pasaporte" });
+  expect(within(aviso).getByText("Recomendación")).toBeTruthy();
+  expect(aviso.className).toContain("requirement--aviso");
+  expect(screen.queryByText(/el aviso no cierra/)).toBeNull();
+});
+
+it("mientras se busca el detalle en páginas oficiales lo dice una vez por país", () => {
+  const trip = { ...base, itinerary: [{ country: "US", role: "destino" as const }], requirements: [
+    req({ passengerId: "maria", country: "US", key: "visa", status: "falta", text: "Visa", detail: { oficial: "buscando" } }),
+    req({ passengerId: "maria", country: "US", key: "documento", text: "Documento", detail: { oficial: "buscando" } }),
+  ] };
+  render(<RequirementsTab trip={trip} countries={countries} />);
+
+  expect(screen.getAllByText("Buscando el detalle del trámite en páginas oficiales…")).toHaveLength(1);
 });

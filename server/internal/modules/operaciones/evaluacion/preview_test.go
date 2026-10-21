@@ -70,6 +70,36 @@ func TestLaVistaPreviaDiceLoQuePideElPaisSinCumpleNiFalta(t *testing.T) {
 	}
 }
 
+func TestLaVistaPreviaDiceCuandoAlcanzaConQueDureLaEstadia(t *testing.T) {
+	rules := merge(
+		regla("AR", "US", func(f *reglas.Fields) {
+			f.Vigencia = field(reglas.Vigencia{Amount: 0, Unit: "dias", Base: "salida_del_pais"})
+		}),
+		regla("AR", "MX", func(f *reglas.Fields) {
+			f.Vigencia = field(reglas.Vigencia{Amount: 0, Unit: "dias", Base: "llegada"})
+		}),
+	)
+	lines := Preview(Trip{Itinerary: []Stop{{Country: "US", Role: "destino"}, {Country: "MX", Role: "destino"}}}, rules)
+
+	if l := lineFor(t, lines, "US", KeyVigencia); l.Text != "El pasaporte tiene que estar vigente toda la estadía en Estados Unidos" {
+		t.Errorf("vigencia: %+v", l)
+	}
+	if l := lineFor(t, lines, "MX", KeyVigencia); l.Text != "El pasaporte tiene que estar vigente al llegar a México" {
+		t.Errorf("vigencia: %+v", l)
+	}
+}
+
+func TestLaVistaPreviaDiceLasCondiciones(t *testing.T) {
+	rules := regla("AR", "CU", func(f *reglas.Fields) {
+		f.Condiciones = condiciones(reglas.Condicion{Kind: reglas.CondicionSeguro, Text: "Tener seguro médico válido en Cuba"})
+	})
+	lines := Preview(Trip{Itinerary: []Stop{{Country: "CU", Role: "destino"}}}, rules)
+
+	if l := lineFor(t, lines, "CU", "condicion:seguro"); l.Text != "Para Cuba hay que tener seguro médico válido en Cuba" || l.Verify {
+		t.Errorf("condición: %+v", l)
+	}
+}
+
 func TestLaVistaPreviaMarcaLoQueNoSeSabeYLoQueSeBusca(t *testing.T) {
 	trip := Trip{Itinerary: []Stop{{Country: "JP", Role: "destino"}, {Country: "ES", Role: "destino"}}}
 	rules := regla("AR", "ES", nil)
@@ -90,5 +120,31 @@ func TestLaVistaPreviaEsSoloSinPasajeros(t *testing.T) {
 	trip := viaje("ES", ana(pasaporteAR))
 	if lines := Preview(trip, regla("AR", "ES", nil)); lines != nil {
 		t.Fatalf("con pasajeros no hay vista previa: %+v", lines)
+	}
+}
+
+func TestLaVistaPreviaSumaElDetalleDeLasPaginasOficiales(t *testing.T) {
+	rules := conDetalle(regla("AR", "US", func(f *reglas.Fields) { f.Visa = field(reglas.VisaConsular) }),
+		detalleOficial(reglas.DetallesListo, map[string]reglas.Grupo{
+			reglas.GrupoVisa: {
+				Pide:    []reglas.Frase{{Text: "Para turismo es la visa B1/B2.", Source: travelState}},
+				Tramite: []reglas.Frase{{Text: "Se completa el formulario DS-160 online.", Source: travelState}},
+			},
+		}))
+	lines := Preview(Trip{Itinerary: []Stop{{Country: "US", Role: "destino"}}}, rules)
+
+	visa := lineFor(t, lines, "US", KeyVisa)
+	if len(visa.Detail.Pide) != 1 || len(visa.Detail.Tramite) != 1 || visa.Detail.Tramite[0].Source == nil {
+		t.Fatalf("detalle de la visa: %+v", visa.Detail)
+	}
+	if !hasSource(visa.Sources, travelState.URL) {
+		t.Errorf("la página oficial va entre las fuentes: %+v", visa.Sources)
+	}
+
+	buscando := conDetalle(regla("AR", "US", func(f *reglas.Fields) { f.Visa = field(reglas.VisaConsular) }),
+		detalleOficial(reglas.DetallesBuscando, nil))
+	lines = Preview(Trip{Itinerary: []Stop{{Country: "US", Role: "destino"}}}, buscando)
+	if l := lineFor(t, lines, "US", KeyVisa); l.Detail.Oficial != reglas.DetallesBuscando {
+		t.Errorf("buscando el detalle: %+v", l.Detail)
 	}
 }

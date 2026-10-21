@@ -18,6 +18,9 @@ type PreviewLine struct {
 	Verify    bool              `json:"verify,omitempty"`
 	Searching bool              `json:"searching,omitempty"`
 	Sources   []reglas.Citation `json:"sources,omitempty"`
+	// Detail lleva lo que suman las páginas oficiales: la regla explicada y el
+	// trámite. No tiene «tiene» ni «hacer»: no hay pasajero.
+	Detail Detail `json:"detail"`
 }
 
 // Preview dice qué piden los países del itinerario a un pasaporte argentino.
@@ -42,18 +45,75 @@ func Preview(t Trip, rules map[reglas.Pair]reglas.Rule) []PreviewLine {
 			continue
 		}
 		p.f = rule.Effective()
+		var lines []PreviewLine
 		if stop.Role == "escala" {
-			out = append(out, p.transito())
-			continue
+			lines = append(lines, p.transito())
+		} else {
+			lines = append(lines, p.documento()...)
+			lines = append(lines, p.visa()...)
+			lines = append(lines, p.estadia()...)
+			lines = append(lines, withReason(p.vigencia(), p.f.Vigencia.Reason))
+			lines = append(lines, p.antiguedad()...)
+			lines = append(lines, p.vacunas()...)
+			lines = append(lines, p.condiciones()...)
 		}
-		out = append(out, p.documento()...)
-		out = append(out, p.visa()...)
-		out = append(out, p.estadia()...)
-		out = append(out, p.vigencia())
-		out = append(out, p.antiguedad()...)
-		out = append(out, p.vacunas()...)
+		out = append(out, withOfficial(lines, rule.Details)...)
 	}
 	return out
+}
+
+// withOfficial suma a cada línea el detalle de las páginas oficiales de su
+// grupo. La visa puede tener varias líneas (una por exención): el detalle va
+// en la primera.
+func withOfficial(lines []PreviewLine, det reglas.Detalles) []PreviewLine {
+	done := map[string]bool{}
+	for i := range lines {
+		l := &lines[i]
+		group := groupFor(l.Key)
+		if group == "" || (done[group] && l.Key == KeyVisa) {
+			continue
+		}
+		done[group] = true
+		g, ok := det.Grupos[group]
+		if !ok {
+			if det.Status == reglas.DetallesBuscando || det.Status == reglas.DetallesSinDatos {
+				l.Detail.Oficial = det.Status
+			}
+			continue
+		}
+		for _, fr := range g.Pide {
+			l.Detail.Pide = append(l.Detail.Pide, sourced(fr))
+			l.Sources = appendSource(l.Sources, fr.Source)
+		}
+		for _, fr := range g.Tramite {
+			l.Detail.Tramite = append(l.Detail.Tramite, sourced(fr))
+			l.Sources = appendSource(l.Sources, fr.Source)
+		}
+	}
+	return lines
+}
+
+// groupFor dice de qué grupo del detalle oficial es una clave de requisito.
+func groupFor(key string) string {
+	switch {
+	case key == KeyDocumento:
+		return reglas.GrupoDocumento
+	case key == KeyVisa:
+		return reglas.GrupoVisa
+	case key == KeyVigencia:
+		return reglas.GrupoVigencia
+	case key == KeyAntiguedad:
+		return reglas.GrupoAntiguedad
+	case key == KeyEstadia:
+		return reglas.GrupoEstadia
+	case key == KeyTransito:
+		return reglas.GrupoTransito
+	case strings.HasPrefix(key, vacunaPrefix):
+		return reglas.GrupoVacunas
+	case strings.HasPrefix(key, condicionPrefix):
+		return key
+	}
+	return ""
 }
 
 type previewer struct {
@@ -140,6 +200,12 @@ func (p previewer) vigencia() PreviewLine {
 		return p.line(KeyVigencia, fmt.Sprintf("No se sabe cuánta vigencia del pasaporte pide %s: %s", p.name, reason), true, f.Sources)
 	}
 	v := *f.Value
+	if v.Amount == 0 {
+		if v.Base == "salida_del_pais" {
+			return p.line(KeyVigencia, fmt.Sprintf("El pasaporte tiene que estar vigente toda la estadía en %s", p.name), false, f.Sources)
+		}
+		return p.line(KeyVigencia, fmt.Sprintf("El pasaporte tiene que estar vigente al llegar a %s", p.name), false, f.Sources)
+	}
 	unit := "días"
 	if v.Unit == "meses" {
 		unit = "meses"
@@ -155,6 +221,15 @@ func (p previewer) vigencia() PreviewLine {
 		}
 	}
 	return p.line(KeyVigencia, fmt.Sprintf("El pasaporte tiene que durar %d %s %s", v.Amount, unit, from), false, f.Sources)
+}
+
+// withReason suma a la línea el motivo de una regla fija: de dónde sale el
+// valor («Argentina está en la lista de exceptuados»).
+func withReason(l PreviewLine, reason string) PreviewLine {
+	if reason != "" {
+		l.Detail.Pide = append(l.Detail.Pide, Line{Text: capitalize(reason) + "."})
+	}
+	return l
 }
 
 func (p previewer) antiguedad() []PreviewLine {
@@ -184,6 +259,21 @@ func (p previewer) vacunas() []PreviewLine {
 			continue
 		}
 		out = append(out, p.line(vacunaPrefix+v.Name, fmt.Sprintf("%s pide la vacuna de %s, con su certificado", p.name, v.Name), false, f.Sources))
+	}
+	return out
+}
+
+func (p previewer) condiciones() []PreviewLine {
+	f := p.f.Condiciones
+	if f.Verify {
+		return []PreviewLine{p.line(KeyCondiciones, fmt.Sprintf("No se sabe si %s pide otras condiciones para entrar: %s", p.name, f.Reason), true, f.Sources)}
+	}
+	if f.Value == nil {
+		return nil
+	}
+	var out []PreviewLine
+	for i, key := range condicionKeys(*f.Value) {
+		out = append(out, p.line(key, condicionText(p.name, (*f.Value)[i]), false, condicionSources(f, i)))
 	}
 	return out
 }

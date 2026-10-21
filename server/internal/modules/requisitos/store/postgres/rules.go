@@ -60,7 +60,7 @@ func (s *Store) Ensure(ctx context.Context, pairs []domain.Pair) (map[domain.Pai
 func (s *Store) Rules(ctx context.Context, pairs []domain.Pair) (map[domain.Pair]domain.Rule, error) {
 	nats, countries := split(pairs)
 	rows, err := s.pool.Query(ctx,
-		`SELECT r.nationality, r.country, r.status, r.fields, r.version, r.updated_at
+		`SELECT r.nationality, r.country, r.status, r.fields, r.version, r.updated_at, r.details
 		   FROM entry_rules r
 		   JOIN unnest($1::text[], $2::text[]) AS p(nationality, country)
 		     ON p.nationality = r.nationality AND p.country = r.country`, nats, countries)
@@ -71,12 +71,15 @@ func (s *Store) Rules(ctx context.Context, pairs []domain.Pair) (map[domain.Pair
 	out := make(map[domain.Pair]domain.Rule, len(pairs))
 	for rows.Next() {
 		var r domain.Rule
-		var fields []byte
-		if err := rows.Scan(&r.Nationality, &r.Country, &r.Status, &fields, &r.Version, &r.UpdatedAt); err != nil {
+		var fields, details []byte
+		if err := rows.Scan(&r.Nationality, &r.Country, &r.Status, &fields, &r.Version, &r.UpdatedAt, &details); err != nil {
 			return nil, fmt.Errorf("armando reglas: %w", err)
 		}
 		if err := json.Unmarshal(fields, &r.Fields); err != nil {
 			return nil, fmt.Errorf("leyendo los campos de %s-%s: %w", r.Nationality, r.Country, err)
+		}
+		if err := json.Unmarshal(details, &r.Details); err != nil {
+			return nil, fmt.Errorf("leyendo el detalle de %s-%s: %w", r.Nationality, r.Country, err)
 		}
 		out[r.Pair] = r
 	}
@@ -85,14 +88,16 @@ func (s *Store) Rules(ctx context.Context, pairs []domain.Pair) (map[domain.Pair
 
 func (s *Store) StoredRule(ctx context.Context, p domain.Pair) (store.StoredRule, error) {
 	var r store.StoredRule
-	var fields, wikiFields []byte
+	var fields, wikiFields, details, research []byte
 	var hash, revision, url *string
 	err := s.pool.QueryRow(ctx,
 		`SELECT nationality, country, status, fields, version, updated_at,
-		        wiki_fields, wiki_hash, wiki_revision, wiki_url, pending_since, checked_at
+		        wiki_fields, wiki_hash, wiki_revision, wiki_url, pending_since, checked_at,
+		        details, research, research_due_at, research_failures
 		   FROM entry_rules WHERE nationality = $1 AND country = $2`, p.Nationality, p.Country,
 	).Scan(&r.Nationality, &r.Country, &r.Status, &fields, &r.Version, &r.UpdatedAt,
-		&wikiFields, &hash, &revision, &url, &r.PendingSince, &r.CheckedAt)
+		&wikiFields, &hash, &revision, &url, &r.PendingSince, &r.CheckedAt,
+		&details, &research, &r.ResearchDueAt, &r.ResearchFailures)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return store.StoredRule{}, store.ErrNoRule
 	}
@@ -109,6 +114,16 @@ func (s *Store) StoredRule(ctx context.Context, p domain.Pair) (store.StoredRule
 		}
 		r.WikiFields = &w
 	}
+	if err := json.Unmarshal(details, &r.Details); err != nil {
+		return store.StoredRule{}, fmt.Errorf("leyendo el detalle: %w", err)
+	}
+	if research != nil {
+		var res domain.Research
+		if err := json.Unmarshal(research, &res); err != nil {
+			return store.StoredRule{}, fmt.Errorf("leyendo la búsqueda: %w", err)
+		}
+		r.Research = &res
+	}
 	r.WikiHash, r.WikiRevision, r.WikiURL = deref(hash), deref(revision), deref(url)
 	return r, nil
 }
@@ -121,11 +136,20 @@ func (s *Store) SaveRule(ctx context.Context, save store.Save) error {
 	if err != nil {
 		return err
 	}
-	var wikiFields []byte
+	var wikiFields, research []byte
 	if r.WikiFields != nil {
 		if wikiFields, err = json.Marshal(r.WikiFields); err != nil {
 			return err
 		}
+	}
+	if r.Research != nil {
+		if research, err = json.Marshal(r.Research); err != nil {
+			return err
+		}
+	}
+	details, err := json.Marshal(r.Details)
+	if err != nil {
+		return err
 	}
 
 	tx, err := s.pool.Begin(ctx)
@@ -140,39 +164,45 @@ func (s *Store) SaveRule(ctx context.Context, save store.Save) error {
 	}
 	if _, err := tx.Exec(ctx,
 		`INSERT INTO entry_rules (nationality, country, status, fields, version, wiki_fields, wiki_hash,
-		                          wiki_revision, wiki_url, pending_since, checked_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, nullif($7, ''), nullif($8, ''), nullif($9, ''), $10, $11, $12)
+		                          wiki_revision, wiki_url, pending_since, checked_at, updated_at,
+		                          details, research, research_due_at, research_failures)
+		 VALUES ($1, $2, $3, $4, $5, $6, nullif($7, ''), nullif($8, ''), nullif($9, ''), $10, $11, $12,
+		         $13, $14, $15, $16)
 		 ON CONFLICT (nationality, country) DO UPDATE SET
 		   status = EXCLUDED.status, fields = EXCLUDED.fields, version = EXCLUDED.version,
 		   wiki_fields = EXCLUDED.wiki_fields, wiki_hash = EXCLUDED.wiki_hash,
 		   wiki_revision = EXCLUDED.wiki_revision, wiki_url = EXCLUDED.wiki_url,
 		   pending_since = EXCLUDED.pending_since, checked_at = EXCLUDED.checked_at,
-		   updated_at = EXCLUDED.updated_at`,
+		   updated_at = EXCLUDED.updated_at, details = EXCLUDED.details, research = EXCLUDED.research,
+		   research_due_at = EXCLUDED.research_due_at, research_failures = EXCLUDED.research_failures`,
 		r.Nationality, r.Country, r.Status, fields, r.Version, wikiFields, r.WikiHash,
-		r.WikiRevision, r.WikiURL, r.PendingSince, r.CheckedAt, updatedAt); err != nil {
+		r.WikiRevision, r.WikiURL, r.PendingSince, r.CheckedAt, updatedAt,
+		details, research, r.ResearchDueAt, r.ResearchFailures); err != nil {
 		return fmt.Errorf("guardando la regla: %w", err)
 	}
 	if r.Version > 0 {
 		if _, err := tx.Exec(ctx,
-			`INSERT INTO entry_rule_versions (nationality, country, version, status, fields, created_at)
-			 VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING`,
-			r.Nationality, r.Country, r.Version, r.Status, fields, save.At); err != nil {
+			`INSERT INTO entry_rule_versions (nationality, country, version, status, fields, details, created_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING`,
+			r.Nationality, r.Country, r.Version, r.Status, fields, details, save.At); err != nil {
 			return fmt.Errorf("guardando la versión: %w", err)
 		}
 	}
 	for _, c := range save.Conflicts {
 		if _, err := tx.Exec(ctx,
-			`INSERT INTO source_conflicts (nationality, country, field, wikipedia, passport_index, data_date, created_at)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-			c.Nationality, c.Country, c.Field, c.Wikipedia, c.PassportIndex, c.DataDate, save.At); err != nil {
+			`INSERT INTO source_conflicts (nationality, country, field, wikipedia, other, source, data_date, created_at)
+			 VALUES ($1, $2, $3, $4, $5, coalesce(nullif($6, ''), 'passport_index'), $7, $8)`,
+			c.Nationality, c.Country, c.Field, c.Wikipedia, c.Other, c.Source, c.DataDate, save.At); err != nil {
 			return fmt.Errorf("guardando el conflicto: %w", err)
 		}
 	}
 	if u := save.Usage; u != nil && u.Model != "" {
 		if _, err := tx.Exec(ctx,
-			`INSERT INTO extraction_usage (nationality, country, model, input_tokens, output_tokens, created_at)
-			 VALUES ($1, $2, $3, $4, $5, $6)`,
-			r.Nationality, r.Country, u.Model, u.InputTokens, u.OutputTokens, save.At); err != nil {
+			`INSERT INTO extraction_usage (nationality, country, model, input_tokens, output_tokens, web_searches,
+			                               purpose, cache_read_tokens, cache_write_tokens, created_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, coalesce(nullif($7, ''), 'wikipedia'), $8, $9, $10)`,
+			r.Nationality, r.Country, u.Model, u.InputTokens, u.OutputTokens, u.WebSearches, u.Purpose,
+			u.CacheReadTokens, u.CacheWriteTokens, save.At); err != nil {
 			return fmt.Errorf("guardando el consumo: %w", err)
 		}
 	}
@@ -181,7 +211,8 @@ func (s *Store) SaveRule(ctx context.Context, save store.Save) error {
 
 // Due devuelve las reglas que toca revisar: las que se están buscando primero;
 // las vigentes, una vez por semana; las que esperan las 72 horas o no tuvieron
-// fuentes, una vez por día.
+// fuentes, una vez por día; y las que tienen pendiente la búsqueda en páginas
+// oficiales.
 func (s *Store) Due(ctx context.Context, now time.Time, limit int) ([]domain.Pair, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT nationality, country FROM entry_rules
@@ -190,6 +221,7 @@ func (s *Store) Due(ctx context.Context, now time.Time, limit int) ([]domain.Pai
 		     OR checked_at < $1::timestamptz - interval '7 days'
 		     OR ((pending_since IS NOT NULL OR status = 'sin_fuentes')
 		         AND checked_at < $1::timestamptz - interval '1 day')
+		     OR research_due_at <= $1::timestamptz
 		  ORDER BY (status = 'buscando') DESC, checked_at NULLS FIRST
 		  LIMIT $2`, now, limit)
 	if err != nil {

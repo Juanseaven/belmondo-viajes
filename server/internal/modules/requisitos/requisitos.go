@@ -74,6 +74,10 @@ func New(k *kernel.Kernel) *Module {
 	// Una interfaz con un *Claude nil adentro no es nil: se asigna solo si hay.
 	if c := fuentes.NewClaude(k.Cfg.AnthropicAPIKey, ""); c != nil {
 		r.Claude = c
+		// La búsqueda en páginas oficiales es cara: solo si se la enciende.
+		if k.Cfg.RequisitosResearch {
+			r.Researcher = fuentes.NewOficial(k.Cfg.AnthropicAPIKey, "", k.Cfg.RequisitosResearchModel, k.Cfg.RequisitosContact)
+		}
 	} else {
 		log.Warn("sin ANTHROPIC_API_KEY: las reglas nuevas quedan sin fuentes y todo cuenta como «verificar»")
 	}

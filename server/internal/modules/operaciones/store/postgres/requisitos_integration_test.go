@@ -270,3 +270,57 @@ func TestUnViajeSinPasajerosUsaLaReglaDelPasaporteArgentino(t *testing.T) {
 		t.Fatalf("la regla italiana sí: %v", ids)
 	}
 }
+
+// Una recomendación no es un faltante: no abre «Requisitos migratorios», y el
+// detalle de cada renglón vuelve como se guardó.
+func TestUnAvisoNoPesaYElDetalleSeGuarda(t *testing.T) {
+	ctx, pool := testDB(t)
+	s := New(pool)
+	f := escenario(t, ctx, pool, s)
+	ana := pax(t, s, f, "Ana", "2030-01-01")
+
+	visa := req(ana.ID, "US", evaluacion.KeyVisa, evaluacion.Cumple)
+	visa.Detail = evaluacion.Detail{
+		Pide:  []evaluacion.Line{{Text: "Estados Unidos pide visa consular."}},
+		Tiene: []string{"Tiene visa de Estados Unidos."},
+		Hacer: []string{"Nada."},
+	}
+	visa.Searching = true
+	renovar := evaluacion.Requirement{PassengerID: ana.ID, Key: evaluacion.KeyRenovar, Status: evaluacion.Aviso,
+		Text: "Renovación del pasaporte", ClientText: "renovar el pasaporte de Ana"}
+	if err := s.SaveRequirements(ctx, f.trip, []evaluacion.Requirement{renovar, visa}, nil); err != nil {
+		t.Fatalf("guardando: %v", err)
+	}
+	if got := estado(t, ctx, pool, f.trip, "control-visa"); got != "cerrado" {
+		t.Fatalf("con una recomendación: %s, se esperaba cerrado", got)
+	}
+
+	detail, err := s.TripDetail(ctx, f.trip)
+	if err != nil {
+		t.Fatalf("leyendo: %v", err)
+	}
+	got := detail.Requirements[1]
+	if len(got.Detail.Pide) != 1 || got.Detail.Tiene[0] != "Tiene visa de Estados Unidos." || !got.Searching {
+		t.Fatalf("detalle leído = %+v", got)
+	}
+	if detail.Requirements[0].Status != evaluacion.Aviso {
+		t.Fatalf("aviso leído = %+v", detail.Requirements[0])
+	}
+
+	// El aviso al cliente cubre lo que faltaba; la recomendación, que no es un
+	// faltante, no lo reabre.
+	falta := req(ana.ID, "US", evaluacion.KeyVisa, evaluacion.Falta)
+	if err := s.SaveRequirements(ctx, f.trip, []evaluacion.Requirement{falta}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CloseControl(ctx, store.CloseControl{ControlID: control(t, ctx, pool, f.trip, "control-visa"),
+		UserID: f.user, MessageID: aviso(t, ctx, pool, f, "1")}); err != nil {
+		t.Fatalf("cerrando con el aviso: %v", err)
+	}
+	if err := s.SaveRequirements(ctx, f.trip, []evaluacion.Requirement{renovar, falta}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := estado(t, ctx, pool, f.trip, "control-visa"); got != "cerrado" {
+		t.Fatalf("una recomendación nueva después del aviso: %s, debería seguir cerrado", got)
+	}
+}

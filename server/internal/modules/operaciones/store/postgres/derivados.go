@@ -49,7 +49,8 @@ func refreshDerived(ctx context.Context, q execer, tripID string) error {
 // del regreso.
 //
 // Los requisitos migratorios están al día si todos los evaluados cumplen,
-// salvo vigencia y antigüedad, que son del control del documento.
+// salvo vigencia y antigüedad, que son del control del documento. Una
+// recomendación («aviso») no es un faltante: no los abre.
 const sqlRefreshDerived = `
 WITH datos AS (
     SELECT t.id AS trip_id,
@@ -75,7 +76,7 @@ WITH datos AS (
                      WHERE r.trip_id = t.id AND r.key NOT IN ('vigencia', 'antiguedad'))
             AND NOT EXISTS (SELECT 1 FROM trip_requirements r
                              WHERE r.trip_id = t.id AND r.key NOT IN ('vigencia', 'antiguedad')
-                               AND r.status <> 'cumple'))                 AS requisitos,
+                               AND r.status NOT IN ('cumple', 'aviso')))                 AS requisitos,
            (coalesce(btrim(cu.email), '') <> ''
             AND coalesce(btrim(cu.phone_number), '') <> '')               AS contacto,
            pa.total_usd IS NOT NULL                                       AS total_usd,
@@ -113,7 +114,7 @@ evaluado AS (
                   -- avisaron y siguen valiendo como antes.
                   SELECT e.notified IS NULL OR NOT EXISTS (
                            SELECT 1 FROM trip_requirements r
-                            WHERE r.trip_id = c.trip_id AND r.status <> 'cumple'
+                            WHERE r.trip_id = c.trip_id AND r.status NOT IN ('cumple', 'aviso')
                               AND r.key NOT IN ('vigencia', 'antiguedad')
                               AND NOT e.notified @> jsonb_build_array(` + requirementID + `))
                     FROM control_evidence e WHERE e.control_id = c.id
