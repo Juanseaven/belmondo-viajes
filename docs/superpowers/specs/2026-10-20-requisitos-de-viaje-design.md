@@ -190,12 +190,13 @@ cerrada de campos. Cada campo tiene:
 |---|---|
 | `documento` | `dni_o_pasaporte`, `pasaporte` |
 | `visa` | `no_requiere`, `autorizacion_electronica`, `visa_electronica`, `visa_a_la_llegada`, `visa_consular`, `no_admitido` |
-| `estadia_max_dias` | número |
-| `vigencia` | cantidad de días o meses + desde cuándo se cuenta (`llegada`, `salida_del_pais`) |
+| `estadia_max_dias` | número de días; si la fuente dice meses, semanas o años se pasa a días (un mes = 30) y el motivo dice de dónde salió la cuenta |
+| `vigencia` | cantidad de días o meses + desde cuándo se cuenta (`llegada`, `salida_del_pais`). Cero días desde la salida es «vigente toda la estadía». Sale de las notas de la fila o de la sección «Passport validity length» |
 | `emision_max_anios` | antigüedad máxima del pasaporte (Schengen: 10) |
 | `exenciones` | lista: «si tiene un permiso vigente (`visa`, `autorizacion_electronica` o `residencia`) de `country` → `visa` pasa a X». El `residence_country` del pasajero cuenta como un permiso de `residencia` de ese país |
 | `vacunas` | lista de vacunas exigidas y a quién (todos / quienes vienen de país de riesgo) |
 | `transito` | para cuando el país es escala: `sin_requisito`, `requiere_visa`, `verificar` |
+| `condiciones` | lista de lo demás que piden las notas de la fila: `registro`, `preregistro`, `pasaje_regreso`, `fondos`, `alojamiento`, `seguro`, `tarjeta_turista`, `puerto_de_entrada`, `paginas_en_blanco`, `otra`; cada una con una frase en español y su cita. Una cita que falla deja el campo en `verificar` |
 
 No hay campo de seguro: la agencia emite asistencia médica en todos los viajes y
 ya tiene su control (`control-asistencia`).
@@ -363,6 +364,7 @@ Cada requisito termina en uno de cuatro estados: **cumple**, **falta**,
 | Estadía | días en el país contra `estadia_max_dias` → si se pasa, falta |
 | Vacunas | exigida para todos → falta hasta confirmar; solo para quienes vienen de país de riesgo → verificar, con una frase que nombra el país de salida («el viaje sale de Argentina, que la OMS considera de riesgo en parte»; de otro país, «hay que ver si Perú es de riesgo»). No hay lista de países de riesgo: siempre es verificar |
 | Tránsito | solo para escalas: si el país no pide visa a esa nacionalidad, cumple; si la pide, verificar (puede hacer falta visa de tránsito) |
+| Condiciones | pasaje de regreso: cumple si el viaje tiene regreso; puerto de entrada y seguro: verificar (la agencia revisa los vuelos y la asistencia médica que emite); el resto: falta hasta confirmar, y va al aviso del cliente |
 | Menor | solo si el viaje sale de Argentina: menor a la salida → falta hasta confirmar la autorización o que viaja con ambos padres |
 
 Un viaje sin itinerario cargado tiene un único requisito: «falta cargar el país
