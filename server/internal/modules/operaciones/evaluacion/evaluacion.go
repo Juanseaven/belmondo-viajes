@@ -241,9 +241,15 @@ func Evaluate(t Trip, rules map[reglas.Pair]reglas.Rule, confirmed []Confirmatio
 				own = append(own, e.mark(e.transito()))
 				continue
 			}
-			own = append(own, e.mark(e.documento()), e.mark(e.vigencia()))
-			if r, ok := e.antiguedad(); ok {
-				own = append(own, e.mark(r))
+			own = append(own, e.mark(e.documento()))
+			// Con un documento que el país no acepta, medir su vigencia no dice
+			// nada: el renglón del documento ya pide el pasaporte, y la vigencia
+			// se mide cuando esté cargado.
+			if !e.rejectsDoc() {
+				own = append(own, e.mark(e.vigencia()))
+				if r, ok := e.antiguedad(); ok {
+					own = append(own, e.mark(r))
+				}
 			}
 			visa, level := e.visa()
 			own = append(own, e.mark(visa))
@@ -355,6 +361,17 @@ func (e evaluator) mark(r Requirement) Requirement {
 // trámite va solo donde hay algo que hacer. Sin el grupo, el renglón dice si
 // todavía se busca o si no se encontró.
 func (e evaluator) official(r *Requirement, group string, withTramite bool) {
+	e.officialDetail(r, group, true, withTramite)
+}
+
+// officialSources es official sin el texto de «Pide»: para cuando el renglón
+// ya dijo la regla y las páginas oficiales la repetirían con otras palabras.
+// Quedan citadas como fuente, y el trámite si hace falta.
+func (e evaluator) officialSources(r *Requirement, group string, withTramite bool) {
+	e.officialDetail(r, group, false, withTramite)
+}
+
+func (e evaluator) officialDetail(r *Requirement, group string, withPide, withTramite bool) {
 	g, ok := e.det.Grupos[group]
 	if !ok {
 		if e.det.Status == reglas.DetallesBuscando || e.det.Status == reglas.DetallesSinDatos {
@@ -363,7 +380,9 @@ func (e evaluator) official(r *Requirement, group string, withTramite bool) {
 		return
 	}
 	for _, fr := range g.Pide {
-		r.Detail.Pide = append(r.Detail.Pide, sourced(fr))
+		if withPide {
+			r.Detail.Pide = append(r.Detail.Pide, sourced(fr))
+		}
 		r.Sources = appendSource(r.Sources, fr.Source)
 	}
 	if !withTramite {
@@ -433,6 +452,12 @@ func (e evaluator) nationality() string {
 	return fmt.Sprintf("con %s de %s", docKind(e.p.Doc), countryName(e.p.Doc.Country))
 }
 
+// rejectsDoc dice si el país pide pasaporte y el pasajero viaja con DNI.
+func (e evaluator) rejectsDoc() bool {
+	f := e.f.Documento
+	return !f.Verify && f.Value != nil && *f.Value == reglas.DocumentoPasaporte && e.p.Doc.Type == "DNI"
+}
+
 func (e evaluator) documento() Requirement {
 	f := e.f.Documento
 	var r Requirement
@@ -441,7 +466,7 @@ func (e evaluator) documento() Requirement {
 		r = e.verify(KeyDocumento, "Documento", f)
 		r.pide("No se sabe con qué documento se entra a %s: %s.", e.name, f.Reason)
 		r.hacer("Revisar con qué documento se entra a %s y confirmarlo.", e.name)
-	case f.Value != nil && *f.Value == reglas.DocumentoPasaporte && e.p.Doc.Type == "DNI":
+	case e.rejectsDoc():
 		r = e.req(KeyDocumento, Falta, "Documento")
 		r.ClientText = fmt.Sprintf("para entrar a %s necesita pasaporte, no alcanza con el DNI", e.name)
 		r.hacer("Viajar con pasaporte. Si ya tiene uno, cargarlo en Pasajeros.")
@@ -508,7 +533,7 @@ func (e evaluator) vigencia() Requirement {
 	case doc.ExpiresAt == nil:
 		r = e.missing(KeyVigencia, title)
 		if known {
-			r.pide("%s", vigenciaRule(*f.Value, e.name, e.stop.Country, kind))
+			e.vigenciaPide(&r, *f.Value, kind)
 		}
 		r.tiene("No está cargado el vencimiento del %s.", kind)
 		r.hacer("Cargar el vencimiento del %s en Pasajeros.", kind)
@@ -524,10 +549,7 @@ func (e evaluator) vigencia() Requirement {
 	default:
 		v := *f.Value
 		r = e.req(KeyVigencia, Cumple, title)
-		r.pide("%s", vigenciaRule(v, e.name, e.stop.Country, kind))
-		if f.Reason != "" {
-			r.pide("%s.", capitalize(f.Reason))
-		}
+		e.vigenciaPide(&r, v, kind)
 		base, moment := e.arrive, "llega a "+e.name
 		if v.Base == "salida_del_pais" {
 			base, moment = e.leave, "sale de "+e.name
@@ -549,8 +571,24 @@ func (e evaluator) vigencia() Requirement {
 		}
 	}
 	r.Sources = append(r.Sources, f.Sources...)
-	e.official(&r, reglas.GrupoVigencia, r.Status == Falta && !r.MissingData)
+	// La búsqueda oficial explica la vigencia con la regla general y la
+	// excepción de la nacionalidad: si el valor se sabe, ya está dicho arriba.
+	if known {
+		e.officialSources(&r, reglas.GrupoVigencia, r.Status == Falta && !r.MissingData)
+	} else {
+		e.official(&r, reglas.GrupoVigencia, r.Status == Falta && !r.MissingData)
+	}
 	return r
+}
+
+// vigenciaPide dice la regla una sola vez. Si la regla trae su porqué (la
+// excepción de Estados Unidos), el porqué ya la dice entera y la reemplaza.
+func (e evaluator) vigenciaPide(r *Requirement, v reglas.Vigencia, kind string) {
+	if reason := e.f.Vigencia.Reason; reason != "" {
+		r.pide("%s.", capitalize(reason))
+		return
+	}
+	r.pide("%s", vigenciaRule(v, e.name, e.stop.Country, kind))
 }
 
 func (e evaluator) antiguedad() (Requirement, bool) {

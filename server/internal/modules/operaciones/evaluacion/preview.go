@@ -81,8 +81,13 @@ func withOfficial(lines []PreviewLine, det reglas.Detalles) []PreviewLine {
 			}
 			continue
 		}
+		// Con la vigencia sabida, la línea ya dice la regla: lo oficial la
+		// repetiría con otras palabras y queda solo como fuente.
+		repeats := group == reglas.GrupoVigencia && !l.Verify
 		for _, fr := range g.Pide {
-			l.Detail.Pide = append(l.Detail.Pide, sourced(fr))
+			if !repeats {
+				l.Detail.Pide = append(l.Detail.Pide, sourced(fr))
+			}
 			l.Sources = appendSource(l.Sources, fr.Source)
 		}
 		for _, fr := range g.Tramite {

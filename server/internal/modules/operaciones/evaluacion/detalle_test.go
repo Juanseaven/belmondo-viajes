@@ -197,9 +197,14 @@ func TestElDetalleDeLasPaginasOficialesSeSumaAlRenglon(t *testing.T) {
 	if !hasSource(visa.Sources, travelState.URL) {
 		t.Errorf("la página oficial va entre las fuentes del renglón: %+v", visa.Sources)
 	}
+	// La vigencia ya dice la regla: la página oficial queda como fuente, sin
+	// repetirla con otras palabras.
 	vig := find(t, reqs, "ana", "US", KeyVigencia)
-	if !strings.Contains(pide(vig), "exceptuada") {
-		t.Errorf("la vigencia suma la explicación oficial: %q", pide(vig))
+	if strings.Contains(pide(vig), "exceptuada") {
+		t.Errorf("con la vigencia sabida, lo oficial no se repite: %q", pide(vig))
+	}
+	if !hasSource(vig.Sources, travelState.URL) {
+		t.Errorf("la página oficial queda citada: %+v", vig.Sources)
 	}
 	if vig.Detail.Oficial != "" {
 		t.Errorf("con el detalle listo no se avisa nada: %q", vig.Detail.Oficial)
@@ -208,6 +213,35 @@ func TestElDetalleDeLasPaginasOficialesSeSumaAlRenglon(t *testing.T) {
 	// Al cliente le llega cómo se tramita.
 	if msg := Notice("Ana", trip, reqs); !strings.Contains(msg, "DS-160") {
 		t.Errorf("el aviso suma el trámite:\n%s", msg)
+	}
+}
+
+// Cuando no se sabe la vigencia, lo que dicen las páginas oficiales es lo único
+// que explica: ahí sí se muestra.
+func TestLaVigenciaPorVerificarMuestraLaExplicacionOficial(t *testing.T) {
+	rules := conDetalle(regla("AR", "US", func(f *reglas.Fields) {
+		f.Vigencia = reglas.Field[reglas.Vigencia]{Verify: true, Reason: "las fuentes no coinciden"}
+	}), detalleOficial(reglas.DetallesListo, map[string]reglas.Grupo{
+		reglas.GrupoVigencia: {Pide: []reglas.Frase{
+			{Text: "En general pide 6 meses, pero la Argentina está exceptuada.", Source: travelState},
+		}},
+	}))
+	vig := find(t, Evaluate(viaje("US", ana(pasaporteBeto)), rules, nil), "ana", "US", KeyVigencia)
+	if !strings.Contains(pide(vig), "exceptuada") {
+		t.Errorf("por verificar, la vigencia suma la explicación oficial: %q", pide(vig))
+	}
+}
+
+// La regla de Estados Unidos trae su porqué, que ya la dice entera: va una sola vez.
+func TestLaVigenciaConSuPorqueNoSeDiceDosVeces(t *testing.T) {
+	rules := regla("AR", "US", func(f *reglas.Fields) {
+		f.Vigencia = field(reglas.Vigencia{Amount: 0, Unit: "dias", Base: "salida_del_pais"})
+		f.Vigencia.Reason = "Argentina está en la lista de países exceptuados: alcanza con que esté vigente toda la estadía"
+	})
+	vig := find(t, Evaluate(viaje("US", ana(pasaporteBeto)), rules, nil), "ana", "US", KeyVigencia)
+	text := pide(vig)
+	if strings.Count(text, "toda la estadía") != 1 || !strings.Contains(text, "exceptuados") {
+		t.Errorf("la regla va una sola vez, con su porqué: %q", text)
 	}
 }
 

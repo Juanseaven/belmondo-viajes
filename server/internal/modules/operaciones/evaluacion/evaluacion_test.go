@@ -466,3 +466,21 @@ func TestElAvisoDiceLoQueFaltaPorPasajeroYNuncaTodoEnOrdenConDudas(t *testing.T)
 		t.Errorf("con dudas no hay «todo en orden»:\n%s", msg)
 	}
 }
+
+// Si el país pide pasaporte y el pasajero viaja con DNI, el documento falta y
+// la vigencia del DNI no se mide: no dice nada y confundía con un «Cumple».
+func TestConUnDocumentoQueElPaisNoAceptaNoSeMideSuVigencia(t *testing.T) {
+	rules := regla("AR", "US", func(f *reglas.Fields) {
+		f.Vigencia = field(reglas.Vigencia{Amount: 0, Unit: "dias", Base: "salida_del_pais"})
+		f.EmisionMaxAnios = field(10)
+	})
+	dni := &Document{Type: "DNI", Country: "AR", ExpiresAt: d("2029-10-27")}
+	reqs := Evaluate(viaje("US", ana(dni)), rules, nil)
+
+	if doc := find(t, reqs, "ana", "US", KeyDocumento); doc.Status != Falta {
+		t.Errorf("el documento falta: %+v", doc)
+	}
+	if has(reqs, "ana", "US", KeyVigencia) || has(reqs, "ana", "US", KeyAntiguedad) {
+		t.Error("con DNI no se mide la vigencia ni la antigüedad para un país que pide pasaporte")
+	}
+}

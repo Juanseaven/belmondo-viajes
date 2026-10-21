@@ -148,3 +148,22 @@ func TestLaVistaPreviaSumaElDetalleDeLasPaginasOficiales(t *testing.T) {
 		t.Errorf("buscando el detalle: %+v", l.Detail)
 	}
 }
+
+// La línea de vigencia ya dice la regla: lo oficial queda como fuente y no se
+// repite en el detalle.
+func TestLaVistaPreviaNoRepiteLaVigencia(t *testing.T) {
+	rules := conDetalle(regla("AR", "ES", func(f *reglas.Fields) {
+		f.Vigencia = field(reglas.Vigencia{Amount: 3, Unit: "meses", Base: "salida_del_pais"})
+	}), detalleOficial(reglas.DetallesListo, map[string]reglas.Grupo{
+		reglas.GrupoVigencia: {Pide: []reglas.Frase{
+			{Text: "El pasaporte tiene que ser válido hasta 3 meses después de salir del espacio Schengen.", Source: travelState},
+		}},
+	}))
+	vig := lineFor(t, Preview(Trip{Itinerary: []Stop{{Country: "ES", Role: "destino"}}}, rules), "ES", KeyVigencia)
+	if len(vig.Detail.Pide) != 0 {
+		t.Errorf("la vigencia no repite lo oficial: %+v", vig.Detail.Pide)
+	}
+	if !hasSource(vig.Sources, travelState.URL) {
+		t.Errorf("la página oficial queda citada: %+v", vig.Sources)
+	}
+}
