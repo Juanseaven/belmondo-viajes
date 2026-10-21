@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { defaultFilters } from "./tripFilters";
@@ -8,6 +9,7 @@ import type { TripRow } from "./types";
 
 afterEach(cleanup);
 
+// 2026-10-20 es martes.
 const today = "2026-10-20";
 
 const rows: TripRow[] = [
@@ -28,22 +30,26 @@ it("cada columna tiene el dato arriba y el detalle en gris abajo", () => {
   table();
   const first = screen.getAllByRole("row")[1];
   expect(within(first).getByText("Agus Alonso")).toBeTruthy();
-  expect(within(first).getByText("2 pax · Juanse")).toBeTruthy();
-  expect(within(first).getByText("Confirmado")).toBeTruthy();
-  expect(within(first).getByText("10 dic")).toBeTruthy();
-  expect(within(first).getByText("al 20 dic")).toBeTruthy();
+  expect(within(first).getByText("2 pasajeros · Juanse")).toBeTruthy();
+  expect(within(first).getByText("Confirmado").className).toContain("is-confirmado");
+  expect(within(first).getByText("jue 10/12")).toBeTruthy();
+  expect(within(first).getByText("vuelve el 20/12")).toBeTruthy();
   expect(within(first).getByText("USD 3.200")).toBeTruthy();
   expect(within(first).getByText("seña vence el jueves")).toBeTruthy();
   expect(within(first).getByText("Avisar que el documento vence")).toBeTruthy();
-  expect(screen.getByText("23 viajes")).toBeTruthy();
+  expect(within(first).getByText("Hace 9 días")).toBeTruthy();
+  expect(screen.getByText("23 viajes · ordenados por salida")).toBeTruthy();
 });
 
-it("lo que falta es una raya, y un viaje sin pendientes está al día", () => {
+it("lo que falta dice qué falta, y un viaje sin pendientes está al día", () => {
   table();
   const second = screen.getAllByRole("row")[2];
-  expect(within(second).getAllByText("—").length).toBeGreaterThanOrEqual(3);
+  expect(within(second).getByText("Sin destino")).toBeTruthy();
+  expect(within(second).getByText("Sin fecha")).toBeTruthy();
+  expect(within(second).getByText("Sin cotizar")).toBeTruthy();
+  expect(within(second).getByText("Sin pasajeros · Sin asignar")).toBeTruthy();
   expect(within(second).getByText("Al día")).toBeTruthy();
-  expect(within(second).queryByText(/Sin completar/)).toBeNull();
+  expect(within(second).queryByText("—")).toBeNull();
 });
 
 it("clic en una fila abre su chat; sin conversación no hace nada", () => {
@@ -68,16 +74,25 @@ it("sin resultados ofrece limpiar los filtros", () => {
   expect(props.onClear).toHaveBeenCalled();
 });
 
-it("los filtros cambian de a uno y dicen cuál está activo", () => {
+it("los chips de estado dicen cuántos viajes hay en cada uno", () => {
+  render(<TripFiltersBar value={defaultFilters()} sellers={[]} byStatus={{ consulta: 3, cotizado: 2, confirmado: 2, "en viaje": 1, cerrado: 14 }} onChange={vi.fn()} />);
+
+  expect(screen.getByRole("button", { name: "Abiertos 8" }).getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByRole("button", { name: "Consultas 3" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Cerrados 14" })).toBeTruthy();
+});
+
+it("los filtros cambian de a uno y los desplegables dicen lo elegido", async () => {
+  const user = userEvent.setup();
   const onChange = vi.fn();
   const value = defaultFilters();
   render(<TripFiltersBar value={value} sellers={[{ id: "u-1", name: "Lucía" }]} onChange={onChange} />);
 
-  expect(screen.getByRole("button", { name: "Abiertos" }).getAttribute("aria-pressed")).toBe("true");
   fireEvent.click(screen.getByRole("button", { name: "Confirmados" }));
   expect(onChange).toHaveBeenLastCalledWith({ ...value, estado: "confirmado" });
 
-  fireEvent.change(screen.getByLabelText("Vendedor"), { target: { value: "ninguno" } });
+  await user.click(screen.getByRole("button", { name: "Vendedor: Todos" }));
+  await user.click(screen.getByRole("menuitemradio", { name: "Sin asignar" }));
   expect(onChange).toHaveBeenLastCalledWith({ ...value, vendedor: "ninguno" });
 
   fireEvent.click(screen.getByRole("button", { name: "Con algo atrasado" }));
@@ -87,13 +102,17 @@ it("los filtros cambian de a uno y dicen cuál está activo", () => {
   expect(onChange).toHaveBeenLastCalledWith({ ...value, q: "rossi" });
 });
 
-it("elegir fechas muestra el rango", () => {
+it("elegir fechas muestra el rango", async () => {
+  const user = userEvent.setup();
   const onChange = vi.fn();
   const { rerender } = render(<TripFiltersBar value={defaultFilters()} sellers={[]} onChange={onChange} />);
   expect(screen.queryByLabelText("Desde")).toBeNull();
 
-  fireEvent.change(screen.getByLabelText("Salida"), { target: { value: "rango" } });
+  await user.click(screen.getByRole("button", { name: "Salida: Cualquier fecha" }));
+  await user.click(screen.getByRole("menuitemradio", { name: "Elegir fechas…" }));
+  expect(onChange).toHaveBeenLastCalledWith({ ...defaultFilters(), salida: "rango" });
   rerender(<TripFiltersBar value={{ ...defaultFilters(), salida: "rango" }} sellers={[]} onChange={onChange} />);
+  expect(screen.getByRole("button", { name: "Salida: Elegir fechas…" })).toBeTruthy();
   expect(screen.getByLabelText("Desde")).toBeTruthy();
   expect(screen.getByLabelText("Hasta")).toBeTruthy();
 });

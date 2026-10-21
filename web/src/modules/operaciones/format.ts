@@ -66,6 +66,67 @@ function relativeDay(value: string, from: string) {
   return `el ${shortDate(value)}`;
 }
 
+const weekdayShort = new Intl.DateTimeFormat("es-AR", { weekday: "short" });
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const parts = (value: string) => dayOf(value).split("-").map(Number);
+const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+/** «29/10». */
+export function dayMonth(value: string) {
+  const [, m, d] = parts(value);
+  return `${pad2(d)}/${pad2(m)}`;
+}
+
+/** «07/11/2026». */
+export function fullDate(value: string) {
+  const [y] = parts(value);
+  return `${dayMonth(value)}/${y}`;
+}
+
+/** «jue»: el día de la semana corto, sin el punto que agrega Intl. */
+export const weekdayOf = (value: string) => weekdayShort.format(calendarDay(value)).replace(".", "");
+
+/** «jue 29/10/2026»: una fecha suelta siempre dice qué día de la semana es. */
+export const longDay = (value: string) => `${weekdayOf(value)} ${fullDate(value)}`;
+
+/** «jue 29/10»: lo mismo en una tabla, donde el año sobra. */
+export const shortDay = (value: string) => `${weekdayOf(value)} ${dayMonth(value)}`;
+
+/** «jue 29 oct». */
+export const weekdayDate = (value: string) => `${weekdayOf(value)} ${shortDate(value)}`;
+
+/** El lunes de la semana de un día: para saber si otro cae en la misma. */
+const mondayOf = (day: string) => {
+  const date = calendarDay(day);
+  const offset = (date.getDay() + 6) % 7;
+  date.setDate(date.getDate() - offset);
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+};
+
+/**
+ * Un plazo en palabras, como lo diría alguien en la agencia: «Hoy», «Mañana»,
+ * «Viernes» si cae esta semana, «En 6 días» si es la que viene, «Hace 1 día» si
+ * ya pasó.
+ */
+export function inWords(value: string, from = today()) {
+  const diff = daysBetween(from, value);
+  if (diff === 0) return "Hoy";
+  if (diff === 1) return "Mañana";
+  if (diff === -1) return "Ayer";
+  if (diff < 0) return `Hace ${-diff} días`;
+  if (mondayOf(value) === mondayOf(from)) return capitalize(weekday.format(calendarDay(value)));
+  return `En ${diff} días`;
+}
+
+/** Atrasado, esta semana o más adelante: el color de un plazo. */
+export type Urgency = "late" | "soon" | "later";
+
+export function urgency(value: string, from = today()): Urgency {
+  const diff = daysBetween(from, value);
+  if (diff < 0) return "late";
+  return diff < 7 ? "soon" : "later";
+}
+
 /** «venció el 18 oct», «vence hoy», «vence el jueves». */
 export function whenDue(dueAt: string, from = today()) {
   return daysBetween(from, dueAt) < 0 ? `venció el ${shortDate(dueAt)}` : `vence ${relativeDay(dueAt, from)}`;

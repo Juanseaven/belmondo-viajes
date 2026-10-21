@@ -19,6 +19,9 @@ export function useThread(conversationId: string | null, focusId?: string) {
   const [cursor, setCursor] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // De qué conversación son los mensajes cargados: al cambiar de chat, los del
+  // anterior siguen en pantalla hasta que llega la página nueva.
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
 
   const queryRef = useRef(0);
   const earlyEchoes = useRef(new Map<string, Message>());
@@ -28,6 +31,7 @@ export function useThread(conversationId: string | null, focusId?: string) {
     if (!conversationId) {
       setMessages([]);
       setCursor(undefined);
+      setLoadedFor(null);
       return;
     }
 
@@ -41,6 +45,7 @@ export function useThread(conversationId: string | null, focusId?: string) {
         if (query !== queryRef.current) return;
         setMessages([...page.items].reverse());
         setCursor(page.nextCursor);
+        setLoadedFor(conversationId);
       })
       .catch((err: unknown) => {
         if (query !== queryRef.current) return;
@@ -157,6 +162,7 @@ export function useThread(conversationId: string | null, focusId?: string) {
 
   return {
     messages,
+    loadedFor,
     loading,
     error,
     hasOlder: Boolean(cursor),

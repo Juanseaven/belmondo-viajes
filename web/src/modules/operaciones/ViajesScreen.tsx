@@ -49,13 +49,15 @@ export function ViajesScreen() {
   };
 
   const asking = pending.rows.filter((row) => row.group !== "salen").length;
+  // El número va en rojo si algo está atrasado; en gris si solo hay cosas de la semana.
+  const late = pending.rows.some((row) => row.group === "atrasado");
 
   return (
     <section className="viajes-screen">
       <header className="viajes-head"><h1>Viajes</h1></header>
       <div className="viajes-tabs" role="tablist" aria-label="Vistas de viajes">
         <button type="button" role="tab" aria-selected={tab === "pendientes"} onClick={() => go("pendientes", filters)}>
-          Pendientes{asking > 0 && <> <span className="viajes-count">{asking}</span></>}
+          Pendientes{asking > 0 && <> <span className={late ? "viajes-count is-late" : "viajes-count"}>{asking}</span></>}
         </button>
         <button type="button" role="tab" aria-selected={tab === "todos"} onClick={() => go("todos", filters)}>
           Todos los viajes
@@ -113,6 +115,7 @@ function PendingView({ state, onOpen }: { state: ReturnType<typeof usePending>; 
 function AllTripsView({ filters, onFilters, onOpen }: { filters: TripFilters; onFilters: (next: TripFilters) => void; onOpen: (row: TripRow) => void }) {
   const [rows, setRows] = useState<TripRow[]>([]);
   const [total, setTotal] = useState(0);
+  const [byStatus, setByStatus] = useState<Record<string, number>>();
   const [cursor, setCursor] = useState<string>();
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string>();
@@ -138,6 +141,7 @@ function AllTripsView({ filters, onFilters, onOpen }: { filters: TripFilters; on
           if (!current) return;
           setRows(page.items);
           setTotal(page.total);
+          setByStatus(page.byStatus);
           setCursor(page.nextCursor);
           setError(undefined);
         })
@@ -162,7 +166,7 @@ function AllTripsView({ filters, onFilters, onOpen }: { filters: TripFilters; on
 
   return (
     <>
-      <TripFiltersBar value={filters} sellers={sellers} onChange={onFilters} />
+      <TripFiltersBar value={filters} sellers={sellers} byStatus={byStatus} onChange={onFilters} />
       {error && <p className="viajes-error" role="alert">{error}</p>}
       {!loaded ? <p className="viajes-loading">Cargando viajes…</p> : (
         <TripsTable

@@ -147,8 +147,27 @@ describe("Thread timeline", () => {
     render(<Thread conversation={conversation} lineStatus="open" />);
     await screen.findByText("Respuesta concreta");
 
-    expect(screen.getByRole("separator", { name: "martes, 18 de agosto de 2026" })).toBeTruthy();
-    expect(screen.getByRole("separator", { name: "miércoles, 19 de agosto de 2026" })).toBeTruthy();
+    expect(screen.getByRole("separator", { name: /^Martes 18 de agosto/ })).toBeTruthy();
+    expect(screen.getByRole("separator", { name: /^Miércoles 19 de agosto/ })).toBeTruthy();
+  });
+
+  it("marks where the unread messages start, counting back the received ones", async () => {
+    vi.mocked(mirrorApi.messages).mockResolvedValue({
+      items: [
+        original,
+        { ...original, id: "out-1", direction: "outbound", origin: "device", body: "Te paso el presupuesto", timestamp: "2026-08-18T11:00:00Z" },
+        { ...original, id: "in-1", body: "Dale", timestamp: "2026-08-18T12:00:00Z" },
+        { ...original, id: "in-2", body: "¿Cuándo?", timestamp: "2026-08-18T12:01:00Z" },
+      ],
+    });
+
+    render(<Thread conversation={{ ...conversation, unread: 2 }} lineStatus="open" />);
+    await screen.findByText("¿Cuándo?");
+
+    const divider = (await screen.findByText("2 mensajes sin leer")).parentElement!;
+    expect(divider.nextElementSibling?.textContent).toContain("Dale");
+    expect(screen.getByLabelText("Enviado desde el teléfono")).toBeTruthy();
+    expect(screen.queryByText(/desde el teléfono/i)).toBeNull();
   });
 
   it("stays anchored at the bottom when sending while older messages are loading", async () => {

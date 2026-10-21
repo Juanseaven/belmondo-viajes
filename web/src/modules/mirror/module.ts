@@ -1,5 +1,7 @@
 import type { ModuleDef } from "../types";
 import { MirrorScreen } from "./MirrorScreen";
+import { useUnreadDot } from "./useUnreadDot";
+import "./mirror.css";
 
 /**
  * Descriptor del módulo espejo.
@@ -16,4 +18,5 @@ export const mirror: ModuleDef = {
   description:
     "Todas las líneas de la agencia en una bandeja, con filtro por número y envío desde el panel.",
   Screen: MirrorScreen,
+  useAttention: useUnreadDot,
 };

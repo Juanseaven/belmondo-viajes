@@ -1,15 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ContactDetails } from "@/modules/mirror/ContactDetails";
+import type { Conversation } from "@/modules/mirror/api";
 import { operacionesApi, type NewPassenger } from "./api";
 import { NewTripPanel, type TripSeed } from "./NewTripPanel";
+import { StatusPill } from "./status";
 import { TripPanel } from "./TripPanel";
 import type { Control, Country, Seller } from "./types";
 import type { useTrips } from "./useTrips";
 
 interface TripSidebarProps {
-  contactId: string;
-  contactName: string;
+  conversation: Pick<Conversation, "contactId" | "contactName" | "avatarUrl" | "phoneNumber" | "instanceLabel" | "isGroup">;
   trips: ReturnType<typeof useTrips>;
   collapsed?: boolean;
   onClose?: () => void;
@@ -19,13 +23,14 @@ interface TripSidebarProps {
 
 /**
  * La ficha del viaje en la pantalla del espejo. Es la única pieza que habla con
- * la API de operaciones: la pantalla le pasa el contacto abierto y recibe el
- * pedido de precargar el composer, nada más.
+ * la API de operaciones: la pantalla le pasa la conversación abierta y recibe
+ * el pedido de precargar el composer, nada más.
  *
  * Cada escritura recarga la ficha al terminar. El websocket también lo haría,
  * pero quien guardó no tiene por qué esperar a su propio eco.
  */
-export function TripSidebar({ contactId, contactName, trips, collapsed, onClose, onRunControl }: TripSidebarProps) {
+export function TripSidebar({ conversation, trips, collapsed, onClose, onRunControl }: TripSidebarProps) {
+  const { contactId } = conversation;
   const [sellers, setSellers] = useState<Seller[]>([]);
   const [countries, setCountries] = useState<Country[]>([]);
   const [creating, setCreating] = useState(false);
@@ -55,32 +60,49 @@ export function TripSidebar({ contactId, contactName, trips, collapsed, onClose,
     return result;
   };
 
-  // El primer dato guardado crea el viaje: abrir la conversación no escribe.
-  const createDraft = async (seed: TripSeed) => {
+  const create = async (seed: TripSeed) => {
     const trip = await operacionesApi.createTrip({ contactId, ...seed });
     trips.select(trip.id);
+    await trips.reload();
     setCreating(false);
-    return trip;
   };
 
-  if (!active || creating) {
-    return (
-      <NewTripPanel
-        contactName={contactName}
-        countries={countries}
-        collapsed={collapsed}
-        onClose={onClose}
-        onCancel={active ? () => setCreating(false) : undefined}
-        onCreate={async (seed) => { await after(createDraft(seed)); }}
-        onAddPassenger={async (input) => {
-          const trip = await createDraft({});
-          await after(operacionesApi.addPassenger(trip.id, input));
-        }}
-        onSavePayment={async (input) => {
-          const trip = await createDraft({});
-          await after(operacionesApi.putPayment(trip.id, input));
-        }}
-      />
+  const shell = (children: ReactNode) => (
+    <aside className={`trip-panel${collapsed ? " is-collapsed" : ""}`} aria-label="Viaje" aria-hidden={collapsed || undefined} inert={collapsed || undefined}>
+      {children}
+    </aside>
+  );
+
+  if (creating) {
+    return shell(
+      <NewTripPanel contactName={conversation.contactName} avatarUrl={conversation.avatarUrl} countries={countries}
+        onCancel={() => setCreating(false)} onCreate={create} />,
+    );
+  }
+
+  if (!active) {
+    const previous = trips.contactTrips;
+    return shell(
+      <ContactDetails conversation={conversation} onClose={onClose}>
+        <div className="panel-empty">
+          <strong>{previous.length > 0 ? "Este contacto no tiene viajes abiertos" : "Este contacto no tiene viajes"}</strong>
+          <p>Cargá el recorrido y las fechas; los pasajeros y el pago se completan después.</p>
+          <Button size="sm" onClick={() => setCreating(true)}><Plus aria-hidden />Nuevo viaje</Button>
+        </div>
+        {previous.length > 0 && <>
+          <h3 className="panel-group-title">Viajes anteriores</h3>
+          <ul className="panel-card trip-history">
+            {previous.map((trip) => (
+              <li key={trip.id}>
+                <button type="button" onClick={() => trips.select(trip.id)}>
+                  <span><strong>Viaje #{trip.number}</strong><small>{trip.destination || "Destino sin cargar"}</small></span>
+                  <StatusPill status={trip.status} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>}
+      </ContactDetails>,
     );
   }
 

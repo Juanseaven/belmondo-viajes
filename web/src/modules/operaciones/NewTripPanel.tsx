@@ -1,126 +1,78 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeft, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import type { PaymentInput } from "./api";
-import { DEFAULT_ORIGIN, TripRoute, emptyStop, toStops, type StopDraft } from "./TripRoute";
+import { ContactAvatar } from "@/modules/mirror/ContactAvatar";
+import { Field, PanelEditor, describeChanges } from "./PanelEditor";
+import { DEFAULT_ORIGIN, StopDates, TripRoute, emptyStop, toStops, type StopDraft } from "./TripRoute";
 import type { Country, Stop } from "./types";
 
-type Tab = "resumen" | "pasajeros" | "pagos" | "controles";
 export type TripSeed = { originCountry?: string; itinerary?: Stop[]; departAt?: string; returnAt?: string };
 
 interface NewTripPanelProps {
   contactName: string;
+  avatarUrl?: string;
   countries?: Country[];
-  collapsed?: boolean;
-  onClose?: () => void;
-  /** Presente cuando el contacto ya tiene un viaje: vuelve a él sin crear nada. */
-  onCancel?: () => void;
+  onCancel: () => void;
   onCreate: (input: TripSeed) => Promise<void>;
-  onAddPassenger?: (input: { firstName: string; lastName: string }) => Promise<void>;
-  onSavePayment?: (input: PaymentInput) => Promise<void>;
 }
 
-export function NewTripPanel({ contactName, countries = [], collapsed, onClose, onCancel, onCreate, onAddPassenger, onSavePayment }: NewTripPanelProps) {
-  const [tab, setTab] = useState<Tab>("resumen");
+/**
+ * Un viaje nuevo, con el mismo esquema que «Editar»: recorrido y fechas, y un
+ * solo botón abajo. El cliente sale del contacto: se crea con su nombre y se
+ * completa después.
+ */
+export function NewTripPanel({ contactName, avatarUrl, countries = [], onCancel, onCreate }: NewTripPanelProps) {
   const [origin, setOrigin] = useState(DEFAULT_ORIGIN);
   const [stops, setStops] = useState<StopDraft[]>([emptyStop("destino")]);
   const [departAt, setDepartAt] = useState("");
   const [returnAt, setReturnAt] = useState("");
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [total, setTotal] = useState("");
-  const [method, setMethod] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
   const itinerary = toStops(stops);
 
-  const save = async (action: () => Promise<void>) => {
+  const changes = describeChanges([
+    origin !== DEFAULT_ORIGIN || itinerary.length > 0 ? "el recorrido" : "",
+    departAt || returnAt ? "las fechas" : "",
+  ].filter(Boolean));
+
+  const create = async () => {
+    const input: TripSeed = { originCountry: origin };
+    if (itinerary.length > 0) input.itinerary = itinerary;
+    if (departAt) input.departAt = departAt;
+    if (returnAt) input.returnAt = returnAt;
     setSaving(true);
     setError(undefined);
     try {
-      await action();
+      await onCreate(input);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "No se pudo guardar");
+      setError(cause instanceof Error ? cause.message : "No se pudo crear el viaje");
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <aside className={`contact-details-panel trip-panel${collapsed ? " is-collapsed" : ""}`} aria-label="Viaje" aria-hidden={collapsed || undefined} inert={collapsed || undefined}>
-      <header className="operation-head">
-        <div><strong>Operación nueva</strong><small>Se crea al guardar el primer dato</small></div>
-        <span className="trip-head-actions">
-          {onCancel && <Button variant="ghost" size="icon-xs" aria-label="Volver al viaje" title="Volver al viaje" onClick={onCancel}><ArrowLeft /></Button>}
-          {onClose && <Button variant="ghost" size="icon-xs" aria-label="Ocultar viaje" onClick={onClose}><X /></Button>}
-        </span>
-      </header>
-      <div className="detail-tabs operation-tabs" role="tablist" aria-label="Secciones de la operación">
-        {(["resumen", "pasajeros", "pagos", "controles"] as Tab[]).map((value) => (
-          <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>
-            {value[0].toUpperCase() + value.slice(1)}
-          </button>
-        ))}
-      </div>
-      <div className="trip-panel-body draft-operation">
-        {error && <p className="trip-form-error" role="alert">{error}</p>}
-        {tab === "resumen" && <>
-          <section className="detail-section">
-            <h3>Viaje</h3>
-            <form className="trip-details-form" onSubmit={(event) => {
-              event.preventDefault();
-              const input: TripSeed = { originCountry: origin };
-              if (itinerary.length > 0) input.itinerary = itinerary;
-              if (departAt) input.departAt = departAt;
-              if (returnAt) input.returnAt = returnAt;
-              void save(() => onCreate(input));
-            }}>
-              <TripRoute origin={origin} stops={stops} countries={countries} onOrigin={setOrigin} onStops={setStops} />
-              <div className="trip-date-fields">
-                <label>Salida<input type="date" value={departAt} onChange={(event) => setDepartAt(event.target.value)} /></label>
-                <label>Regreso<input type="date" value={returnAt} onChange={(event) => setReturnAt(event.target.value)} /></label>
-              </div>
-              <Button size="sm" type="submit" disabled={saving || (itinerary.length === 0 && !departAt && !returnAt)}>{saving ? "Guardando…" : "Guardar viaje"}</Button>
-            </form>
-          </section>
-          <section className="detail-section">
-            <h3>Contacto</h3>
-            <div className="draft-contact"><span className="draft-contact-avatar">{contactName.trim().charAt(0).toUpperCase() || "?"}</span><span><strong>{contactName}</strong><small>Contacto de WhatsApp</small></span></div>
-          </section>
-        </>}
-        {tab === "pasajeros" && <section className="detail-section">
-          <h3>Pasajeros</h3>
-          <div className="detail-empty trip-empty"><strong>Todavía no hay pasajeros</strong><p>Podés empezar por acá; la operación se crea al guardar.</p></div>
-          <form className="trip-inline-form" onSubmit={(event) => {
-            event.preventDefault();
-            if (!onAddPassenger) return;
-            void save(async () => {
-              await onAddPassenger({ firstName: firstName.trim(), lastName: lastName.trim() });
-              setFirstName("");
-              setLastName("");
-            });
-          }}>
-            <input aria-label="Nombre" placeholder="Nombre" value={firstName} onChange={(event) => setFirstName(event.target.value)} required />
-            <input aria-label="Apellido" placeholder="Apellido" value={lastName} onChange={(event) => setLastName(event.target.value)} required />
-            <Button size="sm" type="submit" disabled={saving || !onAddPassenger}>Guardar pasajero</Button>
-          </form>
-        </section>}
-        {tab === "pagos" && <section className="detail-section">
-          <h3>Pagos</h3>
-          <form className="trip-payment-form" onSubmit={(event) => {
-            event.preventDefault();
-            if (!onSavePayment) return;
-            void save(() => onSavePayment({ totalUsd: total ? Number(total) : undefined, method: method.trim() || undefined }));
-          }}>
-            <label>Total USD<input inputMode="decimal" value={total} onChange={(event) => setTotal(event.target.value)} placeholder="Sin completar" /></label>
-            <label>Método<input value={method} onChange={(event) => setMethod(event.target.value)} placeholder="Sin completar" /></label>
-            <Button size="sm" type="submit" disabled={saving || !onSavePayment || (!total && !method.trim())}>Guardar pago</Button>
-          </form>
-        </section>}
-        {tab === "controles" && <section className="detail-section"><h3>Controles</h3><div className="detail-empty trip-empty"><strong>Se generan con la operación</strong><p>Aparecerán cuando guardes el primer dato.</p></div></section>}
-      </div>
-    </aside>
+    <PanelEditor title="Nuevo viaje" saveLabel="Crear viaje" changes={changes} saving={saving} error={error}
+      onSave={() => void create()} onBack={onCancel}>
+      <section className="editor-section">
+        <h4>Recorrido</h4>
+        <TripRoute origin={origin} stops={stops} countries={countries} onOrigin={setOrigin} onStops={setStops} />
+      </section>
+      <section className="editor-section">
+        <h4>Fechas</h4>
+        <div className="field-pair">
+          <Field label="Salida"><input type="date" value={departAt} onChange={(event) => setDepartAt(event.target.value)} /></Field>
+          <Field label="Regreso"><input type="date" value={returnAt} onChange={(event) => setReturnAt(event.target.value)} /></Field>
+        </div>
+        <StopDates stops={stops} countries={countries} onStops={setStops} />
+      </section>
+      <section className="editor-section">
+        <h4>Cliente</h4>
+        <div className="draft-contact">
+          <ContactAvatar name={contactName} src={avatarUrl} className="avatar-36" />
+          <span><strong>{contactName}</strong><small>Se crea con el nombre del contacto; los datos se completan después.</small></span>
+        </div>
+      </section>
+    </PanelEditor>
   );
 }

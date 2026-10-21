@@ -39,6 +39,10 @@ export interface Conversation {
   lastType?: string;
   unread: number;
   needsReply?: boolean;
+  /** El último mensaje: tildes si lo mandó la agencia y, en un grupo, quién lo escribió. */
+  lastDirection?: "inbound" | "outbound";
+  lastStatus?: string;
+  lastSender?: string;
 }
 
 export interface MessageMedia {
@@ -123,6 +127,9 @@ export interface NewLine {
   instance: string;
   status: string;
 }
+
+/** La foto de WhatsApp del contacto de una conversación, servida por el backend con el JWT. */
+export const conversationAvatarUrl = (conversationId: string) => `/api/mirror/conversations/${conversationId}/avatar`;
 
 /** Descarta las claves vacías para no mandar `?instance=&q=` en cada petición. */
 function qs(params: Record<string, string | number | undefined>): string {

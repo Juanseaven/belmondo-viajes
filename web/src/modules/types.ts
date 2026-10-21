@@ -27,4 +27,7 @@ export interface ModuleDef {
 
   /** Componente de la pantalla principal del módulo. */
   Screen: ComponentType;
+
+  /** Si el módulo pide atención: el punto verde sobre su ícono en la barra. */
+  useAttention?: () => boolean;
 }

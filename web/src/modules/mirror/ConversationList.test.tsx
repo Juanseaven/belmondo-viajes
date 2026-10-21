@@ -61,7 +61,7 @@ describe("ConversationList", () => {
     expect(screen.queryByText("Línea Norte")).toBeNull();
   });
 
-  it("marks a conversation with pending messages as unread", () => {
+  it("marks an unread row by its time and count, without a «Sin leer» line", () => {
     render(
       <ConversationList
         inbox={inboxWith([{
@@ -80,6 +80,32 @@ describe("ConversationList", () => {
       />,
     );
 
-    expect(screen.getByText("Sin leer")).toBeTruthy();
+    expect(screen.getByRole("button").className).toContain("is-unread");
+    expect(screen.getByLabelText("2 sin leer").textContent).toBe("2");
+    expect(screen.queryByText("Sin leer")).toBeNull();
+  });
+
+  it("shows who wrote last in a group and ticks on what the agency sent", () => {
+    const base = {
+      instanceId: "line-1", instanceLabel: "Juanse", contactId: "c", unread: 0, lastType: "text",
+    };
+    render(
+      <ConversationList
+        inbox={inboxWith([
+          { ...base, id: "g", contactName: "Administrativas aven", isGroup: true, preview: "Dale", lastDirection: "inbound", lastSender: "Natalie" },
+          { ...base, id: "b", contactName: "Beto", isGroup: false, preview: "Listo", lastDirection: "outbound", lastStatus: "read" },
+          { ...base, id: "n", contactName: "+5491135910619", isGroup: false, preview: "", lastType: "audio" },
+        ])}
+        selectedId="b"
+        onSelect={() => undefined}
+        renderTags={(conversation) => (conversation.id === "b" ? <span>#4 Estados Unidos</span> : null)}
+      />,
+    );
+
+    expect(screen.getByText("Natalie:")).toBeTruthy();
+    expect(screen.getByLabelText("Leído")).toBeTruthy();
+    expect(screen.getByText("+54 9 11 3591-0619")).toBeTruthy();
+    expect(screen.getByText("Audio")).toBeTruthy();
+    expect(screen.getByText("#4 Estados Unidos")).toBeTruthy();
   });
 });

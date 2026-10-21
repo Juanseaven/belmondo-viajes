@@ -1,5 +1,6 @@
 import type { ModuleDef } from "../types";
 import { ViajesScreen } from "./ViajesScreen";
+import "./operaciones.css";
 
 /**
  * Descriptor del módulo operaciones. Su pantalla es Viajes; la ficha del viaje,

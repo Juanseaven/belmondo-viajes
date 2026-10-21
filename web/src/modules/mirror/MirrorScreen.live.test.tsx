@@ -110,28 +110,26 @@ afterEach(() => {
 });
 
 describe("MirrorScreen real", () => {
-  it("crea el borrador antes de guardar el primer pasajero", async () => {
+  it("sin viaje ofrece crear uno y lo crea con lo cargado", async () => {
     tripHookState.active = undefined;
     vi.mocked(operacionesApi.createTrip).mockResolvedValue({
-      id: "trip-draft", number: 10483, customerId: "customer-real", status: "cotizado",
+      id: "trip-draft", number: 10483, customerId: "customer-real", status: "consulta",
       destination: "", createdAt: "2026-08-21", passengerCount: 0,
-    });
-    vi.mocked(operacionesApi.addPassenger).mockResolvedValue({
-      id: "passenger-1", tripId: "trip-draft", firstName: "Ana", lastName: "Pérez",
-      kind: "adulto", isHolder: false, residenceCountry: "AR", documents: [], permits: [],
     });
 
     render(<TooltipProvider><MirrorScreen /></TooltipProvider>);
     await screen.findAllByText("Contacto Real");
-    fireEvent.click(screen.getByRole("tab", { name: "Pasajeros" }));
-    fireEvent.change(screen.getByLabelText("Nombre"), { target: { value: "Ana" } });
-    fireEvent.change(screen.getByLabelText("Apellido"), { target: { value: "Pérez" } });
-    fireEvent.click(screen.getByRole("button", { name: "Guardar pasajero" }));
+    expect(screen.getByText("Este contacto no tiene viajes")).toBeTruthy();
+    // Abrir el chat no crea nada.
+    expect(operacionesApi.createTrip).not.toHaveBeenCalled();
 
-    await waitFor(() => expect(operacionesApi.addPassenger).toHaveBeenCalledWith("trip-draft", { firstName: "Ana", lastName: "Pérez" }));
-    expect(vi.mocked(operacionesApi.createTrip).mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(operacionesApi.addPassenger).mock.invocationCallOrder[0],
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Nuevo viaje" }));
+    fireEvent.change(screen.getByLabelText("Salida"), { target: { value: "2026-12-10" } });
+    fireEvent.click(screen.getByRole("button", { name: "Crear viaje" }));
+
+    await waitFor(() => expect(operacionesApi.createTrip).toHaveBeenCalledWith({
+      contactId: "real-contact", originCountry: "AR", departAt: "2026-12-10",
+    }));
   });
 
   it("usa la composicion nueva con datos reales y sin contenido demo", async () => {
@@ -142,8 +140,9 @@ describe("MirrorScreen real", () => {
     );
 
     expect((await screen.findAllByText("Contacto Real")).length).toBeGreaterThan(0);
-    // En la ficha, el nombre del cliente es un campo editable.
-    expect(screen.getAllByDisplayValue("Contacto Real").length).toBeGreaterThan(0);
+    // La ficha se lee: el cliente es un dato, no un campo abierto.
+    expect(screen.queryAllByDisplayValue("Contacto Real")).toHaveLength(0);
+    expect(screen.getByRole("heading", { name: "Chats" })).toBeTruthy();
     expect(screen.getByLabelText("Filtrar por línea")).toBeTruthy();
 
     const tabs = screen.getByRole("tablist", { name: "Filtrar conversaciones" });
@@ -153,7 +152,9 @@ describe("MirrorScreen real", () => {
     expect(screen.queryByRole("heading", { name: "Bandeja de entrada" })).toBeNull();
     expect(screen.queryByText("Ana Pérez")).toBeNull();
     expect(screen.getByText("Viaje #10482")).toBeTruthy();
-    expect(screen.getAllByText("Iguazú").length).toBeGreaterThan(0);
+    expect(screen.getByText("Viaje #10482 · Iguazú")).toBeTruthy();
+    expect(screen.getByText("#10482 Iguazú")).toBeTruthy();
+    expect(screen.getByText("Iguazú · sin vendedor")).toBeTruthy();
     expect(screen.getAllByText("Avisar por visa").length).toBeGreaterThan(0);
     expect(screen.queryByText("Nota de demostración")).toBeNull();
   });
@@ -183,10 +184,11 @@ describe("MirrorScreen real", () => {
     );
     await screen.findAllByText("Contacto Real");
 
-    fireEvent.click(screen.getByRole("button", { name: "Ocultar viaje" }));
+    const close = within(screen.getByRole("complementary", { name: "Viaje" })).getByRole("button", { name: "Ocultar viaje" });
+    fireEvent.click(close);
     expect(screen.queryByRole("complementary", { name: "Viaje" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Ver detalles" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mostrar viaje" }));
     expect(screen.getByRole("complementary", { name: "Viaje" })).toBeTruthy();
   });
 

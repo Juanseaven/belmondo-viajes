@@ -1,25 +1,31 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertCircle, Check, LoaderCircle, Paperclip, Reply, Smartphone } from "lucide-react";
+import { AlertCircle, LoaderCircle, Paperclip, Reply, Smartphone } from "lucide-react";
 import { mirrorApi, type Message, type MessageMedia } from "./api";
+import { MessageTicks } from "./MessageTicks";
 
 /**
- * Un mensaje del hilo.
+ * Un mensaje del hilo, como en WhatsApp.
  *
- * El origen decide de qué lado y con qué etiqueta se pinta:
+ * El origen decide de qué lado y cómo se firma:
  *   contact → izquierda, es el cliente.
- *   device  → derecha, salió del teléfono: sin autor en el sistema.
+ *   device  → derecha, salió del teléfono: un celular chico al lado de la hora.
  *   panel   → derecha, con el nombre de quien lo escribió desde la app.
+ *
+ * `first` es la primera de una tanda del mismo lado y el mismo autor: lleva la
+ * colita y, si corresponde, el nombre arriba. Las demás no lo repiten.
  */
 export function MessageBubble({
   message,
   isGroup = false,
+  first = true,
   onReply,
   onOpenQuote,
 }: {
   message: Message;
   isGroup?: boolean;
+  first?: boolean;
   onReply?: (message: Message) => void;
   onOpenQuote?: (messageId: string) => void;
 }) {
@@ -30,8 +36,29 @@ export function MessageBubble({
   const fallido = Boolean(message.pending?.error);
 
   const clases = ["bubble", mine ? "out" : "in"];
+  if (first) clases.push("first");
   if (provisional) clases.push("provisional");
   if (fallido) clases.push("fallido");
+
+  const groupAuthor = isGroup && !mine ? message.senderName || message.senderPhone || message.senderJid : undefined;
+  const panelAuthor = mine && message.origin === "panel" ? message.sentByName : undefined;
+  const author = first ? groupAuthor || panelAuthor : undefined;
+
+  const meta = (
+    <span className="bubble-meta">
+      {message.editedAt && <span className="edited">editado</span>}
+      {message.origin === "device" && (
+        <span className="from-phone" title="Enviado desde el teléfono" aria-label="Enviado desde el teléfono">
+          <Smartphone aria-hidden />
+        </span>
+      )}
+      <time dateTime={message.timestamp}>
+        {new Date(message.timestamp).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false })}
+      </time>
+      {provisional && <span className="estado"><LoaderCircle className="spin" aria-hidden />Enviando</span>}
+      {mine && !provisional && !fallido && <MessageTicks status={message.status} />}
+    </span>
+  );
 
   return (
     <article className={clases.join(" ")}>
@@ -46,15 +73,7 @@ export function MessageBubble({
           <Reply aria-hidden />
         </button>
       )}
-      {isGroup && !mine && (message.senderName || message.senderPhone || message.senderJid) && (
-        <span className="author">{message.senderName || message.senderPhone || message.senderJid}</span>
-      )}
-      {message.origin === "panel" && message.sentByName && (
-        <span className="author">{message.sentByName}</span>
-      )}
-      {message.origin === "device" && (
-        <span className="author muted"><Smartphone aria-hidden />Desde el teléfono</span>
-      )}
+      {author && <span className="author">{author}</span>}
 
       {message.quote ? (
         <button
@@ -80,26 +99,17 @@ export function MessageBubble({
 
       {message.media && <MediaBlock media={message.media} />}
 
+      {/* La hora va dentro del texto, flotando a la derecha del último renglón. */}
       {message.deletedAt ? (
         // El borrado no se oculta: que alguien borrara un mensaje es, en sí,
         // información que el espejo tiene que conservar.
-        <p className="deleted">Mensaje eliminado</p>
+        <p className="deleted">Mensaje eliminado{meta}</p>
+      ) : message.body ? (
+        <p className="body">{message.body}{meta}</p>
       ) : (
-        message.body && <p className="body">{message.body}</p>
+        <p className="body is-empty">{meta}</p>
       )}
-
-      <footer>
-        <time dateTime={message.timestamp}>
-          {new Date(message.timestamp).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </time>
-        {message.editedAt && <span className="edited">editado</span>}
-        {provisional && <span className="estado"><LoaderCircle className="spin" aria-hidden />Enviando</span>}
-        {fallido && <span className="estado error"><AlertCircle aria-hidden />{message.pending?.error}</span>}
-        {mine && !provisional && !fallido && <Check className="message-check" aria-label="Enviado" />}
-      </footer>
+      {fallido && <p className="estado error"><AlertCircle aria-hidden />{message.pending?.error}</p>}
     </article>
   );
 }

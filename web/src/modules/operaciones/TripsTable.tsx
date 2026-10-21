@@ -1,31 +1,23 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { dayOf, money, shortDate, today as currentDay, whenDue } from "./format";
-import type { TripRow, TripSort, TripStatus } from "./types";
+import { displayName } from "@/lib/phone";
+import { ContactAvatar } from "@/modules/mirror/ContactAvatar";
+import { conversationAvatarUrl } from "@/modules/mirror/api";
+import { dayMonth, dayOf, inWords, money, shortDay, today as currentDay, urgency, whenDue } from "./format";
+import { StatusPill } from "./status";
+import type { TripRow, TripSort } from "./types";
 
-export const STATUS_LABEL: Record<TripStatus, string> = {
-  consulta: "Consulta", cotizado: "Cotizado", confirmado: "Confirmado", "en viaje": "En viaje", cerrado: "Cerrado",
-};
-
-const MISSING = "—";
-
-/** Tono de un plazo: rojo si pasó, naranja si es esta semana. */
-function tone(dueAt: string, today: string) {
-  const due = dayOf(dueAt);
-  if (due < today) return "is-late";
-  const weekEnd = new Date(`${today}T12:00:00Z`);
-  weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
-  return due <= weekEnd.toISOString().slice(0, 10) ? "is-soon" : "";
-}
+const SORT_LABEL: Record<TripSort, string> = { salida: "salida", numero: "número", total: "total" };
 
 function depositNote(row: TripRow, today: string) {
-  if (row.depositPaidAt) return { text: "seña cobrada", className: "" };
+  if (row.depositPaidAt) return { text: "seña cobrada", className: "is-ok" };
   if (!row.depositDueAt) return undefined;
-  const className = tone(row.depositDueAt, today);
-  return { text: className === "is-late" ? "seña vencida" : `seña ${whenDue(row.depositDueAt, today)}`, className };
+  const tone = urgency(row.depositDueAt, today);
+  if (tone === "late") return { text: "seña vencida", className: "is-late" };
+  return { text: `seña ${whenDue(row.depositDueAt, today)}`, className: tone === "soon" ? "is-soon" : "" };
 }
 
 interface TripsTableProps {
@@ -42,8 +34,9 @@ interface TripsTableProps {
 
 /**
  * La planilla de viajes. Pocas columnas y en dos líneas: el dato arriba y el
- * detalle en gris abajo, para que entre sin scroll horizontal. Lo que falta es
- * una raya: en cuarenta filas, «Sin completar» repetido se vuelve ruido.
+ * detalle en gris abajo, para que entre sin scroll horizontal. Lo que falta
+ * dice qué falta («Sin cotizar», «Sin fecha»): una raya no dice si es cero, si
+ * no se sabe o si no aplica.
  */
 export function TripsTable({ rows, total, sort, onSort, onOpen, onClear, hasMore, onMore, today = currentDay() }: TripsTableProps) {
   const sentinel = useRef<HTMLDivElement>(null);
@@ -66,12 +59,12 @@ export function TripsTable({ rows, total, sort, onSort, onOpen, onClear, hasMore
     );
   }
 
-  const header = (label: string, key?: TripSort) => {
-    if (!key) return <th scope="col">{label}</th>;
+  const header = (label: string, key?: TripSort, className?: string) => {
+    if (!key) return <th scope="col" className={className}>{label}</th>;
     const active = sort === key;
     const ascending = key === "salida";
     return (
-      <th scope="col" aria-sort={active ? (ascending ? "ascending" : "descending") : undefined}>
+      <th scope="col" className={className} aria-sort={active ? (ascending ? "ascending" : "descending") : undefined}>
         <button type="button" className={active ? "is-active" : undefined} onClick={() => onSort(key)}>
           {label}{active && (ascending ? <ArrowUp aria-hidden /> : <ArrowDown aria-hidden />)}
         </button>
@@ -81,23 +74,25 @@ export function TripsTable({ rows, total, sort, onSort, onOpen, onClear, hasMore
 
   return (
     <div className="trips-table-wrap">
-      <p className="trips-count">{total} {total === 1 ? "viaje" : "viajes"}</p>
+      <p className="trips-count">{total} {total === 1 ? "viaje" : "viajes"} · ordenados por {SORT_LABEL[sort]}</p>
       <table className="trips-table">
         <thead>
           <tr>
-            {header("#", "numero")}
+            {header("#", "numero", "col-num")}
             {header("Cliente")}
             {header("Destino")}
             {header("Salida", "salida")}
-            {header("Total", "total")}
+            {header("Total", "total", "is-right")}
             {header("Lo que sigue")}
+            <th scope="col" className="col-chevron"><span className="sr-only">Abrir</span></th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => {
             const deposit = depositNote(row, today);
-            const people = [row.passengerCount > 0 ? `${row.passengerCount} pax` : undefined, row.sellerName].filter(Boolean).join(" · ");
+            const people = row.passengerCount > 0 ? `${row.passengerCount} ${row.passengerCount === 1 ? "pasajero" : "pasajeros"}` : "Sin pasajeros";
             const open = row.conversationId ? () => onOpen(row) : undefined;
+            const tone = row.next ? urgency(row.next.dueAt, today) : undefined;
             return (
               <tr
                 key={row.id}
@@ -107,23 +102,46 @@ export function TripsTable({ rows, total, sort, onSort, onOpen, onClear, hasMore
                 tabIndex={open ? 0 : undefined}
                 title={open ? undefined : "El cliente no tiene ninguna conversación con las líneas de la agencia"}
               >
-                <td className="num" data-label="#">{row.number}</td>
-                <td data-label="Cliente"><strong>{row.customerName}</strong>{people && <small>{people}</small>}</td>
-                <td data-label="Destino"><span>{row.destination || MISSING}</span><small>{STATUS_LABEL[row.status]}</small></td>
-                <td className="num" data-label="Salida">
-                  <span>{row.departAt ? shortDate(row.departAt) : MISSING}</span>
-                  {row.returnAt && <small>al {shortDate(row.returnAt)}</small>}
+                <td className="num col-num" data-label="#">{row.number}</td>
+                <td data-label="Cliente">
+                  <span className="trips-client">
+                    <ContactAvatar name={row.customerName} src={row.conversationId ? conversationAvatarUrl(row.conversationId) : undefined} className="avatar-32" />
+                    <span>
+                      <strong>{displayName(row.customerName)}</strong>
+                      <small>{people} · {row.sellerName || "Sin asignar"}</small>
+                    </span>
+                  </span>
                 </td>
-                <td className="num" data-label="Total">
-                  <span>{row.totalUsd !== undefined ? `USD ${money(row.totalUsd)}` : MISSING}</span>
+                <td data-label="Destino">
+                  <span className="trips-dest">
+                    {row.destination || <span className="muted">Sin destino</span>}
+                    <StatusPill status={row.status} />
+                  </span>
+                </td>
+                <td className="num" data-label="Salida">
+                  {row.departAt ? <>
+                    <span>{shortDay(row.departAt)}</span>
+                    {row.returnAt && <small>vuelve el {dayMonth(row.returnAt)}</small>}
+                  </> : <span className="muted">Sin fecha</span>}
+                </td>
+                <td className="num is-right" data-label="Total">
+                  {row.totalUsd !== undefined ? <span>USD {money(row.totalUsd)}</span> : <span className="muted">Sin cotizar</span>}
                   {deposit && <small className={deposit.className || undefined}>{deposit.text}</small>}
                 </td>
                 <td data-label="Lo que sigue">
-                  {row.next ? <>
-                    <span className={tone(row.next.dueAt, today) || undefined}>{row.next.task}</span>
-                    <small>{whenDue(row.next.dueAt, today)}</small>
-                  </> : <span className="is-ok">Al día</span>}
+                  {row.next ? (
+                    <span className="trips-next">
+                      <i className={`dot is-${tone}`} aria-hidden />
+                      <span>
+                        <span className={tone === "later" ? undefined : `is-${tone}`}>{row.next.task}</span>
+                        <small>{inWords(dayOf(row.next.dueAt), today)}</small>
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="trips-next"><i className="dot is-ok" aria-hidden /><span className="is-ok">Al día</span></span>
+                  )}
                 </td>
+                <td className="col-chevron" aria-hidden>{open && <ChevronRight />}</td>
               </tr>
             );
           })}

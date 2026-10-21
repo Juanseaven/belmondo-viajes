@@ -42,7 +42,10 @@ it("abre en Pendientes y cuenta solo lo que pide algo", async () => {
   render(<ViajesScreen />);
 
   expect(await screen.findByText("Cobrar la seña")).toBeTruthy();
-  expect(screen.getByRole("tab", { name: "Pendientes 2" }).getAttribute("aria-selected")).toBe("true");
+  const tab = screen.getByRole("tab", { name: "Pendientes 2" });
+  expect(tab.getAttribute("aria-selected")).toBe("true");
+  // Con algo atrasado, el número va en rojo.
+  expect(tab.querySelector(".viajes-count")?.className).toContain("is-late");
   expect(operacionesApi.listTrips).not.toHaveBeenCalled();
 });
 

@@ -66,8 +66,8 @@ describe("LineFilter line management", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Opciones de juanse" }));
-    await user.click(screen.getByRole("menuitem", { name: "Desvincular" }));
+    await user.click(screen.getByRole("button", { name: /todas las líneas/i }));
+    await user.click(screen.getByRole("menuitem", { name: "Desvincular juanse" }));
 
     const confirm = screen.getByRole("button", { name: "Desvincular" });
     expect(confirm).toHaveProperty("disabled", true);
@@ -79,9 +79,11 @@ describe("LineFilter line management", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("does not expose line management to non-admin users", () => {
+  it("does not expose line management to non-admin users", async () => {
+    const user = userEvent.setup();
     render(<LineFilter lines={[line]} selected="" onSelect={() => undefined} />);
 
-    expect(screen.queryByRole("button", { name: "Opciones de juanse" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: /todas las líneas/i }));
+    expect(screen.queryByRole("menuitem", { name: /Desvincular/ })).toBeNull();
   });
 });

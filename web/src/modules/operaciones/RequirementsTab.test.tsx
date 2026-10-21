@@ -41,6 +41,9 @@ it("sin pasajeros dice lo que piden los países a un pasaporte argentino, sin cu
 
   expect(screen.getByText("Requisitos para un pasajero con pasaporte argentino")).toBeTruthy();
   expect(screen.getByText("Canadá pide visa, que se tramita antes de viajar")).toBeTruthy();
+  // La fuente queda a un toque: plegada con el detalle.
+  expect(screen.queryByRole("link", { name: "Wikipedia" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Ver detalle de Canadá pide visa, que se tramita antes de viajar" }));
   expect(screen.getByRole("link", { name: "Wikipedia" })).toBeTruthy();
   expect(screen.getAllByText("Verificar")).toHaveLength(1);
   expect(screen.queryByText("Cumple")).toBeNull();
@@ -71,6 +74,8 @@ it("agrupa por pasajero y país y dice cada requisito con palabras", () => {
   expect(within(maria).getByText("Estados Unidos · escala")).toBeTruthy();
   expect(within(maria).getByText("Canadá pide visa y no está cargada")).toBeTruthy();
   expect(within(maria).getByText("Falta")).toBeTruthy();
+  expect(within(maria).getByText("0 de 1 listos")).toBeTruthy();
+  fireEvent.click(within(maria).getByRole("button", { name: "Ver detalle de Canadá pide visa y no está cargada" }));
   const link = within(maria).getByRole("link", { name: "Wikipedia" });
   expect(link.getAttribute("href")).toBe("https://en.wikipedia.org/w/index.php?oldid=1");
 
@@ -133,6 +138,11 @@ it("cada renglón dice qué pide el país, el trámite, qué tiene el pasajero y
 
   const visa = screen.getByRole("listitem", { name: "Visa" });
   expect(within(visa).getByText("Falta")).toBeTruthy();
+  // Plegado: «Pide» y «Tiene» en una línea cada uno; el resto, a un toque.
+  expect(within(visa).getByText("Pide")).toBeTruthy();
+  expect(within(visa).getByText("No tiene visa de Estados Unidos cargada.")).toBeTruthy();
+  expect(within(visa).queryByText("Trámite")).toBeNull();
+  fireEvent.click(within(visa).getByRole("button", { name: "Ver detalle de Visa" }));
   expect(within(visa).getByText("Pide")).toBeTruthy();
   expect(within(visa).getByText("Estados Unidos pide visa consular.")).toBeTruthy();
   expect(within(visa).getByText("Trámite")).toBeTruthy();
@@ -146,6 +156,7 @@ it("cada renglón dice qué pide el país, el trámite, qué tiene el pasajero y
 
   // Una parte vacía no se muestra.
   const documento = screen.getByRole("listitem", { name: "Documento" });
+  fireEvent.click(within(documento).getByRole("button", { name: "Ver detalle de Documento" }));
   expect(within(documento).queryByText("Hacer")).toBeNull();
   expect(within(documento).queryByText("Trámite")).toBeNull();
 });
@@ -172,4 +183,17 @@ it("mientras se busca el detalle en páginas oficiales lo dice una vez por país
   render(<RequirementsTab trip={trip} countries={countries} />);
 
   expect(screen.getAllByText("Buscando el detalle del trámite en páginas oficiales…")).toHaveLength(1);
+});
+
+it("si falta la visa, «Cargar visa» va al lado del problema", () => {
+  const onAddPermit = vi.fn();
+  const trip = { ...base, itinerary: [{ country: "US", role: "destino" as const }], requirements: [
+    req({ passengerId: "maria", country: "US", key: "visa", status: "falta", text: "Visa" }),
+    req({ passengerId: "maria", country: "US", key: "documento", status: "falta", text: "Documento" }),
+  ] };
+  render(<RequirementsTab trip={trip} countries={countries} onAddPermit={onAddPermit} />);
+
+  expect(screen.getAllByRole("button", { name: "Cargar visa" })).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Cargar visa" }));
+  expect(onAddPermit).toHaveBeenCalledWith("maria");
 });

@@ -104,12 +104,24 @@ export function Composer({
         </div>
       )}
 
-      <div className="composer-box">
+      <div className="composer-row">
+        <Button type="button" variant="ghost" size="icon" className="icon-button" asChild>
+          <label aria-label="Adjuntar archivo" title="Adjuntar archivo">
+            <Paperclip aria-hidden />
+            <input
+              ref={fileInput}
+              type="file"
+              hidden
+              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+            />
+          </label>
+        </Button>
         <Textarea
           value={body}
           aria-label="Mensaje"
-          placeholder="Escribí un mensaje…"
-          rows={2}
+          placeholder="Escribí un mensaje"
+          rows={1}
+          className="composer-field"
           onChange={(event) => setBody(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Escape" && replyTo) {
@@ -123,23 +135,9 @@ export function Composer({
             }
           }}
         />
-        <div className="composer-actions">
-          <Button type="button" variant="ghost" size="icon" asChild>
-            <label aria-label="Adjuntar archivo" title="Adjuntar archivo">
-              <Paperclip aria-hidden />
-              <input
-                ref={fileInput}
-                type="file"
-                hidden
-                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              />
-            </label>
-          </Button>
-          <span className="composer-hint">Enter para enviar · Shift+Enter para salto</span>
-          <Button type="submit" size="icon-lg" disabled={empty} aria-label="Enviar mensaje">
-            <SendHorizontal aria-hidden />
-          </Button>
-        </div>
+        <Button type="submit" size="icon-lg" className="composer-send" disabled={empty} aria-label="Enviar mensaje">
+          <SendHorizontal aria-hidden />
+        </Button>
       </div>
     </form>
   );

@@ -31,10 +31,12 @@ import { LineFilter } from "./LineFilter";
 import { SearchResults } from "./SearchResults";
 import { Thread } from "./Thread";
 import { useInbox } from "./useInbox";
+import { announceUnread } from "./useUnreadDot";
 import type { useThread } from "./useThread";
 import { mirror } from "./module";
 import { operacionesApi } from "../operaciones/api";
 import { TripBanner } from "../operaciones/TripBanner";
+import { TripChip } from "../operaciones/TripChip";
 import { TripSidebar } from "../operaciones/TripSidebar";
 import type { Control } from "../operaciones/types";
 import { useTrips } from "../operaciones/useTrips";
@@ -85,6 +87,7 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
   const [tab, setTab] = useState<InboxTab>("all");
   const [detailsOpen, setDetailsOpen] = useState(true);
   const [actionDraft, setActionDraft] = useState<{ controlId: string; body: string; waMessageId?: string }>();
+  const searchInput = useRef<HTMLInputElement>(null);
 
   const inbox = useInbox(instance, query ? "" : searchValue, tab === "unread");
   const unreadChats = instance
@@ -116,7 +119,10 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
   const loadLines = useCallback(() => {
     mirrorApi
       .lines()
-      .then((res) => setLines(res.lines))
+      .then((res) => {
+        setLines(res.lines);
+        announceUnread(res.lines.reduce((total, line) => total + line.unread, 0));
+      })
       .catch(() => setLines([]));
   }, []);
 
@@ -195,7 +201,7 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
             if (oldest) recentMessageIDs.current.delete(oldest);
           }
         }
-        inbox.applyNewMessage(p.conversationId, p.body ?? "", p.type, p.timestamp, p.direction);
+        inbox.applyNewMessage(p.conversationId, p.body ?? "", p.type, p.timestamp, p.direction, p.senderName);
         linesDirty.current = true;
 
         // Si el mensaje es del hilo abierto, se agrega en vivo. El waMessageId
@@ -287,7 +293,8 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
     <section className="mirror-workspace">
       <div className={`${open ? "mirror-body has-details" : "mirror-body"}${detailsOpen ? "" : " operation-collapsed"}`}>
         <aside className="inbox-pane">
-          <div className="inbox-lines">
+          <header className="inbox-head">
+            <h1>Chats</h1>
             <LineFilter
               lines={lines}
               selected={instance}
@@ -299,30 +306,25 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
               <Button
                 type="button"
                 variant="ghost"
-                className="inbox-connect"
+                size="icon"
+                className="icon-button"
+                aria-label="Conectar línea"
+                title="Conectar línea"
                 onClick={() => { setLineaParaVincular(null); setAltaAbierta(true); }}
               >
-                <Plus aria-hidden />Conectar línea
+                <Plus aria-hidden />
               </Button>
             )}
-          </div>
-
-          <div className="inbox-tabs" role="tablist" aria-label="Filtrar conversaciones">
-            <button type="button" role="tab" aria-selected={tab === "all"} onClick={() => setTab("all")}>
-              Todos
-            </button>
-            <button type="button" role="tab" aria-selected={tab === "unread"} onClick={() => setTab("unread")}>
-              No leídos <span>{unreadChats}</span>
-            </button>
-          </div>
+          </header>
 
           <div className="inbox-search">
             <div>
               <Search aria-hidden />
               <Input
+                ref={searchInput}
                 type="search"
                 aria-label="Buscar contacto o mensaje"
-                placeholder="Buscar contacto o mensaje…"
+                placeholder="Buscar contacto o mensaje"
                 value={searchValue}
                 onChange={(event) => {
                   setSearchValue(event.target.value);
@@ -335,6 +337,15 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
                 }}
               />
             </div>
+          </div>
+
+          <div className="inbox-tabs" role="tablist" aria-label="Filtrar conversaciones">
+            <button type="button" role="tab" aria-selected={tab === "all"} onClick={() => setTab("all")}>
+              Todos
+            </button>
+            <button type="button" role="tab" aria-selected={tab === "unread"} onClick={() => setTab("unread")}>
+              No leídos{unreadChats > 0 && <> <span>{unreadChats}</span></>}
+            </button>
           </div>
 
           {query ? (
@@ -352,6 +363,10 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
               inbox={inbox}
               selectedId={openId}
               onSelect={(id) => setParams({ c: id, m: undefined, viaje: undefined })}
+              renderTags={(conversation) => {
+                const trip = trips.byContact[conversation.contactId];
+                return trip ? <TripChip trip={trip} /> : null;
+              }}
             />
           )}
         </aside>
@@ -378,7 +393,7 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
                   <SheetHeader className="sr-only">
                     <SheetTitle>Detalles del contacto</SheetTitle>
                   </SheetHeader>
-                  <TripSidebar contactId={open.contactId} contactName={open.contactName} trips={trips} onRunControl={runControl} />
+                  <TripSidebar conversation={open} trips={trips} onRunControl={runControl} />
                 </SheetContent>
               </Sheet>
             </>
@@ -387,8 +402,9 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
             conversation={open}
             focusId={focusId}
             lineStatus={lines.find((line) => line.id === open?.instanceId)?.status}
-            detailsHidden={!detailsOpen}
-            onShowDetails={() => setDetailsOpen(true)}
+            detailsOpen={detailsOpen}
+            onToggleDetails={() => setDetailsOpen((value) => !value)}
+            onSearch={() => searchInput.current?.focus()}
             threadRef={(thread) => { threadApi.current = thread; }}
             banner={trips.active ? <TripBanner trip={trips.active} /> : undefined}
             draft={actionDraft?.body}
@@ -407,8 +423,7 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
         </div>
         {open && (
           <TripSidebar
-            contactId={open.contactId}
-            contactName={open.contactName}
+            conversation={open}
             trips={trips}
             collapsed={!detailsOpen}
             onClose={() => setDetailsOpen(false)}

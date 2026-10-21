@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import type { Conversation } from "@/modules/mirror/api";
 import { operacionesApi } from "./api";
 import { TripSidebar } from "./TripSidebar";
 import type { TripDetail } from "./types";
@@ -13,8 +14,16 @@ vi.mock("./api", async (importOriginal) => {
   } };
 });
 
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
 beforeEach(() => {
+  class LoadedImage extends EventTarget {
+    complete = true;
+    naturalWidth = 96;
+    crossOrigin: string | null = null;
+    referrerPolicy = "";
+    src = "";
+  }
+  vi.stubGlobal("Image", LoadedImage);
   vi.mocked(operacionesApi.sellers).mockResolvedValue({ items: [{ id: "u-1", name: "Ana Gil" }] });
   vi.mocked(operacionesApi.countries).mockResolvedValue({ items: [{ code: "AR", name: "Argentina" }, { code: "CL", name: "Chile" }] });
 });
@@ -34,37 +43,67 @@ function tripsState(overrides: Partial<ReturnType<typeof useTrips>> = {}): Retur
   };
 }
 
-it("ofrece los vendedores de la agencia en el encabezado", async () => {
-  render(<TripSidebar contactId="contact-1" contactName="Ana" trips={tripsState()} onRunControl={vi.fn()} />);
+const conversation: Pick<Conversation, "contactId" | "contactName" | "avatarUrl" | "phoneNumber" | "instanceLabel" | "isGroup"> = {
+  contactId: "contact-1", contactName: "Ana", phoneNumber: "+5491126126437", instanceLabel: "Juanse", isGroup: false,
+};
 
-  expect(await screen.findByRole("option", { name: "Ana Gil" })).toBeTruthy();
+it("sin viaje abierto muestra el contacto y ofrece crear uno, con su foto de WhatsApp", () => {
+  render(
+    <TripSidebar
+      conversation={{ ...conversation, avatarUrl: "https://example.test/ana.jpg" }}
+      trips={tripsState({ active: undefined, contactTrips: [] })}
+      onRunControl={vi.fn()}
+    />,
+  );
+
+  expect(screen.getByRole("img", { name: "Ana" }).getAttribute("src")).toBe("https://example.test/ana.jpg");
+  expect(screen.getByText("+54 9 11 2612-6437")).toBeTruthy();
+  expect(screen.getByText("Este contacto no tiene viajes")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Nuevo viaje" })).toBeTruthy();
+  expect(operacionesApi.createTrip).not.toHaveBeenCalled();
+});
+
+it("con viajes cerrados, los ofrece para abrirlos", () => {
+  const trips = tripsState({ active: undefined, contactTrips: [{ ...active, status: "cerrado" }] });
+  render(<TripSidebar conversation={conversation} trips={trips} onRunControl={vi.fn()} />);
+
+  expect(screen.getByText("Este contacto no tiene viajes abiertos")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /Viaje #10482/ }));
+  expect(trips.select).toHaveBeenCalledWith("trip-1");
 });
 
 it("un viaje nuevo sobre otro existente se crea aparte y queda elegido", async () => {
   const trips = tripsState();
   vi.mocked(operacionesApi.createTrip).mockResolvedValue({ ...active, id: "trip-2", number: 10483, destination: "" });
-  render(<TripSidebar contactId="contact-1" contactName="Ana" trips={trips} onRunControl={vi.fn()} />);
+  render(<TripSidebar conversation={conversation} trips={trips} onRunControl={vi.fn()} />);
 
   fireEvent.click(screen.getByRole("button", { name: "Nuevo viaje" }));
-  expect(screen.getByText("Operación nueva")).toBeTruthy();
+  expect(screen.getByRole("form", { name: "Nuevo viaje" })).toBeTruthy();
   await screen.findAllByRole("option", { name: "Chile" });
   fireEvent.change(screen.getByLabelText("Destino"), { target: { value: "CL" } });
-  fireEvent.click(screen.getByRole("button", { name: "Guardar viaje" }));
+  fireEvent.click(screen.getByRole("button", { name: "Crear viaje" }));
 
   await waitFor(() => expect(operacionesApi.createTrip).toHaveBeenCalledWith({
     contactId: "contact-1", originCountry: "AR", itinerary: [{ country: "CL", role: "destino" }],
   }));
   expect(trips.select).toHaveBeenCalledWith("trip-2");
-  await waitFor(() => expect(screen.queryByText("Operación nueva")).toBeNull());
+  await waitFor(() => expect(screen.queryByRole("form", { name: "Nuevo viaje" })).toBeNull());
+});
+
+it("los vendedores de la agencia se eligen al editar el viaje", async () => {
+  render(<TripSidebar conversation={conversation} trips={tripsState()} onRunControl={vi.fn()} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Editar viaje y cliente" }));
+  expect(await screen.findByRole("option", { name: "Ana Gil" })).toBeTruthy();
 });
 
 it("quitar un pasajero lo borra y recarga la ficha", async () => {
   const trips = tripsState();
   vi.mocked(operacionesApi.deletePassenger).mockResolvedValue(undefined);
-  render(<TripSidebar contactId="contact-1" contactName="Ana" trips={trips} onRunControl={vi.fn()} />);
+  render(<TripSidebar conversation={conversation} trips={trips} onRunControl={vi.fn()} />);
 
-  fireEvent.click(screen.getByRole("tab", { name: "Pasajeros" }));
-  fireEvent.click(screen.getByRole("button", { name: "Editar Pérez, Ana" }));
+  fireEvent.click(screen.getByRole("tab", { name: /^Pasajeros/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Abrir Pérez, Ana" }));
   fireEvent.click(screen.getByRole("button", { name: "Quitar pasajero" }));
 
   await waitFor(() => expect(operacionesApi.deletePassenger).toHaveBeenCalledWith("p-1"));
@@ -73,10 +112,11 @@ it("quitar un pasajero lo borra y recarga la ficha", async () => {
 
 it("el cliente se guarda sobre el cliente del viaje", async () => {
   vi.mocked(operacionesApi.updateCustomer).mockResolvedValue(active.customer);
-  render(<TripSidebar contactId="contact-1" contactName="Ana" trips={tripsState()} onRunControl={vi.fn()} />);
+  render(<TripSidebar conversation={conversation} trips={tripsState()} onRunControl={vi.fn()} />);
 
+  fireEvent.click(screen.getByRole("button", { name: "Editar viaje y cliente" }));
   fireEvent.change(screen.getByLabelText("Mail"), { target: { value: "ana@example.com" } });
-  fireEvent.click(screen.getByRole("button", { name: "Guardar cliente" }));
+  fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }));
 
   await waitFor(() => expect(operacionesApi.updateCustomer).toHaveBeenCalledWith("customer-1", { email: "ana@example.com" }));
 });

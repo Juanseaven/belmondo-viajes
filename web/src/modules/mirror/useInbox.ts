@@ -111,6 +111,7 @@ export function useInbox(instance: string, search: string, unreadOnly = false) {
       type: string,
       at: string,
       direction: "inbound" | "outbound",
+      senderName?: string,
     ) => {
       let known = false;
       setItems((prev) => {
@@ -122,6 +123,9 @@ export function useInbox(instance: string, search: string, unreadOnly = false) {
           preview,
           lastType: type,
           lastMessageAt: at,
+          lastDirection: direction,
+          lastStatus: direction === "outbound" ? "sent" : undefined,
+          lastSender: direction === "inbound" ? senderName : undefined,
           unread: direction === "inbound" ? found.unread + 1 : found.unread,
           needsReply: direction === "inbound",
         };

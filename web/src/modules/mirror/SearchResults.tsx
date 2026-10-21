@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { ApiError } from "../../kernel/api/client";
+import { displayName } from "@/lib/phone";
 import { mirrorApi, type SearchHit } from "./api";
+import { listTime } from "./ConversationList";
 
 /**
  * Resultados de buscar dentro de los mensajes.
@@ -76,24 +78,22 @@ export function SearchResults({
         </button>
       </header>
 
-      {loading && <p className="empty">Buscando…</p>}
-      {error && <p className="error">{error}</p>}
+      {loading && <p className="search-state">Buscando…</p>}
+      {error && <p className="search-state error">{error}</p>}
       {!loading && !error && hits.length === 0 && (
-        <p className="empty">Sin resultados.</p>
+        <p className="search-state">No hay mensajes que digan «{query}».</p>
       )}
 
       <ul>
         {hits.map((hit) => (
           <li key={hit.messageId}>
             <button type="button" className="hit" onClick={() => onOpen(hit)}>
-              <span className="conv-top">
-                <strong>{hit.contactName}</strong>
-                <time dateTime={hit.timestamp}>
-                  {new Date(hit.timestamp).toLocaleDateString()}
-                </time>
+              <span className="hit-top">
+                <strong>{displayName(hit.contactName)}</strong>
+                <time dateTime={hit.timestamp}>{listTime(hit.timestamp)}</time>
               </span>
               <span className="snippet">{hit.snippet}</span>
-              <span className="line-tag">{hit.instanceLabel}</span>
+              <small>Línea {hit.instanceLabel}</small>
             </button>
           </li>
         ))}

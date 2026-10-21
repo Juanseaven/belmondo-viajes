@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { visibleModules } from "../../modules/registry";
+import type { ModuleDef } from "../../modules/types";
 import { useSession } from "../auth/session";
 
 const SIDEBAR_WIDTH = 56;
@@ -26,6 +27,29 @@ function initials(value: string): string {
   if (!parts.length) return "?";
   return `${parts[0][0]}${parts.at(-1)?.[0] ?? ""}`.toUpperCase();
 }
+
+/** Un ítem de la barra. Es un componente aparte porque el módulo puede traer su hook de atención. */
+function NavItem({ module, open, active }: { module: ModuleDef; open: boolean; active: boolean }) {
+  const attention = module.useAttention?.() ?? false;
+  const label = module.name === "mirror" ? "Bandeja de entrada" : module.label;
+  const Icon = MODULE_ICONS[module.name] ?? MessageCircleMore;
+  return (
+    <Link
+      href={module.path}
+      className={cn("nav-item", active && "active", open && "is-open")}
+      aria-label={!open ? label : undefined}
+      title={!open ? label : undefined}
+    >
+      {active && <span className="nav-active-rail" aria-hidden />}
+      <span className="nav-icon">
+        <Icon aria-hidden />
+        {attention && <span className="nav-dot" role="img" aria-label="Hay novedades" />}
+      </span>
+      {open && <span className="nav-label">{label}</span>}
+    </Link>
+  );
+}
+
 export function Shell({ children }: { children: ReactNode }) {
   const { user, modules, loading, logout } = useSession();
   const router = useRouter();
@@ -61,24 +85,9 @@ export function Shell({ children }: { children: ReactNode }) {
       >
         <nav aria-label="Navegación principal" className="sidebar-scroll">
           {open && <p className="sidebar-section">PRINCIPAL</p>}
-          {items.map((module) => {
-            const label = module.name === "mirror" ? "Bandeja de entrada" : module.label;
-            const active = pathname.startsWith(module.path);
-            const Icon = MODULE_ICONS[module.name] ?? MessageCircleMore;
-            return (
-              <Link
-                key={module.name}
-                href={module.path}
-                className={cn("nav-item", active && "active", open && "is-open")}
-                aria-label={!open ? label : undefined}
-                title={!open ? label : undefined}
-              >
-                {active && <span className="nav-active-rail" aria-hidden />}
-                <span className="nav-icon"><Icon aria-hidden /></span>
-                {open && <span className="nav-label">{label}</span>}
-              </Link>
-            );
-          })}
+          {items.map((module) => (
+            <NavItem key={module.name} module={module} open={open} active={pathname.startsWith(module.path)} />
+          ))}
           {items.length === 0 && open && <p className="sidebar-empty">No tenés módulos habilitados.</p>}
         </nav>
 

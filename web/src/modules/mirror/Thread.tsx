@@ -1,31 +1,38 @@
 "use client";
 
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
-import { MessageCircleMore, PanelRightOpen, Phone } from "lucide-react";
+import { MessageCircleMore, PanelRight, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { displayName, formatPhone, isPhoneLike } from "@/lib/phone";
 import type { Conversation, Message, MessageQuote, SendResult } from "./api";
 import { Composer } from "./Composer";
 import { ContactAvatar } from "./ContactAvatar";
 import { MessageBubble } from "./MessageBubble";
 import { useThread } from "./useThread";
 
+/** Dónde va el separador «N mensajes sin leer»: se fija al abrir el chat. */
+type UnreadMark = { conversationId: string; messageId: string; count: number };
+
 export function Thread({
   conversation,
   focusId,
   lineStatus,
-  detailsHidden = false,
-  onShowDetails,
+  detailsOpen,
+  onToggleDetails,
+  onSearch,
   threadRef,
-	banner,
-	draft,
-	onMessageSent,
+  banner,
+  draft,
+  onMessageSent,
 }: {
   conversation: Conversation | null;
   focusId?: string;
   lineStatus?: string;
-  detailsHidden?: boolean;
-  onShowDetails?: () => void;
+  /** Con viaje al lado: el botón de la cabecera lo muestra u oculta. */
+  detailsOpen?: boolean;
+  onToggleDetails?: () => void;
+  onSearch?: () => void;
   threadRef?: (thread: ReturnType<typeof useThread>) => void;
   banner?: ReactNode;
   draft?: string;
@@ -34,6 +41,7 @@ export function Thread({
   const [replyingTo, setReplyingTo] = useState<MessageQuote>();
   const [aroundId, setAroundId] = useState(focusId);
   const [highlightedId, setHighlightedId] = useState(focusId);
+  const [unreadMark, setUnreadMark] = useState<UnreadMark>();
   const thread = useThread(conversation?.id ?? null, aroundId);
   const { messages, loading, error, hasOlder, loadOlder } = thread;
 
@@ -49,6 +57,33 @@ export function Thread({
     setAroundId(focusId);
     setHighlightedId(focusId);
   }, [conversation?.id, focusId]);
+
+  // El separador se calcula una vez, con los no leídos que tenía el chat al
+  // abrirlo: contando hacia atrás los mensajes recibidos. Lo que llega después
+  // no lo mueve.
+  useEffect(() => {
+    if (!conversation || thread.loadedFor !== conversation.id) return;
+    if (unreadMark?.conversationId === conversation.id) return;
+    let messageId = "";
+    if (conversation.unread > 0) {
+      let seen = 0;
+      for (let i = messages.length - 1; i >= 0 && seen < conversation.unread; i--) {
+        if (messages[i].direction === "inbound") {
+          seen++;
+          messageId = messages[i].id;
+        }
+      }
+    }
+    setUnreadMark({ conversationId: conversation.id, messageId, count: conversation.unread });
+  }, [conversation, messages, thread.loadedFor, unreadMark]);
+  const unreadAt = unreadMark?.conversationId === conversation?.id ? unreadMark : undefined;
+
+  // Como WhatsApp: al abrir un chat con mensajes sin leer, la vista arranca en
+  // el separador y no al final.
+  const unreadDivider = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (unreadAt?.messageId) unreadDivider.current?.scrollIntoView?.({ block: "center" });
+  }, [unreadAt?.messageId]);
 
   useEffect(() => {
     const node = topSentinel.current;
@@ -89,7 +124,7 @@ export function Thread({
       type: message.type,
       body: message.deletedAt ? undefined : message.body,
       senderName: message.direction === "outbound"
-        ? message.sentByName || (message.origin === "device" ? "Desde el teléfono" : "Vos")
+        ? message.sentByName || "Vos"
         : conversation?.isGroup
           ? message.senderName || message.senderPhone || message.senderJid || "Contacto"
           : conversation?.contactName || "Contacto",
@@ -113,28 +148,43 @@ export function Thread({
     );
   }
 
+  const phone = conversation.phoneNumber && !isPhoneLike(conversation.contactName)
+    ? formatPhone(conversation.phoneNumber)
+    : undefined;
+
   return (
     <div className="thread">
       <header className="thread-header">
-        <div className="thread-identity">
-          <ContactAvatar name={conversation.contactName} src={conversation.avatarUrl} size="lg" />
-          <div className="thread-contact">
-            <h2>{conversation.contactName}</h2>
-            <span>
-              {conversation.phoneNumber && <><Phone aria-hidden />{conversation.phoneNumber}<i aria-hidden>·</i></>}
-              <span className={`line-status-dot ${lineStatus ?? "open"}`} aria-hidden />
-              {conversation.instanceLabel}
-            </span>
-          </div>
+        <ContactAvatar name={conversation.contactName} src={conversation.avatarUrl} className="avatar-40" />
+        <div className="thread-contact">
+          <h2>{displayName(conversation.contactName)}</h2>
+          <span>
+            {phone && <>{phone}<i aria-hidden>·</i></>}
+            <span className={`line-status-dot ${lineStatus ?? "open"}`} aria-hidden />
+            Línea {conversation.instanceLabel}
+          </span>
         </div>
-        {detailsHidden && onShowDetails && (
-          <Button type="button" variant="outline" size="sm" onClick={onShowDetails} aria-label="Ver detalles">
-            <PanelRightOpen aria-hidden />
-            Ver detalles
+        {onSearch && (
+          <Button type="button" variant="ghost" size="icon" className="icon-button" onClick={onSearch} aria-label="Buscar" title="Buscar">
+            <Search aria-hidden />
+          </Button>
+        )}
+        {onToggleDetails && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className={detailsOpen ? "icon-button is-on" : "icon-button"}
+            onClick={onToggleDetails}
+            aria-label={detailsOpen ? "Ocultar viaje" : "Mostrar viaje"}
+            title={detailsOpen ? "Ocultar viaje" : "Mostrar viaje"}
+            aria-pressed={detailsOpen}
+          >
+            <PanelRight aria-hidden />
           </Button>
         )}
       </header>
-	  {banner}
+      {banner}
 
       <div className="messages" ref={scroller}>
         <div ref={topSentinel} />
@@ -146,12 +196,20 @@ export function Thread({
         )}
         {messages.map((message, index) => {
           const label = dayLabel(message.timestamp);
-          const startsDay = index === 0 || dayKey(messages[index - 1].timestamp) !== dayKey(message.timestamp);
+          const previous = messages[index - 1];
+          const startsDay = !previous || dayKey(previous.timestamp) !== dayKey(message.timestamp);
+          const startsUnread = unreadAt?.messageId === message.id;
+          const first = startsDay || startsUnread || authorKey(previous) !== authorKey(message);
           return (
             <Fragment key={message.id}>
               {startsDay && (
                 <div className="day-divider" role="separator" aria-label={label}>
                   <span>{label}</span>
+                </div>
+              )}
+              {startsUnread && (
+                <div className="unread-divider" role="separator" ref={unreadDivider}>
+                  <span>{unreadAt.count} {unreadAt.count === 1 ? "mensaje sin leer" : "mensajes sin leer"}</span>
                 </div>
               )}
               <div
@@ -166,6 +224,7 @@ export function Thread({
                 <MessageBubble
                   message={message}
                   isGroup={conversation.isGroup}
+                  first={first}
                   onReply={selectReply}
                   onOpenQuote={openQuote}
                 />
@@ -200,11 +259,24 @@ function dayKey(value: string): string {
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
 
-function dayLabel(value: string): string {
-  return new Intl.DateTimeFormat("es-AR", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(new Date(value));
+/** Quién firma una burbuja: dos seguidas del mismo autor forman una tanda. */
+function authorKey(message: Message): string {
+  if (message.direction === "inbound") return `in:${message.senderJid ?? ""}`;
+  return message.origin === "panel" ? `panel:${message.sentById ?? ""}` : "out";
+}
+
+const weekdayName = new Intl.DateTimeFormat("es-AR", { weekday: "long" });
+const monthName = new Intl.DateTimeFormat("es-AR", { month: "long" });
+
+/** «Hoy», «Ayer» o «Lunes 19 de octubre»; con el año si no es este. */
+export function dayLabel(value: string, now = new Date()): string {
+  const date = new Date(value);
+  const key = dayKey(value);
+  if (key === dayKey(now.toISOString())) return "Hoy";
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (key === dayKey(yesterday.toISOString())) return "Ayer";
+  const weekday = weekdayName.format(date);
+  const label = `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${date.getDate()} de ${monthName.format(date)}`;
+  return date.getFullYear() === now.getFullYear() ? label : `${label} de ${date.getFullYear()}`;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, CircleAlert, MoreHorizontal, Smartphone, Unplug } from "lucide-react";
+import { ChevronDown, CircleAlert, Smartphone, Unplug } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -53,7 +53,6 @@ export function LineFilter({
 }) {
   const unreadChats = lines.reduce((sum, line) => sum + line.unread, 0);
   const current = lines.find((line) => line.id === selected);
-  const managedLine = current ?? lines[0];
   const currentLabel = current ? lineLabel(current) : "Todas";
   const [disconnecting, setDisconnecting] = useState<Line | null>(null);
   const [confirmation, setConfirmation] = useState("");
@@ -93,19 +92,15 @@ export function LineFilter({
       <div className="line-selector" aria-label="Filtrar por línea">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              className="line-selector-trigger"
+            <button
+              type="button"
+              className="line-pill"
               aria-label={`Todas las líneas, filtro actual: ${currentLabel}`}
             >
               <span className={`line-status-dot ${current?.status ?? "open"}`} aria-hidden />
-              <span className="line-selector-copy">
-                <small>Línea actual</small>
-                <strong>{currentLabel}</strong>
-              </span>
-              {unreadChats > 0 && !current && <Badge>{unreadChats}</Badge>}
+              <span className="line-pill-label">{current ? lineLabel(current) : "Todas las líneas"}</span>
               <ChevronDown aria-hidden />
-            </Button>
+            </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="center" sideOffset={6} className="line-selector-menu">
             <DropdownMenuLabel>Ver conversaciones de</DropdownMenuLabel>
@@ -127,30 +122,20 @@ export function LineFilter({
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
+            {canManage && onDisconnect && lines.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Desvincular</DropdownMenuLabel>
+                {lines.map((line) => (
+                  <DropdownMenuItem key={line.id} variant="destructive" onSelect={() => openConfirmation(line)}>
+                    <Unplug aria-hidden />
+                    Desvincular {lineLabel(line)}
+                  </DropdownMenuItem>
+                ))}
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
-
-        {canManage && onDisconnect && managedLine && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={`Opciones de ${lineLabel(managedLine)}`}
-              >
-                <MoreHorizontal aria-hidden />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>{lineLabel(managedLine)}</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" onSelect={() => openConfirmation(managedLine)}>
-                <Unplug aria-hidden />
-                Desvincular
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
       </div>
 
       <Dialog open={Boolean(disconnecting)} onOpenChange={(open) => !open && closeConfirmation()}>

@@ -38,9 +38,10 @@ export default function LoginPage() {
   return (
     <div className="centered">
       <form className="login" onSubmit={onSubmit}>
-        <h1>viajes_crm</h1>
+        <h1>Iniciar sesión</h1>
+        <p className="login-hint">Con el mail y la contraseña que te dio la agencia.</p>
 
-        <label htmlFor="email">Email</label>
+        <label htmlFor="email">Mail</label>
         <input
           id="email"
           type="email"

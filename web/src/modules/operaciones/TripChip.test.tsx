@@ -6,15 +6,22 @@ import type { TripSummary } from "./types";
 
 afterEach(cleanup);
 
-it("nombra qué está atrasado", () => {
-  const trip: TripSummary = {
-    id: "trip-1", number: 10482, customerId: "customer-1", status: "cotizado",
-    destination: "Iguazú", departAt: "2026-09-12", returnAt: "2026-09-15",
-    createdAt: "2026-08-20", passengerCount: 2,
-    nextControl: { id: "control-1", itemId: "visa", title: "Avisar por visa", critical: true, closing: "accion", dueAt: "2020-01-01" },
-  };
-  render(<TripChip trip={trip} />);
+const trip: TripSummary = {
+  id: "trip-1", number: 4, customerId: "customer-1", status: "consulta",
+  destination: "Estados Unidos", departAt: "2026-10-29", returnAt: "2026-11-07",
+  createdAt: "2026-10-20", passengerCount: 1,
+  nextControl: { id: "control-1", itemId: "nombre", title: "Revisar orden de nombre y apellido", critical: true, closing: "manual", dueAt: "2026-10-20" },
+};
 
-  expect(screen.getByText("Avisar por visa")).toBeTruthy();
-  expect(screen.queryByText(/^Atrasado$/)).toBeNull();
+it("dice el número y el destino, y si el próximo control se pasó", () => {
+  render(<TripChip trip={trip} from="2026-10-21" />);
+
+  expect(screen.getByText("#4 Estados Unidos")).toBeTruthy();
+  expect(screen.getByText("Atrasado")).toBeTruthy();
+});
+
+it("sin nada atrasado, solo el viaje", () => {
+  render(<TripChip trip={trip} from="2026-10-20" />);
+
+  expect(screen.queryByText("Atrasado")).toBeNull();
 });

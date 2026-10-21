@@ -256,7 +256,13 @@ export interface PendingRow extends TripRow {
   more: number;
 }
 
-export interface TripPage { items: TripRow[]; total: number; nextCursor?: string }
+export interface TripPage {
+  items: TripRow[];
+  total: number;
+  /** Cuántos viajes hay en cada estado con los demás filtros aplicados: los números de los chips. */
+  byStatus?: Record<string, number>;
+  nextCursor?: string;
+}
 
 export type TripSort = "salida" | "numero" | "total";
 
