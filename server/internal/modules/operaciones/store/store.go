@@ -398,9 +398,12 @@ type TripFilter struct {
 }
 
 type TripPage struct {
-	Items      []TripRow `json:"items"`
-	Total      int       `json:"total"`
-	NextCursor string    `json:"nextCursor,omitempty"`
+	Items []TripRow `json:"items"`
+	Total int       `json:"total"`
+	// ByStatus cuenta los viajes de cada estado con los demás filtros
+	// aplicados, sin el de estado: los números de los chips.
+	ByStatus   map[string]int `json:"byStatus"`
+	NextCursor string         `json:"nextCursor,omitempty"`
 }
 
 type InboxItem struct {

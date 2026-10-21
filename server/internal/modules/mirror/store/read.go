@@ -51,6 +51,13 @@ type InboxItem struct {
 	LastType      string     `json:"lastType,omitempty"`
 	Unread        int        `json:"unread"`
 	NeedsReply    bool       `json:"needsReply"`
+
+	// El último mensaje, para pintar la fila como WhatsApp: tildes si lo mandó
+	// la agencia y, en un grupo, quién lo escribió. Se lee con un LATERAL sobre
+	// el índice (conversation_id, wa_timestamp): son 50 filas por página.
+	LastDirection string `json:"lastDirection,omitempty"`
+	LastStatus    string `json:"lastStatus,omitempty"`
+	LastSender    string `json:"lastSender,omitempty"`
 }
 
 // Cursor devuelve la posición de esta fila en la bandeja. Debe coincidir con el

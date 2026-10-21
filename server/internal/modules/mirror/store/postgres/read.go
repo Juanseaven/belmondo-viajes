@@ -77,21 +77,40 @@ const inboxColumns = `
 	coalesce(ct.phone_number, ''), coalesce(ct.profile_pic_url, ''),
 	c.is_group, c.last_message_at, coalesce(c.last_message_preview, ''),
 	coalesce(c.last_message_type::text, ''), c.unread_count,
-	coalesce(c.last_message_direction = 'inbound', false)`
+	coalesce(c.last_message_direction = 'inbound', false),
+	coalesce(lm.direction, ''), coalesce(lm.status, ''), coalesce(lm.sender, '')`
 
 const inboxFrom = `
 	FROM conversations c
 	JOIN instances i ON i.id = c.instance_id
 	JOIN contacts  ct ON ct.id = c.contact_id
 	LEFT JOIN contact_directory cd
-	       ON cd.instance_id = c.instance_id AND cd.wa_jid = ct.wa_jid`
+	       ON cd.instance_id = c.instance_id AND cd.wa_jid = ct.wa_jid
+	LEFT JOIN LATERAL (
+		SELECT m.direction::text AS direction, m.status::text AS status,
+		       CASE WHEN c.is_group AND m.direction = 'inbound' THEN coalesce(
+		         sp.display_name, sl.display_name, dp.full_name, dl.full_name,
+		         dp.first_name, dl.first_name, dp.business_name, dl.business_name,
+		         dp.push_name, dl.push_name, sp.push_name, sl.push_name, m.sender_name)
+		       END AS sender
+		  FROM messages m
+		  LEFT JOIN contacts sp ON sp.wa_jid = m.sender_jid
+		  LEFT JOIN contacts sl ON sl.lid_jid = m.sender_jid
+		  LEFT JOIN contact_directory dp
+		         ON dp.instance_id = m.instance_id AND dp.wa_jid = m.sender_jid
+		  LEFT JOIN contact_directory dl
+		         ON dl.instance_id = m.instance_id AND dl.lid_jid = m.sender_jid
+		 WHERE m.conversation_id = c.id
+		 ORDER BY m.wa_timestamp DESC, m.id DESC
+		 LIMIT 1
+	) lm ON true`
 
 func scanInbox(row pgx.Row) (store.InboxItem, error) {
 	var it store.InboxItem
 	err := row.Scan(&it.ID, &it.InstanceID, &it.InstanceLbl, &it.ContactID,
 		&it.ContactName, &it.PhoneNumber, &it.AvatarURL,
 		&it.IsGroup, &it.LastMessageAt, &it.Preview, &it.LastType, &it.Unread,
-		&it.NeedsReply)
+		&it.NeedsReply, &it.LastDirection, &it.LastStatus, &it.LastSender)
 	if err == nil {
 		it.AvatarURL = "/api/mirror/conversations/" + it.ID + "/avatar"
 	}

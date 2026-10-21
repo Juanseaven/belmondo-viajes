@@ -255,6 +255,19 @@ func TestListadoCombinaFiltros(t *testing.T) {
 			t.Errorf("%s: total %d, filas %d, se esperaban %d", c.name, page.Total, len(page.Items), c.want)
 		}
 	}
+	// Los chips cuentan cada estado con los demás filtros, sin el de estado.
+	counts, err := f.s.ListTrips(f.ctx, store.TripFilter{Statuses: []domain.TripStatus{domain.TripConfirmado}, Today: listToday, Limit: 50})
+	if err != nil {
+		t.Fatalf("contando: %v", err)
+	}
+	if got := counts.ByStatus; got["consulta"] != 1 || got["confirmado"] != 1 || got["cerrado"] != 1 || counts.Total != 1 {
+		t.Errorf("por estado = %v, total %d; se esperaba uno de cada y total 1", got, counts.Total)
+	}
+	withSeller, _ := f.s.ListTrips(f.ctx, store.TripFilter{SellerID: seller, Today: listToday, Limit: 50})
+	if got := withSeller.ByStatus; len(got) != 1 || got["confirmado"] != 1 {
+		t.Errorf("por estado con vendedor = %v, se esperaba solo el confirmado", got)
+	}
+
 	page, _ := f.s.ListTrips(f.ctx, store.TripFilter{LateOnly: true, Today: listToday, Limit: 50})
 	if len(page.Items) == 1 && (page.Items[0].Next == nil || page.Items[0].Next.Task != "Avisar los requisitos migratorios") {
 		t.Errorf("lo que sigue = %#v", page.Items[0].Next)

@@ -479,6 +479,54 @@ func TestBandejaYGrupoPrefierenElNombreAgendadoPorLaLinea(t *testing.T) {
 	}
 }
 
+// La fila de la bandeja se pinta como en WhatsApp: tildes si lo último lo mandó
+// la agencia y, en un grupo, quién escribió lo último.
+func TestBandejaDiceQuienMandoElUltimoMensajeYSuEstado(t *testing.T) {
+	ctx, p := testDB(t)
+	read := NewRead(p)
+
+	line := seedLine(t, ctx, p, "juanse", "Juanse")
+	now := time.Now().UTC().Truncate(time.Second)
+
+	person := seedContact(t, ctx, p, "5491126437432@s.whatsapp.net", "Beto", "+5491126437432")
+	private := seedConversation(t, ctx, p, line, person, now, 0)
+	seedMessage(t, ctx, p, private, line, person, "wa-in", "Hola", now.Add(-time.Minute))
+	out := seedMessage(t, ctx, p, private, line, person, "wa-out", "Dale", now)
+	if _, err := p.Exec(ctx, `UPDATE messages SET direction='outbound', origin='device', status='read' WHERE id=$1`, out); err != nil {
+		t.Fatal(err)
+	}
+
+	group := seedContact(t, ctx, p, "120363321554617552@g.us", "Administrativas aven", "")
+	groupConv := seedConversation(t, ctx, p, line, group, now.Add(-time.Hour), 0)
+	if _, err := p.Exec(ctx, `UPDATE conversations SET is_group=true WHERE id=$1`, groupConv); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Exec(ctx, `
+		INSERT INTO contact_directory (instance_id, wa_jid, full_name)
+		VALUES ($1, '5491100000001@s.whatsapp.net', 'Natalie')`, line); err != nil {
+		t.Fatal(err)
+	}
+	fromGroup := seedMessage(t, ctx, p, groupConv, line, group, "wa-group", "Dale", now.Add(-time.Hour))
+	if _, err := p.Exec(ctx, `UPDATE messages SET sender_jid='5491100000001@s.whatsapp.net', sender_name='NAT' WHERE id=$1`, fromGroup); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := read.Inbox(ctx, store.InboxQuery{Limit: 10})
+	if err != nil {
+		t.Fatalf("Inbox: %v", err)
+	}
+	byID := map[string]store.InboxItem{}
+	for _, item := range items {
+		byID[item.ID] = item
+	}
+	if got := byID[private]; got.LastDirection != "outbound" || got.LastStatus != "read" || got.LastSender != "" {
+		t.Fatalf("chat individual = %q/%q/%q, want outbound/read sin autor", got.LastDirection, got.LastStatus, got.LastSender)
+	}
+	if got := byID[groupConv]; got.LastDirection != "inbound" || got.LastSender != "Natalie" {
+		t.Fatalf("grupo = %q/%q, want inbound/Natalie", got.LastDirection, got.LastSender)
+	}
+}
+
 func TestHiloGrupalResuelveElAutorConLaAgendaDeLaLinea(t *testing.T) {
 	ctx, p := testDB(t)
 	read := NewRead(p)

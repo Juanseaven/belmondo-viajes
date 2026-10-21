@@ -153,17 +153,19 @@ func (s *Store) ListTrips(ctx context.Context, f store.TripFilter) (store.TripPa
 	if f.Limit <= 0 || f.Limit > 100 {
 		f.Limit = 50
 	}
+	byStatus, err := s.countByStatus(ctx, f)
+	if err != nil {
+		return store.TripPage{}, err
+	}
+	total := 0
+	for status, n := range byStatus {
+		if matchesStatus(f, domain.TripStatus(status)) {
+			total += n
+		}
+	}
+
 	q := &query{}
 	where := filterSQL(q, f)
-
-	var total int
-	if err := s.pool.QueryRow(ctx,
-		`SELECT count(*) FROM trips t
-		   JOIN customers cu ON cu.id = t.customer_id
-		   LEFT JOIN payments pa ON pa.trip_id = t.id
-		  WHERE `+where, q.args...).Scan(&total); err != nil {
-		return store.TripPage{}, fmt.Errorf("contando viajes: %w", err)
-	}
 
 	key, direction := sortKey(f.Sort)
 	pageWhere := where
@@ -199,7 +201,7 @@ func (s *Store) ListTrips(ctx context.Context, f store.TripFilter) (store.TripPa
 		return store.TripPage{}, fmt.Errorf("armando viajes: %w", err)
 	}
 
-	page := store.TripPage{Items: trips, Total: total}
+	page := store.TripPage{Items: trips, Total: total, ByStatus: byStatus}
 	if len(trips) > f.Limit {
 		page.Items = trips[:f.Limit]
 		page.NextCursor = encodeCursor(f.Sort, page.Items[f.Limit-1])
@@ -212,6 +214,46 @@ func (s *Store) ListTrips(ctx context.Context, f store.TripFilter) (store.TripPa
 		page.Items[i].Next = domain.NextPending(items[page.Items[i].ID])
 	}
 	return page, nil
+}
+
+// countByStatus cuenta los viajes de cada estado con los demás filtros
+// aplicados: son los números de los chips de estado, que tienen que decir
+// cuántos habría si se elige ese estado. El total sale de acá también.
+func (s *Store) countByStatus(ctx context.Context, f store.TripFilter) (map[string]int, error) {
+	f.Statuses, f.OpenOnly = nil, false
+	q := &query{}
+	rows, err := s.pool.Query(ctx,
+		`SELECT t.status::text, count(*)::int FROM trips t
+		   JOIN customers cu ON cu.id = t.customer_id
+		   LEFT JOIN payments pa ON pa.trip_id = t.id
+		  WHERE `+filterSQL(q, f)+` GROUP BY t.status`, q.args...)
+	if err != nil {
+		return nil, fmt.Errorf("contando viajes: %w", err)
+	}
+	defer rows.Close()
+	counts := map[string]int{}
+	for rows.Next() {
+		var status string
+		var n int
+		if err := rows.Scan(&status, &n); err != nil {
+			return nil, fmt.Errorf("contando viajes: %w", err)
+		}
+		counts[status] = n
+	}
+	return counts, rows.Err()
+}
+
+// matchesStatus es el filtro de estado de filterSQL, dicho en Go.
+func matchesStatus(f store.TripFilter, status domain.TripStatus) bool {
+	if len(f.Statuses) > 0 {
+		for _, s := range f.Statuses {
+			if s == status {
+				return true
+			}
+		}
+		return false
+	}
+	return !f.OpenOnly || status != domain.TripCerrado
 }
 
 // day escribe un día calendario para compararlo contra una columna date. Pasar
