@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Clientes</title>
+<style>
+:root{
+  --font:"Segoe UI","Helvetica Neue",Helvetica,Arial,sans-serif;
+  --paper:#fff;--canvas:#f4f4f3;--sunken:#ebebe9;--hair:#e4e4e2;--hair2:#d4d4d1;
+  --ink:#17191c;--ink2:#45484c;--ink3:#6a6e73;--ink4:#9a9da0;
+  --green:#1d7a5f;--green2:#155c47;--gtint:#e8f4ef;--gline:#c6e2d7;
+  --warn:#b0521c;--wtint:#faefe6;--wline:#eed3bf;
+  --late:#b3261e;--ltint:#f9e9e7;--lline:#ecc9c5;
+  --blue:#3c5a85;--btint:#eef1f6;--bline:#d5ddea;
+  --violet:#6a4c93;--vtint:#f2eef8;--vline:#e0d6ee;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font);color:var(--ink);background:#d9dbd9;font-size:14px}
+.page{padding:24px;display:flex;flex-direction:column;gap:20px;width:1488px}
+.intro h1{font-size:20px;font-weight:600;margin:0 0 6px}
+.intro p{margin:0;color:var(--ink2);line-height:1.5;max-width:900px}
+svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.app{position:relative;width:1440px;display:grid;grid-template-columns:56px minmax(0,1fr);height:820px;background:var(--canvas);border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08),0 12px 32px rgba(0,0,0,.08)}
+.rail{background:#17191c;display:flex;flex-direction:column;align-items:center;padding:12px 0;gap:6px}
+.rail a{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;color:#9ea3a7;position:relative}
+.rail a.on{background:#232629;color:#fff}
+.rail a.on::before{content:"";position:absolute;left:-8px;top:10px;bottom:10px;width:3px;border-radius:2px;background:#35b98d}
+.rail svg{width:20px;height:20px}
+.rail .sp{flex:1}
+.main{display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.top{background:var(--paper);border-bottom:1px solid var(--hair);padding:18px 28px 16px;display:flex;align-items:center;gap:12px}
+.top h2{margin:0;font-size:22px;font-weight:600}
+.top .acts{margin-left:auto;display:flex;gap:8px}
+.crumb{display:flex;align-items:center;gap:6px;color:var(--ink3);font-size:13px;margin-bottom:2px}
+.body{padding:20px 28px;overflow:hidden;flex:1;display:flex;flex-direction:column;gap:16px}
+.filters{display:flex;flex-direction:column;gap:12px}
+.frow{display:flex;gap:10px;align-items:center}
+.search{flex:1;max-width:520px;height:36px;border-radius:8px;background:var(--paper);border:1px solid var(--hair2);display:flex;align-items:center;gap:10px;padding:0 12px;color:var(--ink4)}
+.drop{height:36px;padding:0 12px;border:1px solid var(--hair2);background:var(--paper);border-radius:8px;display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink2)}
+.drop b{font-weight:600;color:var(--ink)}
+.drop svg{width:14px;height:14px;color:var(--ink4)}
+.chip{height:30px;padding:0 12px;border-radius:15px;border:1px solid var(--hair2);background:var(--paper);display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink2)}
+.chip.on{background:var(--gtint);border-color:var(--gline);color:var(--green2);font-weight:600}
+.chip em{font-style:normal;color:var(--ink4);font-weight:400}
+.count{font-size:13px;color:var(--ink3);margin:0}
+table{width:100%;border-collapse:separate;border-spacing:0;background:var(--paper);border:1px solid var(--hair);border-radius:8px;overflow:hidden}
+th{text-align:left;font-size:12.5px;font-weight:600;color:var(--ink3);padding:10px 14px;border-bottom:1px solid var(--hair);background:#fafaf9;white-space:nowrap}
+th.r,td.r{text-align:right}
+th svg{width:12px;height:12px;vertical-align:-1px;margin-left:3px}
+td{padding:10px 14px;border-bottom:1px solid var(--hair);vertical-align:middle;font-size:14px}
+tr:last-child td{border-bottom:0}
+tr.hov td{background:#f8f9f8}
+tr.sel td{background:var(--gtint)}
+td small{display:block;color:var(--ink3);font-size:12.5px;margin-top:2px}
+.numc{font-variant-numeric:tabular-nums;color:var(--ink3)}
+.who{display:flex;gap:10px;align-items:center}
+.who strong{font-weight:600}
+.tab{font-variant-numeric:tabular-nums}
+.av{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-weight:600;font-size:12px;color:#fff;flex:none}
+.av.lg{width:56px;height:56px;font-size:20px}
+.a1{background:#5b7f95}.a2{background:#a35d7a}.a3{background:#7a8a4e}.a4{background:#8a6a4f}.a5{background:#4f7f74}.a6{background:#6d6a9a}.a7{background:#9a7a3d}
+.btn{height:32px;padding:0 12px;border-radius:6px;border:1px solid var(--hair2);background:var(--paper);font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px;color:var(--ink);white-space:nowrap}
+.btn.pri{background:var(--green);border-color:var(--green);color:#fff}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--ink2)}
+.btn svg{width:15px;height:15px}
+.st{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:11px;font-size:12px;font-weight:600;border:1px solid;white-space:nowrap}
+.s-consulta{background:var(--canvas);color:var(--ink2);border-color:var(--hair2)}
+.s-cotizado{background:var(--btint);color:var(--blue);border-color:var(--bline)}
+.s-confirmado{background:var(--gtint);color:var(--green2);border-color:var(--gline)}
+.s-viaje{background:var(--vtint);color:var(--violet);border-color:var(--vline)}
+.s-cerrado{background:transparent;color:var(--ink4);border-color:var(--hair)}
+.contact{display:flex;align-items:center;gap:6px}
+.contact svg{width:14px;height:14px}
+.wa{color:var(--green)}.nowa{color:var(--ink4)}
+.late{color:var(--late)}.soon{color:var(--warn)}.ok{color:var(--green)}.dim{color:var(--ink4)}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+.next{display:flex;gap:8px;align-items:flex-start}
+.next .dot{margin-top:6px;margin-right:0;flex:none}
+.dest{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+.chev{color:var(--ink4)}
+.card{background:var(--paper);border:1px solid var(--hair);border-radius:8px}
+.card h4{margin:0;padding:12px 16px;font-size:14px;font-weight:600;border-bottom:1px solid var(--hair);display:flex;align-items:center;gap:8px}
+.card h4 small{font-weight:400;color:var(--ink3)}
+.card h4 .r{margin-left:auto}
+.grid{display:grid;grid-template-columns:repeat(4,1fr)}
+.grid>div{padding:12px 16px;border-right:1px solid var(--hair);display:flex;gap:10px}
+.grid>div:last-child{border-right:0}
+.grid svg{color:var(--ink4);margin-top:2px}
+.lbl{display:block;font-size:12px;color:var(--ink3)}
+.val{font-weight:600}
+.cols2{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px;align-items:start}
+.conv{display:flex;align-items:center;gap:12px;padding:12px 16px}
+.conv+.conv{border-top:1px solid var(--hair)}
+.conv .grow{flex:1;min-width:0}
+.conv small{display:block;color:var(--ink3);font-size:12.5px;margin-top:2px;line-height:1.4}
+.stats{display:grid;grid-template-columns:1fr 1fr}
+.stats>div{padding:12px 16px;border-top:1px solid var(--hair)}
+.stats>div:nth-child(odd){border-right:1px solid var(--hair)}
+.stats>div:nth-child(-n+2){border-top:0}
+.stats .val{font-size:18px}
+/* drawer */
+.scrim{position:absolute;inset:0;background:rgba(23,25,28,.28)}
+.drawer{position:absolute;top:0;right:0;bottom:0;width:420px;background:var(--paper);box-shadow:-12px 0 32px rgba(0,0,0,.14);display:flex;flex-direction:column}
+.ph{padding:16px 18px 0}
+.ph .t{display:flex;align-items:center;gap:8px}
+.ph .t b{font-size:18px;font-weight:600}
+.ph .t .x{margin-left:auto;color:var(--ink4)}
+.ph p{margin:4px 0 12px;color:var(--ink3);font-size:13px}
+.tabs{display:flex;gap:16px;border-bottom:1px solid var(--hair);padding:0 18px;font-size:13px;color:var(--ink3)}
+.tabs span{padding-bottom:9px;border-bottom:2px solid transparent;display:flex;gap:5px;align-items:center}
+.tabs span.on{color:var(--ink);font-weight:600;border-color:var(--green)}
+.tc{font-size:11px;min-width:18px;height:18px;border-radius:9px;background:var(--sunken);display:grid;place-items:center;padding:0 5px;font-weight:600;color:var(--ink2)}
+.pb{padding:14px 18px;display:flex;flex-direction:column;gap:12px}
+.pgrid{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--hair);border-radius:8px}
+.pgrid>div{padding:9px 12px;border-bottom:1px solid var(--hair)}
+.pgrid>div:nth-child(even){border-right:1px solid var(--hair)}
+.pgrid>div.full{grid-column:1/-1;border-right:0}
+.pgrid>div:nth-last-child(-n+2){border-bottom:0}
+.nx{border:1px solid var(--hair);border-radius:8px;padding:12px}
+.nx .lbl{margin-bottom:6px}
+.nx .it{display:flex;align-items:center;gap:10px}
+.nx .it .grow{flex:1}
+.nx .it small{display:block;font-size:12.5px}
+.hint{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:var(--ink3);background:var(--canvas);border-radius:6px;padding:8px 10px;margin-top:10px;line-height:1.4}
+.hint svg{width:14px;height:14px;margin-top:1px}
+/* diálogo nuevo cliente */
+.center{position:absolute;inset:0;display:grid;place-items:center}
+.dlg{width:560px;background:var(--paper);border-radius:10px;box-shadow:0 20px 50px rgba(0,0,0,.25);overflow:hidden}
+.dlg h4{margin:0;padding:16px 20px 2px;font-size:17px;font-weight:600}
+.dlg>p{margin:0 20px 14px;color:var(--ink3);font-size:13px}
+.form{padding:0 20px 16px;display:flex;flex-direction:column;gap:12px}
+.f2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.f3{display:grid;grid-template-columns:150px 1fr;gap:12px}
+.fld label{display:block;font-size:12.5px;font-weight:600;color:var(--ink2);margin-bottom:5px}
+.inp{height:38px;border:1px solid var(--hair2);border-radius:6px;background:var(--paper);padding:0 12px;display:flex;align-items:center;color:var(--ink);font-size:14px}
+.inp.ph2{color:var(--ink4)}
+.inp.focus{border-color:var(--green);box-shadow:0 0 0 3px var(--gtint)}
+.dup{border:1px solid var(--wline);background:var(--wtint);border-radius:8px;padding:10px 12px}
+.dup b{display:block;font-size:13px;color:var(--warn)}
+.dup .m{display:flex;align-items:center;gap:10px;background:var(--paper);border:1px solid var(--hair);border-radius:6px;padding:8px 10px;margin-top:8px}
+.dup .m .grow{flex:1}
+.dup .m small{display:block;color:var(--ink3);font-size:12.5px}
+.dfoot{display:flex;align-items:center;gap:8px;padding:12px 20px;border-top:1px solid var(--hair);background:#fafaf9}
+.dfoot .msg{margin-right:auto;color:var(--ink3);font-size:13px}
+.wrap{display:flex;flex-direction:column;gap:16px}
+.notes{width:1440px;background:var(--paper);border-radius:10px;padding:18px 20px;font-size:13.5px;line-height:1.5;color:var(--ink2)}
+.notes h2{font-size:15px;margin:0 0 10px;color:var(--ink)}
+.notes ol{margin:0;padding-left:20px;columns:2;column-gap:40px}
+.notes li{break-inside:avoid;margin-bottom:10px}
+.notes b{color:var(--ink);font-weight:600}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="intro">
+    <h1>Clientes</h1>
+    <p>Como Viajes: una tabla de clientes a todo el ancho con buscador y filtros, y al tocar un cliente, su página con sus datos y todos sus viajes. Sin la lista al costado ni el panel fijo de la bandeja.</p>
+  </div>
+
+  <!-- 1. LISTA -->
+  <div class="wrap">
+  <div class="app">
+    <nav class="rail">
+      <a><svg viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg></a>
+      <a><svg viewBox="0 0 24 24"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></a>
+      <a class="on"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></a>
+      <span class="sp"></span>
+      <a><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg></a>
+    </nav>
+    <div class="main">
+      <div class="top"><h2>Clientes</h2><div class="acts"><span class="btn pri"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Nuevo cliente</span></div></div>
+      <div class="body">
+        <div class="filters">
+          <div class="frow">
+            <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>Buscar por nombre, teléfono, mail, documento o pasajero</div>
+          </div>
+          <div class="frow">
+            <span class="chip on">Todos <em>7</em></span>
+            <span class="chip">Con viaje abierto <em>6</em></span>
+            <span class="chip">Sin viajes <em>1</em></span>
+            <span class="chip">Sin WhatsApp <em>2</em></span>
+          </div>
+        </div>
+        <p class="count">7 clientes · ordenados por el último movimiento</p>
+        <table>
+          <thead><tr>
+            <th>Cliente</th><th>Contacto</th><th>Viajes</th><th>Viaje abierto</th><th style="width:36px"></th>
+          </tr></thead>
+          <tbody>
+            <tr class="hov"><td><div class="who"><div class="av a4">MP</div><div><strong>Marta Pérez</strong><small>cliente desde mar 2024</small></div></div></td><td><div class="contact"><svg class="nowa" viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg>11 4788-2210</div><small>marta.perez@yahoo.com · sin WhatsApp</small></td><td class="tab">3<small>último: Japón</small></td><td><div class="dest"><span>#12 Japón · sale lun 02/11</span><span class="st s-cotizado">Cotizado</span></div></td><td class="chev"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></td></tr>
+            <tr><td><div class="who"><div class="av a3">LM</div><div><strong>Lucía Méndez</strong><small>cliente desde ago 2023</small></div></div></td><td><div class="contact"><svg class="wa" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>+54 9 11 6012-7788</div><small>2 chats</small></td><td class="tab">3<small>último: Italia, Francia</small></td><td><div class="dest"><span>#7 Italia, Francia · sale sáb 14/11</span><span class="st s-confirmado">Confirmado</span></div></td><td class="chev"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></td></tr>
+            <tr><td><div class="who"><div class="av a2">AA</div><div><strong>Agus Alonso</strong><small>cliente desde ene 2025</small></div></div></td><td><div class="contact"><svg class="wa" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>+54 9 11 2612-6437</div></td><td class="tab">2<small>último: Cancún</small></td><td><div class="dest"><span>#2 Cancún · sale jue 10/12</span><span class="st s-cotizado">Cotizado</span></div></td><td class="chev"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></td></tr>
+            <tr><td><div class="who"><div class="av a1">SG</div><div><strong>Sofía Gómez</strong><small>cliente desde sep 2026</small></div></div></td><td><div class="contact"><svg class="wa" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>+54 9 11 3301-4410</div></td><td class="tab">1</td><td><div class="dest"><span>#3 Chile · sale mar 27/10</span><span class="st s-confirmado">Confirmado</span></div></td><td class="chev"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></td></tr>
+            <tr><td><div class="who"><div class="av a5">B</div><div><strong>Betoaven</strong><small>cliente desde oct 2026</small></div></div></td><td><div class="contact"><svg class="wa" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>+54 9 11 4455-1020</div></td><td class="tab">1</td><td><div class="dest"><span>#4 Estados Unidos · sale jue 29/10</span><span class="st s-consulta">Consulta</span></div></td><td class="chev"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></td></tr>
+            <tr><td><div class="who"><div class="av a6">CR</div><div><strong>Carlos Ruiz</strong><small>cliente desde oct 2026</small></div></div></td><td><div class="contact"><svg class="wa" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>+54 9 351 555-0192</div></td><td class="tab">1</td><td><div class="dest"><span>#9 Brasil · sin fecha</span><span class="st s-consulta">Consulta</span></div></td><td class="chev"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></td></tr>
+            <tr><td><div class="who"><div class="av a7">RT</div><div><strong>Ricardo Torres</strong><small>cliente desde hoy</small></div></div></td><td><div class="contact"><svg class="nowa" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>ricardo.t@gmail.com</div><small>sin WhatsApp</small></td><td class="dim">Sin viajes</td><td class="dim">—</td><td class="chev"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="notes">
+    <h2>La lista: qué hay</h2>
+    <ol>
+      <li><b>Mismo esquema que «Todos los viajes»</b>: buscador arriba, filtros como chips con cuántos hay, el total y la tabla.</li>
+      <li><b>Buscar</b> por nombre, teléfono, mail, documento, y también por el nombre de un pasajero: «¿quién era el que viajó con la hija a Japón?».</li>
+      <li><b>Filtros</b>: Todos, Con viaje abierto, Sin viajes (el que se cargó y nunca compró) y Sin WhatsApp.</li>
+      <li><b>Contacto</b>: el teléfono con el globo verde si tiene WhatsApp, o el teléfono o mail en gris si no.</li>
+      <li><b>Viajes</b>: cuántos y cuál fue el último. <b>Viaje abierto</b>: el más reciente sin cerrar, con su estado en color.</li>
+      <li><b>Orden</b>: el cliente con el último movimiento primero (un viaje nuevo, un cambio). También por nombre.</li>
+      <li>Toda la fila abre la página del cliente.</li>
+    </ol>
+  </div>
+  </div>
+
+  <!-- 2. PÁGINA DEL CLIENTE -->
+  <div class="wrap">
+  <div class="app">
+    <nav class="rail">
+      <a><svg viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg></a>
+      <a><svg viewBox="0 0 24 24"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></a>
+      <a class="on"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></a>
+      <span class="sp"></span>
+      <a><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg></a>
+    </nav>
+    <div class="main">
+      <div class="top">
+        <div class="av lg a4">MP</div>
+        <div><div class="crumb"><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>Clientes</div><h2>Marta Pérez</h2></div>
+        <div class="acts"><span class="btn"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Editar</span><span class="btn pri"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Nuevo viaje</span></div>
+      </div>
+      <div class="body">
+        <div class="card"><div class="grid">
+          <div><svg viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg><div><span class="lbl">Teléfono</span><span class="val">11 4788-2210</span></div></div>
+          <div><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg><div><span class="lbl">Mail</span><span class="val">marta.perez@yahoo.com</span></div></div>
+          <div><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M15 9h3M15 13h3M6 16h6"/></svg><div><span class="lbl">Documento</span><span class="val">DNI 22.456.789</span></div></div>
+          <div><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><div><span class="lbl">Cliente desde</span><span class="val">mar 2024</span></div></div>
+        </div></div>
+
+        <div class="cols2">
+          <div class="card">
+            <h4>Viajes <small>3</small><span class="r btn ghost"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Nuevo viaje</span></h4>
+            <table style="border:0;border-radius:0">
+              <thead><tr><th style="width:48px">#</th><th>Destino</th><th>Salida</th><th class="r">Total</th><th>Lo que sigue</th><th style="width:36px"></th></tr></thead>
+              <tbody>
+                <tr class="hov"><td class="numc">12</td><td><div class="dest">Japón<span class="st s-cotizado">Cotizado</span></div></td><td class="tab">lun 02/11<small>vuelve el 20/11</small></td><td class="r tab">USD 9.150<small class="soon">seña vence el viernes</small></td><td><div class="next"><span class="dot" style="background:var(--warn)"></span><div><span class="soon">Enviar la cotización</span><small>Viernes</small></div></div></td><td class="chev"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></td></tr>
+                <tr><td class="numc">6</td><td><div class="dest">Perú<span class="st s-cerrado">Cerrado</span></div></td><td class="tab">sáb 12/04/2025<small>vuelve el 20/04</small></td><td class="r tab">USD 3.400<small class="ok">seña cobrada</small></td><td class="dim">—</td><td class="chev"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></td></tr>
+                <tr><td class="numc">1</td><td><div class="dest">Brasil<span class="st s-cerrado">Cerrado</span></div></td><td class="tab">vie 10/01/2025<small>vuelve el 18/01</small></td><td class="r tab">USD 2.100<small class="ok">seña cobrada</small></td><td class="dim">—</td><td class="chev"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div class="card">
+              <h4>WhatsApp</h4>
+              <div class="conv">
+                <svg class="nowa" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
+                <div class="grow"><span class="val">No tiene chats</span><small>Si escribe desde 11 4788-2210, la bandeja va a ofrecer vincularlo.</small></div>
+              </div>
+              <div class="conv" style="padding-top:0"><span class="btn">Vincular un chat</span></div>
+            </div>
+            <div class="card">
+              <h4>Con quién viaja</h4>
+              <div class="conv"><div class="av a4">MP</div><div class="grow"><span class="val">Marta Pérez</span><small>3 viajes · Pasaporte AR vence 08/2031</small></div></div>
+              <div class="conv"><div class="av a1">JG</div><div class="grow"><span class="val">Jorge Gómez</span><small>2 viajes · Pasaporte IT vence 03/2027</small></div></div>
+              <div class="conv"><div class="av a3">TG</div><div class="grow"><span class="val">Tomás Gómez</span><small>1 viaje · menor, 9 años</small></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="notes">
+    <h2>La página del cliente: qué hay</h2>
+    <ol>
+      <li><b>Solo la información del cliente</b>: sus datos arriba, sus viajes, sus chats y con quién viaja. «Editar» y «Nuevo viaje» arriba a la derecha.</li>
+      <li><b>Viajes</b>: todos, abiertos primero y cerrados después, con las mismas columnas que Viajes.</li>
+      <li><b>Al tocar un viaje</b>: si el cliente tiene WhatsApp, va al chat con ese viaje abierto, igual que desde Viajes. Si no tiene, el panel del viaje se abre desde la derecha sobre esta página (abajo).</li>
+      <li><b>WhatsApp</b>: sus chats con «Abrir chat», o «No tiene chats» con «Vincular un chat».</li>
+      <li><b>Con quién viaja</b>: las personas que fueron pasajeras en sus viajes, sin repetir, con su documento. Es solo lectura; es la misma lista que se ofrece al «traer pasajeros» en un viaje nuevo.</li>
+      <li>«‹ Clientes» vuelve a la tabla con el buscador y los filtros como estaban.</li>
+    </ol>
+  </div>
+  </div>
+
+  <!-- 3. VIAJE SIN WHATSAPP + NUEVO CLIENTE -->
+  <div class="wrap">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;width:1440px">
+  <div class="app" style="width:auto;grid-template-columns:56px minmax(0,1fr)">
+    <nav class="rail"><a class="on"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></a></nav>
+    <div class="main"><div class="top"><div class="av lg a4">MP</div><div><div class="crumb">‹ Clientes</div><h2>Marta Pérez</h2></div></div><div class="body"></div></div>
+    <div class="scrim"></div>
+    <aside class="drawer" style="width:400px">
+      <div class="ph">
+        <div class="t"><b>Viaje #12</b><span class="st s-cotizado">Cotizado ▾</span><span class="x"><svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+        <p>Japón · vende Juanse</p>
+      </div>
+      <div class="tabs"><span class="on">Resumen</span><span>Pasajeros <span class="tc">3</span></span><span>Requisitos</span><span>Pagos</span><span>Controles <span class="tc">9</span></span></div>
+      <div class="pb">
+        <div class="pgrid">
+          <div class="full"><span class="lbl">Recorrido</span><span class="val">Argentina → Japón</span></div>
+          <div><span class="lbl">Salida</span><span class="val">lun 02/11/2026</span></div>
+          <div><span class="lbl">Regreso</span><span class="val">vie 20/11/2026</span></div>
+          <div><span class="lbl">Cliente</span><span class="val">Marta Pérez</span></div>
+          <div><span class="lbl">Pasajeros</span><span class="val">3 · 2 adultos, 1 menor</span></div>
+        </div>
+        <div class="nx">
+          <span class="lbl">Lo que sigue</span>
+          <div class="it"><span class="dot" style="background:var(--warn)"></span><div class="grow"><strong>Enviar la cotización</strong><small class="soon">Viernes · vie 23/10</small></div><span class="btn">Marcar hecho</span></div>
+          <div class="hint"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg><span>Marta no tiene WhatsApp: lo que en otros viajes se cierra al mandar el mensaje, acá se marca a mano y queda quién y cuándo.</span></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="app" style="width:auto;grid-template-columns:56px minmax(0,1fr)">
+    <nav class="rail"><a class="on"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></a></nav>
+    <div class="main"><div class="top"><h2>Clientes</h2></div><div class="body"></div></div>
+    <div class="scrim"></div>
+    <div class="center">
+      <div class="dlg">
+        <h4>Nuevo cliente</h4>
+        <p>Quien compra el viaje. Los pasajeros se cargan en cada viaje.</p>
+        <div class="form">
+          <div class="fld"><label>Nombre y apellido</label><div class="inp focus">Lucia Mendez</div></div>
+          <div class="dup">
+            <b>¿Es este cliente?</b>
+            <div class="m"><div class="av a3">LM</div><div class="grow"><strong>Lucía Méndez</strong><small>+54 9 11 6012-7788 · 3 viajes</small></div><span class="btn">Ir a su ficha</span></div>
+          </div>
+          <div class="f2">
+            <div class="fld"><label>Teléfono</label><div class="inp ph2">Ej.: 11 4788-2210</div></div>
+            <div class="fld"><label>Mail</label><div class="inp ph2">nombre@mail.com</div></div>
+          </div>
+          <div class="f3">
+            <div class="fld"><label>Documento</label><div class="inp">DNI ▾</div></div>
+            <div class="fld"><label>Número</label><div class="inp ph2">Sin puntos</div></div>
+          </div>
+        </div>
+        <div class="dfoot"><span class="msg">Solo el nombre es obligatorio.</span><span class="btn ghost">Cancelar</span><span class="btn">Crear</span><span class="btn pri">Crear y armar un viaje</span></div>
+      </div>
+    </div>
+  </div>
+  </div>
+  <div class="notes">
+    <h2>Viaje de un cliente sin WhatsApp y Nuevo cliente</h2>
+    <ol>
+      <li><b>El panel del viaje se abre desde la derecha</b> sobre la página del cliente, con las mismas pestañas que al lado del chat. Se cierra con la ✕ o tocando afuera. Desde Viajes, un viaje sin chat abre lo mismo en vez del «Sin chat» desactivado de hoy.</li>
+      <li><b>«Marcar hecho»</b> en los controles que se cierran mandando un mensaje, solo para clientes sin WhatsApp; queda quién y cuándo.</li>
+      <li><b>En Pasajeros</b> aparece «Traer de un viaje anterior» cuando el cliente ya viajó: la lista de «Con quién viaja», con los del último viaje ya marcados. Se copian con documentos y visas.</li>
+      <li><b>Nuevo cliente</b> es una ventana chica: nombre, teléfono, mail y documento. Avisa mientras escribís si se parece a un cliente que ya existe.</li>
+      <li><b>«Crear y armar un viaje»</b> lleva a la página del cliente con el formulario de nuevo viaje abierto en el panel.</li>
+    </ol>
+  </div>
+  </div>
+</div>
+</body>
+</html>
