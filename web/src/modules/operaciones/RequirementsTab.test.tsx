@@ -41,10 +41,9 @@ it("sin pasajeros dice lo que piden los países a un pasaporte argentino, sin cu
 
   expect(screen.getByText("Requisitos para un pasajero con pasaporte argentino")).toBeTruthy();
   expect(screen.getByText("Canadá pide visa, que se tramita antes de viajar")).toBeTruthy();
-  // La fuente queda a un toque: plegada con el detalle.
+  // Las fuentes están ocultas por ahora: un renglón que solo tenía fuente no se despliega.
   expect(screen.queryByRole("link", { name: "Wikipedia" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Ver detalle de Canadá pide visa, que se tramita antes de viajar" }));
-  expect(screen.getByRole("link", { name: "Wikipedia" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Ver detalle de Canadá pide visa, que se tramita antes de viajar" })).toBeNull();
   expect(screen.getAllByText("Verificar")).toHaveLength(1);
   expect(screen.queryByText("Cumple")).toBeNull();
   expect(screen.queryByText("Falta")).toBeNull();
@@ -75,9 +74,7 @@ it("agrupa por pasajero y país y dice cada requisito con palabras", () => {
   expect(within(maria).getByText("Canadá pide visa y no está cargada")).toBeTruthy();
   expect(within(maria).getByText("Falta")).toBeTruthy();
   expect(within(maria).getByText("0 de 1 listos")).toBeTruthy();
-  fireEvent.click(within(maria).getByRole("button", { name: "Ver detalle de Canadá pide visa y no está cargada" }));
-  const link = within(maria).getByRole("link", { name: "Wikipedia" });
-  expect(link.getAttribute("href")).toBe("https://en.wikipedia.org/w/index.php?oldid=1");
+  expect(within(maria).queryByRole("link", { name: "Wikipedia" })).toBeNull();
 
   const tomas = screen.getByRole("region", { name: "Tomás Pérez" });
   expect(within(tomas).getByText(/autorización de viaje/)).toBeTruthy();
@@ -149,10 +146,9 @@ it("cada renglón dice qué pide el país, el trámite, qué tiene el pasajero y
   expect(within(visa).getByText("Para turismo es la visa B1/B2.")).toBeTruthy();
   expect(within(visa).getByText("Tiene")).toBeTruthy();
   expect(within(visa).getByText("Hacer")).toBeTruthy();
-  const oficial = within(visa).getByRole("link", { name: "travel.state.gov · 21/10/2026" });
-  expect(oficial.getAttribute("href")).toBe("https://travel.state.gov/visas");
-  expect(oficial.getAttribute("title")).toBe("«B-2 visa»");
-  expect(within(visa).getByRole("link", { name: "Wikipedia" })).toBeTruthy();
+  // Las fuentes están ocultas por ahora (SHOW_SOURCES en RequirementsTab).
+  expect(within(visa).queryByText(/^Fuentes?:/)).toBeNull();
+  expect(within(visa).queryByRole("link")).toBeNull();
 
   // Una parte vacía no se muestra.
   const documento = screen.getByRole("listitem", { name: "Documento" });

@@ -235,8 +235,15 @@ function dayFromISO(iso: string): string {
   return d && m && y ? `${d}/${m}/${y}` : iso;
 }
 
+/**
+ * Las fuentes se ocultan por ahora (pedido del 2026-10-22): se vuelven a
+ * mostrar poniendo esto en true. Siguen llegando del servidor.
+ */
+const SHOW_SOURCES = false;
+
 /** Las fuentes del renglón, una vez cada una, con la cita al pasar el mouse. */
 function Sources({ sources }: { sources?: Citation[] }) {
+  if (!SHOW_SOURCES) return null;
   const seen = new Set<string>();
   const linked = (sources ?? []).filter((s) => {
     if (!s.url) return false;
@@ -304,7 +311,7 @@ function RequirementRow({ requirement, onConfirm, onAddPermit, preview }: {
   const [open, setOpen] = useState(false);
   const status = requirement.status;
   const confirmable = Boolean(onConfirm) && requirement.confirmable && status !== "cumple" && !searching(requirement);
-  const expandable = PARTS.some(({ key }) => texts(requirement.detail, key).length > 0) || (requirement.sources ?? []).some((s) => s.url);
+  const expandable = PARTS.some(({ key }) => texts(requirement.detail, key).length > 0) || (SHOW_SOURCES && (requirement.sources ?? []).some((s) => s.url));
   const Icon = ICONS[status];
   const tone = preview ? (status === "verificar" ? "is-verificar" : "is-info") : `is-${status}`;
 
