@@ -27,7 +27,7 @@ func TestDetalleDelViajeHidrataElExpedienteCompleto(t *testing.T) {
 	}
 	if _, err := s.PutPayment(ctx, store.Payment{
 		TripID: trip.ID, TotalUSD: float64ptr(1840), Rate: float64ptr(1171),
-		TotalARS: float64ptr(2154640), Method: "transferencia", UpdatedBy: user,
+		Method: "transferencia", UpdatedBy: user,
 	}); err != nil {
 		t.Fatalf("alta del pago: %v", err)
 	}

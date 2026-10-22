@@ -49,3 +49,25 @@ describe("useThread optimistic reconciliation", () => {
     expect(result.current.messages).toEqual([definitive]);
   });
 });
+
+describe("useThread media", () => {
+  it("stops showing «Descargando adjunto…» when the media is stored", async () => {
+    const photo: Message = {
+      id: "message-photo",
+      direction: "inbound",
+      origin: "contact",
+      type: "image",
+      status: "sent",
+      timestamp: "2026-10-22T12:00:00Z",
+      media: { id: "media-1", mimeType: "image/jpeg", status: "pending" },
+    };
+    vi.mocked(mirrorApi.messages).mockResolvedValue({ items: [photo] });
+
+    const { result } = renderHook(() => useThread("conversation-1"));
+    await waitFor(() => expect(result.current.messages).toHaveLength(1));
+
+    act(() => result.current.mediaStored("message-photo"));
+
+    expect(result.current.messages[0].media?.status).toBe("stored");
+  });
+});

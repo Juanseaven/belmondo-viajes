@@ -40,7 +40,14 @@ type Service struct {
 	wg     sync.WaitGroup
 	log    *slog.Logger
 	closer sync.Once
+	// stored avisa que un archivo quedó guardado: el panel muestra «Descargando
+	// adjunto…» hasta enterarse.
+	stored func(context.Context, store.PendingMedia)
 }
+
+// OnStored registra a quién avisar cuando un archivo queda guardado. Se llama
+// antes de Start.
+func (s *Service) OnStored(fn func(context.Context, store.PendingMedia)) { s.stored = fn }
 
 func NewService(d Downloader, u blobs.Store, s store.MediaStore, queueSize int, log *slog.Logger) *Service {
 	if queueSize < 1 {
@@ -126,7 +133,13 @@ func (s *Service) process(ctx context.Context, job store.PendingMedia) error {
 	if err := s.up.Put(ctx, key, mimeType, data); err != nil {
 		return fmt.Errorf("subiendo a R2: %w", err)
 	}
-	return s.store.MarkStored(ctx, job.ID, key, digest, int64(len(data)))
+	if err := s.store.MarkStored(ctx, job.ID, key, digest, int64(len(data))); err != nil {
+		return err
+	}
+	if s.stored != nil {
+		s.stored(ctx, job)
+	}
+	return nil
 }
 
 func downloadSourceURL(ctx context.Context, sourceURL, fallbackMime string) ([]byte, string, error) {

@@ -330,18 +330,18 @@ func (m *Module) putPayment(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		TotalUSD         *float64 `json:"totalUsd"`
 		Rate             *float64 `json:"rate"`
-		TotalARS         *float64 `json:"totalArs"`
 		Method           string   `json:"method"`
 		DepositUSD       *float64 `json:"depositUsd"`
 		DepositDueAt     string   `json:"depositDueAt"`
-		DepositPaid      bool     `json:"depositPaid"`
 		NonRefundableUSD *float64 `json:"nonRefundableUsd"`
 	}
 	if !decode(w, r, &body) {
 		return
 	}
+	// El total en pesos se calcula y la seña cobrada sale de los pagos
+	// registrados: ninguno de los dos viene en el cuerpo.
 	payment := store.Payment{TripID: r.PathValue("id"), TotalUSD: body.TotalUSD,
-		Rate: body.Rate, TotalARS: body.TotalARS, Method: body.Method,
+		Rate: body.Rate, Method: body.Method,
 		DepositUSD: body.DepositUSD, NonRefundableUSD: body.NonRefundableUSD,
 		UpdatedBy: auth.UserID(r.Context())}
 	if body.DepositDueAt != "" {
@@ -351,10 +351,6 @@ func (m *Module) putPayment(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		payment.DepositDueAt = &date
-	}
-	if body.DepositPaid {
-		paid := nowUTC()
-		payment.DepositPaidAt = &paid
 	}
 	saved, err := m.repo.PutPayment(r.Context(), payment)
 	if err != nil {

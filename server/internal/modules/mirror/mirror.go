@@ -9,15 +9,18 @@ package mirror
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/juanseaven/viajes-crm/server/internal/kernel"
 	"github.com/juanseaven/viajes-crm/server/internal/kernel/auth"
 	"github.com/juanseaven/viajes-crm/server/internal/kernel/httpx"
+	"github.com/juanseaven/viajes-crm/server/internal/kernel/ws"
 	"github.com/juanseaven/viajes-crm/server/internal/modules"
 	"github.com/juanseaven/viajes-crm/server/internal/modules/mirror/domain"
 	"github.com/juanseaven/viajes-crm/server/internal/modules/mirror/evolution"
@@ -92,7 +95,7 @@ func New(k *kernel.Kernel) *Module {
 		events, messages, contacts, evo, instances, panelSends, outbound, qr, mediaSvc, k.Hub, log)
 	pool := worker.New(cfg.WorkerShards, cfg.WorkerQueueSize, processor, log)
 
-	return &Module{
+	m := &Module{
 		k:         k,
 		pool:      pool,
 		mediaSvc:  mediaSvc,
@@ -110,6 +113,28 @@ func New(k *kernel.Kernel) *Module {
 		provisioner: evo,
 		qr:          qr,
 	}
+	mediaSvc.OnStored(m.announceStored)
+	return m
+}
+
+// announceStored avisa que el archivo de un mensaje quedó guardado: el chat
+// reemplaza «Descargando adjunto…» por el archivo, y Archivos lo muestra.
+func (m *Module) announceStored(ctx context.Context, job store.PendingMedia) {
+	var conversationID, instanceID string
+	if err := m.k.DB.QueryRow(ctx,
+		`SELECT conversation_id::text, instance_id::text FROM messages WHERE id = $1`, job.MessageID,
+	).Scan(&conversationID, &instanceID); err != nil {
+		m.log.Warn("no se pudo avisar el archivo guardado", "message_id", job.MessageID, "error", err)
+		return
+	}
+	raw, err := json.Marshal(map[string]any{
+		"messageId": job.MessageID, "mediaId": job.ID, "conversationId": conversationID,
+	})
+	if err != nil {
+		return
+	}
+	m.k.Hub.Broadcast(ws.Event{Module: domain.ModuleName, Type: "media.stored", InstanceID: instanceID,
+		Payload: raw, At: time.Now().UTC()})
 }
 
 // Verifica en tiempo de compilación que el módulo cumple el contrato.

@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"testing"
-	"time"
 
 	"github.com/juanseaven/viajes-crm/server/internal/modules/operaciones/store"
 )
@@ -26,13 +25,17 @@ func TestPagoHaceUpsertYLosDerivadosSiguenSusCampos(t *testing.T) {
 
 	payment, err := s.PutPayment(ctx, store.Payment{
 		TripID: trip.ID, TotalUSD: float64ptr(3200), Rate: float64ptr(1450.5),
-		TotalARS: float64ptr(4641600), Method: "transferencia", UpdatedBy: user,
+		Method: "transferencia", UpdatedBy: user,
 	})
 	if err != nil {
 		t.Fatalf("alta del pago: %v", err)
 	}
 	if payment.TotalUSD == nil || *payment.TotalUSD != 3200 {
 		t.Fatalf("total devuelto: %#v", payment.TotalUSD)
+	}
+	// El total en pesos se calcula: total en dólares por el cambio.
+	if payment.TotalARS == nil || *payment.TotalARS != 4641600 {
+		t.Fatalf("total en pesos: %#v, se esperaba 4641600", payment.TotalARS)
 	}
 	for _, id := range []string{"carga-usd", "carga-pesos", "carga-cambio", "carga-metodo"} {
 		if got := estado(t, ctx, pool, trip.ID, id); got != "cerrado" {
@@ -46,48 +49,6 @@ func TestPagoHaceUpsertYLosDerivadosSiguenSusCampos(t *testing.T) {
 	}
 	if got := estado(t, ctx, pool, trip.ID, "carga-metodo"); got != "abierto" {
 		t.Errorf("método vacío dejó el control %s, se esperaba abierto", got)
-	}
-}
-
-// El pago se guarda entero en cada edición, y el handler fecha la seña con la
-// hora del pedido. Si la base aceptara esa fecha cada vez, corregir el método
-// de pago una semana después movería la seña a hoy: la fecha de cobro tiene que
-// ser la primera vez que se marcó, y solo se borra al desmarcarla.
-func TestLaSeñaConservaLaFechaEnQueSeCobró(t *testing.T) {
-	ctx, pool := testDB(t)
-	s := New(pool)
-	user := seedUser(t, ctx, pool, "senas@agencia.test")
-	contact := seedContact(t, ctx, pool, "5491100000105@s.whatsapp.net", "Lucía Pérez")
-	trip, err := s.CreateTrip(ctx, store.NewTrip{ContactID: contact, CreatedBy: user})
-	if err != nil {
-		t.Fatalf("alta del viaje: %v", err)
-	}
-
-	cobrada := time.Date(2026, 10, 1, 15, 0, 0, 0, time.UTC)
-	payment := store.Payment{TripID: trip.ID, DepositUSD: float64ptr(500),
-		DepositPaidAt: &cobrada, UpdatedBy: user}
-	if _, err := s.PutPayment(ctx, payment); err != nil {
-		t.Fatalf("seña cobrada: %v", err)
-	}
-
-	despues := cobrada.AddDate(0, 0, 7)
-	payment.Method = "transferencia"
-	payment.DepositPaidAt = &despues
-	saved, err := s.PutPayment(ctx, payment)
-	if err != nil {
-		t.Fatalf("edición del pago: %v", err)
-	}
-	if saved.DepositPaidAt == nil || !saved.DepositPaidAt.Equal(cobrada) {
-		t.Fatalf("la seña quedó cobrada el %v, se esperaba %v", saved.DepositPaidAt, cobrada)
-	}
-
-	payment.DepositPaidAt = nil
-	saved, err = s.PutPayment(ctx, payment)
-	if err != nil {
-		t.Fatalf("desmarcar la seña: %v", err)
-	}
-	if saved.DepositPaidAt != nil {
-		t.Fatalf("desmarcar dejó la seña cobrada el %v", saved.DepositPaidAt)
 	}
 }
 

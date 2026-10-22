@@ -35,6 +35,9 @@ const activeTrip = {
   controls: [{ id: "control-real", itemId: "visa", stage: "control" as const, closing: "accion" as const, title: "Avisar por visa", actionLabel: "Avisar al pasajero", message: "Revisemos la visa.", critical: true, status: "abierto" as const, dueAt: "2026-08-19", evidence: [] }],
 };
 
+// Archivos también escucha al espejo; el doble de useSocket guarda un solo
+// handler, que tiene que ser el de la pantalla.
+vi.mock("../operaciones/CustomerFiles", () => ({ CustomerFiles: () => null, useFileCount: () => undefined }));
 vi.mock("../operaciones/useTrips", () => ({
   useTrips: () => ({ byContact: tripHookState.active ? { "real-contact": tripHookState.active } : {}, contactTrips: tripHookState.active ? [tripHookState.active] : [], active: tripHookState.active, loading: false, error: undefined, reload: tripHookState.reload, select: vi.fn() }),
 }));

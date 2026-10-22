@@ -260,8 +260,9 @@ func writeError(action string, err error) error {
 			// Duplicado, o una referencia que no corresponde (el documento de
 			// viaje de otro pasajero).
 			return store.ErrConflict
-		case "23514", "22P02", "22007", "22008":
-			// Un CHECK del esquema, un uuid o una fecha mal escritos.
+		case "23514", "23502", "22P02", "22007", "22008":
+			// Un CHECK del esquema, un dato obligatorio que falta, un uuid o una
+			// fecha mal escritos.
 			return fmt.Errorf("%w: %s", store.ErrInvalid, pgErr.Message)
 		}
 	}

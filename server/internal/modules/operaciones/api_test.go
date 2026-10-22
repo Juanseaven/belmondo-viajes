@@ -39,6 +39,9 @@ type fakeRepo struct {
 	customerFilter  store.CustomerFilter
 	copied          []string
 	contactCustomer string
+	paymentRecord   store.NewPaymentRecord
+	fileFilter      store.FileFilter
+	favorite        *bool
 }
 
 func (f *fakeRepo) CreateTrip(_ context.Context, n store.NewTrip) (store.Trip, error) {
@@ -99,6 +102,19 @@ func (f *fakeRepo) SimilarCustomers(context.Context, store.SimilarQuery) ([]stor
 }
 func (f *fakeRepo) SuggestedCustomers(context.Context, string) ([]store.CustomerMatch, error) {
 	return []store.CustomerMatch{}, nil
+}
+func (f *fakeRepo) AddPaymentRecord(_ context.Context, n store.NewPaymentRecord) (store.PaymentRecord, error) {
+	f.paymentRecord = n
+	return store.PaymentRecord{TripID: n.TripID}, f.err
+}
+func (f *fakeRepo) DeletePaymentRecord(context.Context, string) (string, error) { return "trip-1", f.err }
+func (f *fakeRepo) CustomerFiles(_ context.Context, _ string, filter store.FileFilter) (store.FilePage, error) {
+	f.fileFilter = filter
+	return store.FilePage{Items: []store.CustomerFile{}}, f.err
+}
+func (f *fakeRepo) SetFavorite(_ context.Context, _ string, _ string, on bool) error {
+	f.favorite = &on
+	return f.err
 }
 func (f *fakeRepo) ContactCustomer(context.Context, string) (string, error) {
 	return f.contactCustomer, nil
@@ -161,6 +177,8 @@ func TestModuloMontaTodoElContratoAutenticado(t *testing.T) {
 		"POST /viajes/{id}/requisitos/confirmar",
 		"GET /viajes/{id}/companeros", "POST /viajes/{id}/pasajeros/traer",
 		"GET /contactos", "GET /contactos/{id}/clientes",
+		"POST /viajes/{id}/pagos", "DELETE /pagos/{id}",
+		"GET /clientes/{id}/archivos", "PUT /archivos/{id}/favorito", "DELETE /archivos/{id}/favorito",
 	}
 	if len(routes.patterns) != len(want) {
 		t.Fatalf("rutas = %v", routes.patterns)
@@ -274,11 +292,11 @@ func TestNombreYMigracionesDelModuloSonEstables(t *testing.T) {
 		t.Fatalf("nombre = %q", m.Name())
 	}
 	entries, err := fs.ReadDir(m.Migrations(), ".")
-	if err != nil || len(entries) != 9 || entries[0].Name() != "0001_init.sql" || entries[1].Name() != "0002_trip_drafts.sql" ||
+	if err != nil || len(entries) != 10 || entries[0].Name() != "0001_init.sql" || entries[1].Name() != "0002_trip_drafts.sql" ||
 		entries[2].Name() != "0003_documentos_vigentes.sql" || entries[3].Name() != "0004_estado_consulta.sql" ||
 		entries[4].Name() != "0005_viajeros.sql" || entries[5].Name() != "0006_requisitos.sql" ||
 		entries[6].Name() != "0007_origen.sql" || entries[7].Name() != "0008_documento_automatico.sql" ||
-		entries[8].Name() != "0009_detalle_requisitos.sql" {
+		entries[8].Name() != "0009_detalle_requisitos.sql" || entries[9].Name() != "0010_pagos_y_archivos.sql" {
 		t.Fatalf("migraciones = %v, err = %v", entries, err)
 	}
 }

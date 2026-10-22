@@ -10,22 +10,23 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { ItineraryInput, NewPassenger, PaymentInput } from "./api";
+import type { ItineraryInput, NewPassenger, NewPaymentRecord, PaymentInput } from "./api";
 import { countryName } from "./countries";
 import { ControlsTab } from "./ControlsTab";
+import { CustomerFiles, useFileCount } from "./CustomerFiles";
 import { longDay } from "./format";
 import { PassengersTab, type DocumentActions, type PassengerPatch } from "./PassengersTab";
-import { PaymentEditor, PaymentTab } from "./PaymentTab";
+import { PaymentEditor, PaymentRecordEditor, PaymentTab } from "./PaymentTab";
 import { RequirementsTab, requirementCounts } from "./RequirementsTab";
 import { StatusMenu, StatusPill } from "./status";
 import { SummaryTab } from "./SummaryTab";
 import { TripEditor } from "./TripEditor";
-import type { Companion, Control, Country, CustomerUpdate, Passenger, Requirement, Seller, TripDetail, TripStatus, TripSummary, TripUpdate } from "./types";
+import type { Companion, Control, Country, CustomerUpdate, Passenger, PaymentRecord, Requirement, Seller, TripDetail, TripStatus, TripSummary, TripUpdate } from "./types";
 
 /** Lo que alcanza para cambiar de viaje desde el número. */
 type TripChoice = Pick<TripSummary, "id" | "number" | "destination" | "status">;
 
-type Tab = "resumen" | "pasajeros" | "requisitos" | "pagos" | "controles";
+type Tab = "resumen" | "pasajeros" | "requisitos" | "pagos" | "archivos" | "controles";
 
 export interface TripPanelProps extends DocumentActions {
   trip: TripDetail;
@@ -47,6 +48,8 @@ export interface TripPanelProps extends DocumentActions {
   onUpdatePassenger?: (id: string, input: PassengerPatch) => Promise<void>;
   onDeletePassenger?: (passenger: Passenger) => Promise<void>;
   onSavePayment: (input: PaymentInput) => Promise<void> | void;
+  onAddPaymentRecord?: (input: NewPaymentRecord) => Promise<void>;
+  onDeletePaymentRecord?: (record: PaymentRecord) => Promise<void>;
   onUpdateCustomer?: (input: CustomerUpdate) => Promise<void>;
   onSaveItinerary?: (input: ItineraryInput) => Promise<void>;
   onConfirmRequirement?: (requirement: Requirement) => Promise<void>;
@@ -64,10 +67,10 @@ export function TripPanel({
   trip, trips, sellers, countries = [], collapsed, onClose, onSelectTrip, onNewTrip, onUpdateTrip,
   onRunControl, onCloseControl, onReopenControl, onAddPassenger, onUpdatePassenger,
   onDeletePassenger, onSavePayment, onUpdateCustomer, onSaveItinerary, onConfirmRequirement, companions,
-  onBringPassengers, ...documentActions
+  onBringPassengers, onAddPaymentRecord, onDeletePaymentRecord, ...documentActions
 }: TripPanelProps) {
   const [tab, setTab] = useState<Tab>("resumen");
-  const [editor, setEditor] = useState<"viaje" | "pago">();
+  const [editor, setEditor] = useState<"viaje" | "pago" | "registrar">();
   // «Cargar visa» desde Requisitos: lleva a Pasajeros con ese pasajero abierto.
   const [focus, setFocus] = useState<{ passengerId: string; addPermit?: boolean }>();
   const [error, setError] = useState<string>();
@@ -80,6 +83,7 @@ export function TripPanel({
   const controlActions = { onRun: onRunControl ?? (() => undefined), onClose: onCloseControl, onReopen: onReopenControl, markByHand };
   const missing = requirementCounts(trip.requirements ?? []).falta;
   const openControls = trip.controls.filter((control) => control.status === "abierto").length;
+  const files = useFileCount(trip.customer.id);
 
   const changeStatus = async (status: TripStatus) => {
     if (!onUpdateTrip || status === trip.status) return;
@@ -111,11 +115,21 @@ export function TripPanel({
     );
   }
 
+  if (editor === "registrar" && onAddPaymentRecord) {
+    return (
+      <aside className={panelClass} {...panelProps}>
+        <PaymentRecordEditor payment={trip.payment} paidUsd={trip.paidUsd} onBack={() => setEditor(undefined)}
+          onSave={async (input) => { await onAddPaymentRecord(input); setEditor(undefined); }} />
+      </aside>
+    );
+  }
+
   const tabs: { value: Tab; label: string; count?: number; bad?: boolean }[] = [
     { value: "resumen", label: "Resumen" },
     { value: "pasajeros", label: "Pasajeros", count: trip.passengers.length || undefined },
     { value: "requisitos", label: "Requisitos", count: missing || undefined, bad: true },
     { value: "pagos", label: "Pagos" },
+    { value: "archivos", label: "Archivos", count: files || undefined },
     { value: "controles", label: "Controles", count: openControls || undefined },
   ];
 
@@ -162,7 +176,12 @@ export function TripPanel({
           <RequirementsTab trip={trip} countries={countries} onConfirm={onConfirmRequirement}
             onAddPermit={documentActions.onAddPermit ? (passengerId) => { setFocus({ passengerId, addPermit: true }); setTab("pasajeros"); } : undefined} />
         )}
-        {tab === "pagos" && <PaymentTab payment={trip.payment} onEdit={() => setEditor("pago")} />}
+        {tab === "pagos" && (
+          <PaymentTab payment={trip.payment} records={trip.paymentRecords} paidUsd={trip.paidUsd} onEdit={() => setEditor("pago")}
+            onRegister={onAddPaymentRecord ? () => setEditor("registrar") : undefined}
+            onDeleteRecord={onDeletePaymentRecord} onAddRecord={onAddPaymentRecord} />
+        )}
+        {tab === "archivos" && <CustomerFiles customerId={trip.customer.id} customerName={trip.customer.name} columns={3} />}
         {tab === "controles" && <ControlsTab controls={trip.controls} {...controlActions} />}
       </div>
     </aside>

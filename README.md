@@ -27,6 +27,7 @@ Documentos de diseño:
 - Módulo operaciones: [docs/superpowers/specs/2026-08-20-modulo-operaciones-design.md](docs/superpowers/specs/2026-08-20-modulo-operaciones-design.md)
 - Pantalla de Viajes: [docs/superpowers/specs/2026-10-20-pantalla-viajes-design.md](docs/superpowers/specs/2026-10-20-pantalla-viajes-design.md)
 - Pantalla de Clientes: [docs/superpowers/specs/2026-10-22-modulo-clientes-design.md](docs/superpowers/specs/2026-10-22-modulo-clientes-design.md)
+- Pagos registrados y archivos del cliente: [docs/superpowers/specs/2026-10-22-pagos-y-archivos-design.md](docs/superpowers/specs/2026-10-22-pagos-y-archivos-design.md)
 - Requisitos de viaje: [docs/superpowers/specs/2026-10-20-requisitos-de-viaje-design.md](docs/superpowers/specs/2026-10-20-requisitos-de-viaje-design.md)
 
 ## Estado
@@ -42,6 +43,7 @@ Documentos de diseño:
 | operaciones — Clientes | Funciona: lista con búsqueda (también por teléfono y pasajero) y chips, página del cliente con viajes, chats y con quién viaja; alta a mano con aviso de repetidos; viajes sin chat en un panel aparte, con «Marcar hecho»; traer pasajeros de viajes anteriores; vincular chats |
 | requisitos | Funciona: reglas por nacionalidad y país desde Wikipedia (con espera de 72 horas) y Passport Index; extracción con Claude citada y verificada; revisión semanal. Necesita `ANTHROPIC_API_KEY` y `REQUISITOS_CONTACTO` |
 | operaciones — requisitos | Funciona: itinerario, documentos y visas por pasajero; requisitos por pasajero y país con estado cumple, falta o verificar; confirmaciones; «Requisitos migratorios» y el aviso al cliente salen de eso |
+| operaciones — pagos y archivos | Funciona: pagos registrados en dólares o pesos que suben la barra hasta el total, la seña se da por cobrada sola y el total en pesos se calcula; pestaña Archivos con las fotos, videos y documentos de los chats del cliente, con favoritos compartidos y visor |
 | Frontend | Login, shell con menú por módulos, bandeja del espejo, ficha del viaje y pantallas de Viajes y Clientes |
 
 ### API del módulo mirror

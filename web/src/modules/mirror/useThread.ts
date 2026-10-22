@@ -160,9 +160,20 @@ export function useThread(conversationId: string | null, focusId?: string) {
     [],
   );
 
+  /**
+   * El archivo de un mensaje quedó guardado: la burbuja deja de decir
+   * «Descargando adjunto…» y pide la URL.
+   */
+  const mediaStored = useCallback((messageId: string) => {
+    setMessages((prev) => prev.map((m) => (m.id === messageId && m.media && m.media.status !== "stored"
+      ? { ...m, media: { ...m.media, status: "stored" } }
+      : m)));
+  }, []);
+
   return {
     messages,
     loadedFor,
+    mediaStored,
     loading,
     error,
     hasOlder: Boolean(cursor),

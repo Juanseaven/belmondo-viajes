@@ -26,7 +26,9 @@ const tripRowSelect = `
 	SELECT t.id, t.number, t.customer_id, t.status, coalesce(t.destination, ''), t.depart_at, t.return_at,
 	       cu.name, (SELECT count(*)::int FROM passengers p WHERE p.trip_id = t.id),
 	       coalesce(u.full_name, ''), pa.total_usd, pa.deposit_usd, pa.deposit_due_at,
-	       pa.deposit_paid_at, coalesce(conv.id::text, '')
+	       pa.deposit_paid_at,
+	       coalesce((SELECT sum(tp.amount_usd) FROM trip_payments tp WHERE tp.trip_id = t.id), 0)::float8,
+	       coalesce(conv.id::text, '')
 	  FROM trips t
 	  JOIN customers cu ON cu.id = t.customer_id
 	  LEFT JOIN users u ON u.id = t.seller_user_id
@@ -43,7 +45,7 @@ func scanTripRow(row pgx.CollectableRow) (store.TripRow, error) {
 	var r store.TripRow
 	err := row.Scan(&r.ID, &r.Number, &r.CustomerID, &r.Status, &r.Destination, &r.DepartAt, &r.ReturnAt,
 		&r.CustomerName, &r.PassengerCount, &r.SellerName, &r.TotalUSD, &r.DepositUSD,
-		&r.DepositDueAt, &r.DepositPaidAt, &r.ConversationID)
+		&r.DepositDueAt, &r.DepositPaidAt, &r.PaidUSD, &r.ConversationID)
 	return r, err
 }
 

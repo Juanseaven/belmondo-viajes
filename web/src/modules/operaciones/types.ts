@@ -147,8 +147,27 @@ export interface Payment {
   method?: string;
   depositUsd?: number;
   depositDueAt?: string;
+  /** Lo calcula el servidor: el día del pago que alcanzó la seña. */
   depositPaidAt?: string;
   nonRefundableUsd?: number;
+  /** La seña figuraba cobrada sin monto antes de los pagos registrados: conserva su fecha. */
+  depositPaidBefore?: boolean;
+}
+
+/** Una plata que entró. El equivalente en dólares es lo que suma a la barra. */
+export interface PaymentRecord {
+  id: string;
+  tripId: string;
+  amount: number;
+  currency: "USD" | "ARS";
+  /** El cambio de ese pago, solo en pesos. */
+  rate?: number;
+  amountUsd: number;
+  paidAt: string;
+  method?: string;
+  note?: string;
+  createdByName?: string;
+  createdAt: string;
 }
 
 export interface Evidence {
@@ -196,6 +215,9 @@ export interface TripDetail extends TripSummary {
   preview?: PreviewLine[];
   passengers: Passenger[];
   payment: Payment | null;
+  /** Los pagos registrados, del más nuevo al más viejo. */
+  paymentRecords?: PaymentRecord[];
+  paidUsd?: number;
   controls: Control[];
 }
 
@@ -247,6 +269,8 @@ export interface TripRow {
   depositUsd?: number;
   depositDueAt?: string;
   depositPaidAt?: string;
+  /** La suma de los pagos registrados, en dólares. */
+  paidUsd?: number;
   /** Lo más urgente del viaje, venza cuando venza. Sin esto, está al día. */
   next?: PendingItem;
   /** La conversación más reciente del cliente. Sin esto, no hay chat que abrir. */
@@ -374,4 +398,33 @@ export interface FreeContact {
   conversationId: string;
   instanceLabel?: string;
   lastMessageAt?: string;
+}
+
+/** Una foto, video o documento de un chat individual del cliente. */
+export interface CustomerFile {
+  /** El archivo en el espejo: con esto se pide la URL firmada. */
+  assetId: string;
+  messageId: string;
+  conversationId: string;
+  type: "image" | "video" | "document";
+  mimeType?: string;
+  fileName?: string;
+  sizeBytes?: number;
+  width?: number;
+  height?: number;
+  durationSeconds?: number;
+  direction: "inbound" | "outbound";
+  sentAt: string;
+  /** El de la descarga desde WhatsApp. */
+  status: "pending" | "processing" | "stored" | "failed";
+  caption?: string;
+  instanceLabel?: string;
+  favorite: boolean;
+}
+
+export interface FilePage {
+  items: CustomerFile[];
+  nextCursor?: string;
+  /** Los números de los chips. */
+  counts: { todos?: number; favoritos?: number; documentos?: number };
 }

@@ -22,6 +22,7 @@ import { operacionesApi } from "./api";
 import { companionLine } from "./BringPassengersDialog";
 import { clientesListHref } from "./ClientesScreen";
 import { CustomerDialog } from "./CustomerDialog";
+import { CustomerFiles } from "./CustomerFiles";
 import { dayMonth, dayOf, inWords, money, monthName, shortDay, today as currentDay, urgency } from "./format";
 import { LinkChatDialog } from "./LinkDialogs";
 import { StatusPill } from "./status";
@@ -84,6 +85,7 @@ export function ClienteScreen() {
         </dl>
 
         <div className="cliente-grid">
+          <div className="cliente-main">
           <section className="panel-card cliente-card">
             <h3>Viajes <small>{customer.trips.length}</small>
               <button type="button" className="link-button" onClick={() => router.replace(`${base}?nuevo-viaje=1`, { scroll: false })}><Plus aria-hidden />Nuevo viaje</button>
@@ -96,6 +98,14 @@ export function ClienteScreen() {
               </div>
             ) : <CustomerTrips rows={customer.trips} selected={tripId} onOpen={openTrip} />}
           </section>
+
+          <section className="panel-card cliente-card">
+            <h3>Archivos</h3>
+            <div className="cliente-files">
+              <CustomerFiles customerId={customer.id} customerName={customer.name} columns={6} preview={12} />
+            </div>
+          </section>
+          </div>
 
           <div className="cliente-side">
             <section className="panel-card cliente-card">

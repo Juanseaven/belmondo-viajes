@@ -50,6 +50,10 @@ type repository interface {
 	FreeContacts(context.Context, string, string) ([]store.FreeContact, error)
 	TripCompanions(context.Context, string) ([]store.Companion, error)
 	CopyPassengers(context.Context, string, []string, string) ([]store.Passenger, error)
+	AddPaymentRecord(context.Context, store.NewPaymentRecord) (store.PaymentRecord, error)
+	DeletePaymentRecord(context.Context, string) (string, error)
+	CustomerFiles(context.Context, string, store.FileFilter) (store.FilePage, error)
+	SetFavorite(context.Context, string, string, bool) error
 	Inbox(context.Context, []string) ([]store.InboxItem, error)
 	Sellers(context.Context) ([]store.Seller, error)
 	Pending(context.Context, time.Time) ([]store.PendingRow, error)
@@ -135,6 +139,11 @@ func (m *Module) Mount(r modules.Router) {
 	r.Authed("POST /viajes/{id}/pasajeros/traer", handler(m.copyPassengers))
 	r.Authed("GET /contactos", handler(m.freeContacts))
 	r.Authed("GET /contactos/{id}/clientes", handler(m.contactCustomers))
+	r.Authed("POST /viajes/{id}/pagos", handler(m.addPaymentRecord))
+	r.Authed("DELETE /pagos/{id}", handler(m.deletePaymentRecord))
+	r.Authed("GET /clientes/{id}/archivos", handler(m.customerFiles))
+	r.Authed("PUT /archivos/{id}/favorito", handler(m.markFavorite))
+	r.Authed("DELETE /archivos/{id}/favorito", handler(m.unmarkFavorite))
 }
 
 // Start evalúa en segundo plano los viajes abiertos: los que existían antes de

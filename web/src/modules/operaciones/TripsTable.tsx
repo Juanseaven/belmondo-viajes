@@ -7,14 +7,17 @@ import { displayName } from "@/lib/phone";
 import { ContactAvatar } from "@/modules/mirror/ContactAvatar";
 import { conversationAvatarUrl } from "@/modules/mirror/api";
 import { dayMonth, dayOf, inWords, money, shortDay, today as currentDay, urgency, whenDue } from "./format";
+import { PAID_TOLERANCE } from "./PaymentTab";
 import { StatusPill } from "./status";
 import type { TripRow, TripSort } from "./types";
 
 const SORT_LABEL: Record<TripSort, string> = { salida: "salida", numero: "número", total: "total" };
 
 export function depositNote(row: TripRow, today: string) {
+  const paid = row.paidUsd ?? 0;
+  if (row.totalUsd !== undefined && row.totalUsd > 0 && paid > row.totalUsd - PAID_TOLERANCE) return { text: "pago completo", className: "is-ok" };
   if (row.depositPaidAt) return { text: "seña cobrada", className: "is-ok" };
-  if (!row.depositDueAt) return undefined;
+  if (!row.depositDueAt) return paid > 0 ? { text: `pagado USD ${money(Math.round(paid))}`, className: "" } : undefined;
   const tone = urgency(row.depositDueAt, today);
   if (tone === "late") return { text: "seña vencida", className: "is-late" };
   return { text: `seña ${whenDue(row.depositDueAt, today)}`, className: tone === "soon" ? "is-soon" : "" };

@@ -132,10 +132,9 @@ func TestPendientesUsaLaSenaYOlvidaLaCobrada(t *testing.T) {
 		t.Fatalf("seña vencida = %#v", row)
 	}
 
-	paid := listDay(-1)
-	payment.DepositPaidAt = &paid
-	if _, err := f.s.PutPayment(f.ctx, payment); err != nil {
-		t.Fatalf("cobro: %v", err)
+	if _, err := f.s.AddPaymentRecord(f.ctx, store.NewPaymentRecord{TripID: trip.ID, Amount: 800,
+		Currency: "USD", PaidAt: listDay(-1), CreatedBy: f.user}); err != nil {
+		t.Fatalf("pago: %v", err)
 	}
 	if _, err := f.pool.Exec(f.ctx, `UPDATE controls SET status = 'cerrado' WHERE trip_id = $1`, trip.ID); err != nil {
 		t.Fatalf("cerrando controles: %v", err)

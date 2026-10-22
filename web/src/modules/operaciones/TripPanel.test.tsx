@@ -409,7 +409,7 @@ it("«Cargar visa» lleva a Pasajeros con el pasajero abierto y la visa por carg
 
 // --- Pagos --------------------------------------------------------------------
 
-it("sin cotización, Pagos ofrece cargarla y el pago se guarda entero", async () => {
+it("sin cotización, Pagos ofrece cargarla; el total en pesos se calcula y la seña no se tilda", async () => {
   const onSavePayment = vi.fn().mockResolvedValue(undefined);
   render(<TripPanel trip={trip} {...noop} onSavePayment={onSavePayment} />);
   fireEvent.click(tab("Pagos"));
@@ -418,44 +418,94 @@ it("sin cotización, Pagos ofrece cargarla y el pago se guarda entero", async ()
 
   fireEvent.change(screen.getByLabelText("Total USD"), { target: { value: "3200" } });
   fireEvent.change(screen.getByLabelText("Cambio del día"), { target: { value: "1450,50" } });
-  fireEvent.change(screen.getByLabelText("Total en pesos"), { target: { value: "4.641.600" } });
+  expect(screen.getByText("$ 4.641.600")).toBeTruthy();
+  expect(screen.queryByLabelText("Total en pesos")).toBeNull();
+  expect(screen.queryByLabelText("Seña cobrada")).toBeNull();
   fireEvent.change(screen.getByLabelText("Forma de pago"), { target: { value: "Transferencia" } });
   fireEvent.change(screen.getByLabelText("Seña USD"), { target: { value: "500" } });
-  fireEvent.change(screen.getByLabelText("Vence la seña"), { target: { value: "2026-09-01" } });
-  fireEvent.click(screen.getByLabelText("Seña cobrada"));
+  fireEvent.change(screen.getByLabelText("Cobrarla antes del"), { target: { value: "2026-09-01" } });
   fireEvent.change(screen.getByLabelText("No reembolsable USD"), { target: { value: "150" } });
-  fireEvent.click(screen.getByRole("button", { name: "Guardar pago" }));
+  fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }));
 
   await waitFor(() => expect(onSavePayment).toHaveBeenCalledWith({
-    totalUsd: 3200, rate: 1450.5, totalArs: 4641600, method: "Transferencia",
-    depositUsd: 500, depositDueAt: "2026-09-01", depositPaid: true, nonRefundableUsd: 150,
+    totalUsd: 3200, rate: 1450.5, method: "Transferencia",
+    depositUsd: 500, depositDueAt: "2026-09-01", nonRefundableUsd: 150,
   }));
 });
 
-it("un monto ilegible no se guarda y dice por qué", () => {
+it("un monto ilegible no se guarda y dice por qué; una seña con fecha pide su monto", () => {
   const onSavePayment = vi.fn();
   render(<TripPanel trip={trip} {...noop} onSavePayment={onSavePayment} />);
   fireEvent.click(tab("Pagos"));
   fireEvent.click(screen.getByRole("button", { name: "Cargar cotización" }));
 
   fireEvent.change(screen.getByLabelText("Total USD"), { target: { value: "tres mil" } });
-  fireEvent.click(screen.getByRole("button", { name: "Guardar pago" }));
-
+  fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }));
   expect(screen.getByRole("alert").textContent).toContain("Total USD");
+
+  fireEvent.change(screen.getByLabelText("Total USD"), { target: { value: "3000" } });
+  fireEvent.change(screen.getByLabelText("Cobrarla antes del"), { target: { value: "2026-09-01" } });
+  fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }));
+  expect(screen.getByRole("alert").textContent).toContain("monto de la seña");
   expect(onSavePayment).not.toHaveBeenCalled();
 });
 
-it("con cotización, Pagos se lee como plata: total, cobrado y lo que falta", () => {
-  const cotizado: TripDetail = { ...trip, payment: {
-    tripId: "trip-1", totalUsd: 2480, rate: 1230, totalArs: 3050400, method: "Transferencia",
-    depositUsd: 500, depositPaidAt: "2026-10-15T13:00:00Z", nonRefundableUsd: 300,
-  } };
-  render(<TripPanel trip={cotizado} {...noop} />);
+const cotizado: TripDetail = { ...trip, payment: {
+  tripId: "trip-1", totalUsd: 2480, rate: 1230, totalArs: 3050400, method: "Transferencia",
+  depositUsd: 500, depositPaidAt: "2026-10-15T03:00:00Z", nonRefundableUsd: 300,
+}, paidUsd: 500, paymentRecords: [
+  { id: "pay-1", tripId: "trip-1", amount: 615000, currency: "ARS", rate: 1230, amountUsd: 500, paidAt: "2026-10-15",
+    method: "Efectivo", createdByName: "Juanse", createdAt: "2026-10-15T14:00:00Z" },
+] };
+
+it("con cotización, Pagos se lee como plata: total, lo pagado, lo que falta y cada pago", () => {
+  render(<TripPanel trip={cotizado} {...noop} onAddPaymentRecord={vi.fn()} onDeletePaymentRecord={vi.fn()} />);
   fireEvent.click(tab("Pagos"));
 
   expect(screen.getByText("USD 2.480")).toBeTruthy();
   expect(screen.getByText("$ 3.050.400 al cambio de $ 1.230")).toBeTruthy();
   expect(screen.getByText("USD 500 cobrada")).toBeTruthy();
   expect(screen.getByText("USD 1.980")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Editar pago" })).toBeTruthy();
+  expect(screen.getByText("Efectivo · seña")).toBeTruthy();
+  expect(screen.getByText("$ 615.000")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Editar cotización" })).toBeTruthy();
+});
+
+it("con todo pagado, la barra dice «Pago completo»", () => {
+  render(<TripPanel trip={{ ...cotizado, paidUsd: 2479.6 }} {...noop} />);
+  fireEvent.click(tab("Pagos"));
+  expect(screen.getByText("Pago completo")).toBeTruthy();
+});
+
+it("registrar un pago en pesos dice a cuánto equivale y cuánto falta", async () => {
+  const onAddPaymentRecord = vi.fn().mockResolvedValue(undefined);
+  render(<TripPanel trip={cotizado} {...noop} onAddPaymentRecord={onAddPaymentRecord} />);
+  fireEvent.click(tab("Pagos"));
+  fireEvent.click(screen.getByRole("button", { name: "Registrar pago" }));
+
+  fireEvent.click(screen.getByRole("radio", { name: "Pesos" }));
+  fireEvent.change(screen.getByLabelText("Monto en pesos"), { target: { value: "1.230.000" } });
+  expect((screen.getByLabelText("Cambio") as HTMLInputElement).value).toBe("1230");
+  expect(screen.getByText(/Equivale a/).textContent).toContain("USD 1.000");
+  expect(screen.getByText(/Con este pago faltan USD 980/)).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Nota (opcional)"), { target: { value: "comprobante 4421" } });
+  fireEvent.click(screen.getAllByRole("button", { name: "Registrar pago" }).at(-1)!);
+
+  await waitFor(() => expect(onAddPaymentRecord).toHaveBeenCalledWith(expect.objectContaining({
+    amount: 1230000, currency: "ARS", rate: 1230, method: "Transferencia", note: "comprobante 4421",
+  })));
+});
+
+it("borrar un pago ofrece deshacer, que lo vuelve a registrar", async () => {
+  const onDeletePaymentRecord = vi.fn().mockResolvedValue(undefined);
+  const onAddPaymentRecord = vi.fn().mockResolvedValue(undefined);
+  render(<TripPanel trip={cotizado} {...noop} onAddPaymentRecord={onAddPaymentRecord} onDeletePaymentRecord={onDeletePaymentRecord} />);
+  fireEvent.click(tab("Pagos"));
+  fireEvent.click(screen.getByRole("button", { name: "Borrar el pago de USD 500" }));
+
+  expect(await screen.findByText(/Borraste el pago de USD 500/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Deshacer" }));
+  await waitFor(() => expect(onAddPaymentRecord).toHaveBeenCalledWith({
+    amount: 615000, currency: "ARS", rate: 1230, paidAt: "2026-10-15", method: "Efectivo", note: undefined,
+  }));
 });

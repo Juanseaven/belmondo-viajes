@@ -34,6 +34,33 @@ func TestProcessUploadsInlineWebhookMediaWithoutCallingEvolution(t *testing.T) {
 	}
 }
 
+// El panel muestra «Descargando adjunto…» hasta que se entera de que el
+// archivo quedó guardado: el aviso sale recién después de guardarlo.
+func TestProcessAnnouncesStoredMedia(t *testing.T) {
+	t.Parallel()
+
+	database := &mediaStoreFake{}
+	service := NewService(&mediaDownloaderFake{}, &mediaBlobsFake{}, database, 1,
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	var announced store.PendingMedia
+	service.OnStored(func(_ context.Context, job store.PendingMedia) {
+		if database.storedID == "" {
+			t.Error("announced before the media was stored")
+		}
+		announced = job
+	})
+
+	if err := service.process(context.Background(), store.PendingMedia{
+		ID: "media-2", MessageID: "msg-2", InstanceName: "juanse", WAMessageID: "WA-2",
+		MimeType: "image/jpeg", Data: []byte("bytes"),
+	}); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	if announced.ID != "media-2" || announced.MessageID != "msg-2" {
+		t.Fatalf("announced = %+v", announced)
+	}
+}
+
 type mediaDownloaderFake struct{ called bool }
 
 func (f *mediaDownloaderFake) DownloadMedia(context.Context, string, string) ([]byte, string, error) {

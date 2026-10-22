@@ -70,6 +70,8 @@ export function SummaryTab({ trip, onTab, ...actions }: ControlActions & { trip:
         <dl className="panel-kv">
           <dt>Total</dt>
           <dd>{payment?.totalUsd !== undefined ? `USD ${money(payment.totalUsd)}` : <span className="muted">Sin cotizar</span>}</dd>
+          <dt>Pagado</dt>
+          <dd>{trip.paidUsd ? `USD ${money(Math.round(trip.paidUsd * 100) / 100)}` : <span className="muted">Sin pagos</span>}</dd>
           <dt>Seña</dt>
           <dd>{depositText(payment)}</dd>
         </dl>

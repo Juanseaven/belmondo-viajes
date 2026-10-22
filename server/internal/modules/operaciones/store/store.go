@@ -258,7 +258,37 @@ type Payment struct {
 	DepositDueAt     *time.Time `json:"depositDueAt,omitempty"`
 	DepositPaidAt    *time.Time `json:"depositPaidAt,omitempty"`
 	NonRefundableUSD *float64   `json:"nonRefundableUsd,omitempty"`
-	UpdatedBy        string     `json:"-"`
+	// DepositPaidBefore: la seña figuraba cobrada sin monto antes de que hubiera
+	// pagos registrados. Conserva su fecha: no se sabe cuánto se pagó.
+	DepositPaidBefore bool   `json:"depositPaidBefore,omitempty"`
+	UpdatedBy         string `json:"-"`
+}
+
+// PaymentRecord es una plata que entró. AmountUSD es el equivalente en
+// dólares: el monto, o el monto dividido por el cambio si fue en pesos.
+type PaymentRecord struct {
+	ID            string    `json:"id"`
+	TripID        string    `json:"tripId"`
+	Amount        float64   `json:"amount"`
+	Currency      string    `json:"currency"`
+	Rate          *float64  `json:"rate,omitempty"`
+	AmountUSD     float64   `json:"amountUsd"`
+	PaidAt        time.Time `json:"paidAt"`
+	Method        string    `json:"method,omitempty"`
+	Note          string    `json:"note,omitempty"`
+	CreatedByName string    `json:"createdByName,omitempty"`
+	CreatedAt     time.Time `json:"createdAt"`
+}
+
+type NewPaymentRecord struct {
+	TripID    string
+	Amount    float64
+	Currency  string
+	Rate      *float64
+	PaidAt    time.Time
+	Method    string
+	Note      string
+	CreatedBy string
 }
 
 // Seller es un usuario al que se le puede asignar un viaje. Se lee de la tabla
@@ -483,7 +513,10 @@ type TripDetailData struct {
 	Preview    []evaluacion.PreviewLine `json:"preview,omitempty"`
 	Passengers []Passenger              `json:"passengers"`
 	Payment    *Payment                 `json:"payment,omitempty"`
-	Controls   []Control                `json:"controls"`
+	// PaymentRecords son los pagos registrados, del más nuevo al más viejo.
+	PaymentRecords []PaymentRecord `json:"paymentRecords"`
+	PaidUSD        float64         `json:"paidUsd"`
+	Controls       []Control       `json:"controls"`
 }
 
 // TripRow es un viaje como se ve en una lista: lo justo para leerlo de un
@@ -503,6 +536,8 @@ type TripRow struct {
 	DepositUSD     *float64          `json:"depositUsd,omitempty"`
 	DepositDueAt   *time.Time        `json:"depositDueAt,omitempty"`
 	DepositPaidAt  *time.Time        `json:"depositPaidAt,omitempty"`
+	// PaidUSD suma los pagos registrados, en dólares.
+	PaidUSD float64 `json:"paidUsd"`
 	// Next es lo más urgente del viaje, sin importar cuándo vence. Nil: al día.
 	Next *domain.PendingItem `json:"next,omitempty"`
 	// ConversationID es la conversación individual más reciente de cualquiera
@@ -572,4 +607,48 @@ type TripStore interface {
 	// calculados. Todo en una transacción: un viaje sin controles sería un
 	// expediente que afirma no tener nada pendiente.
 	CreateTrip(ctx context.Context, n NewTrip) (Trip, error)
+}
+
+// CustomerFile es una foto, video o documento de un chat individual del
+// cliente. El archivo es del espejo; el favorito, de operaciones.
+type CustomerFile struct {
+	AssetID         string    `json:"assetId"`
+	MessageID       string    `json:"messageId"`
+	ConversationID  string    `json:"conversationId"`
+	Type            string    `json:"type"`
+	MimeType        string    `json:"mimeType,omitempty"`
+	FileName        string    `json:"fileName,omitempty"`
+	SizeBytes       *int64    `json:"sizeBytes,omitempty"`
+	Width           *int      `json:"width,omitempty"`
+	Height          *int      `json:"height,omitempty"`
+	DurationSeconds *int      `json:"durationSeconds,omitempty"`
+	Direction       string    `json:"direction"`
+	SentAt          time.Time `json:"sentAt"`
+	// Status es el de la descarga desde WhatsApp: pending, processing, stored o failed.
+	Status        string `json:"status"`
+	Caption       string `json:"caption,omitempty"`
+	InstanceLabel string `json:"instanceLabel,omitempty"`
+	Favorite      bool   `json:"favorite"`
+}
+
+// FileKind separa las dos listas de Archivos, que paginan cada una por su lado.
+type FileKind string
+
+const (
+	FilesMedia     FileKind = "media"
+	FilesDocuments FileKind = "documentos"
+)
+
+type FileFilter struct {
+	Kind      FileKind
+	Favorites bool
+	Cursor    string
+	Limit     int
+}
+
+type FilePage struct {
+	Items      []CustomerFile `json:"items"`
+	NextCursor string         `json:"nextCursor,omitempty"`
+	// Counts son los números de los chips: todos, favoritos y documentos.
+	Counts map[string]int `json:"counts"`
 }

@@ -1,5 +1,5 @@
 import { api } from "@/kernel/api/client";
-import type { Companion, Country, Customer, CustomerDetail, CustomerListParams, CustomerMatch, CustomerPage, CustomerUpdate, FreeContact, InboxItem, Passenger, Payment, PendingRow, Permit, Requirement, Seller, Stop, TravelDocument, TripDetail, TripListParams, TripPage, TripSummary, TripUpdate } from "./types";
+import type { Companion, Country, CustomerFile, FilePage, PaymentRecord, Customer, CustomerDetail, CustomerListParams, CustomerMatch, CustomerPage, CustomerUpdate, FreeContact, InboxItem, Passenger, Payment, PendingRow, Permit, Requirement, Seller, Stop, TravelDocument, TripDetail, TripListParams, TripPage, TripSummary, TripUpdate } from "./types";
 
 function listQuery(params: TripListParams | CustomerListParams | Record<string, string | undefined>): string {
   const query = new URLSearchParams();
@@ -31,7 +31,8 @@ export type PermitInput = Omit<Permit, "id" | "passengerId">;
 export interface NewCustomer { name: string; email?: string; phoneNumber?: string; documentType?: string; documentNumber?: string }
 /** Los datos de un cliente que se está cargando, para avisar si ya existe. */
 export interface SimilarInput { nombre?: string; telefono?: string; mail?: string; documento?: string }
-export type PaymentInput = Omit<Payment, "tripId" | "depositPaidAt"> & { depositPaid?: boolean };
+export type PaymentInput = Omit<Payment, "tripId" | "depositPaidAt" | "totalArs" | "depositPaidBefore">;
+export interface NewPaymentRecord { amount: number; currency: "USD" | "ARS"; rate?: number; paidAt?: string; method?: string; note?: string }
 
 export const operacionesApi = {
   inbox: (contactIds: string[]) => api<{ items: InboxItem[] }>(`/api/operaciones/bandeja?contactos=${encodeURIComponent(contactIds.join(","))}`),
@@ -78,6 +79,16 @@ export const operacionesApi = {
     api<void>(`/api/operaciones/viajes/${tripId}/requisitos/confirmar`, { method: "POST", body: JSON.stringify({
       passengerId: requirement.passengerId, country: requirement.country ?? "", key: requirement.key,
     }) }),
+  addPaymentRecord: (tripId: string, input: NewPaymentRecord) =>
+    api<PaymentRecord>(`/api/operaciones/viajes/${tripId}/pagos`, { method: "POST", body: JSON.stringify(input) }),
+  deletePaymentRecord: (id: string) => api<void>(`/api/operaciones/pagos/${id}`, { method: "DELETE" }),
+  /** Una de las dos listas de Archivos: fotos y videos, o documentos. */
+  customerFiles: (customerId: string, params: { tipo: "media" | "documentos"; favoritos?: boolean; cursor?: string; limit?: number }) =>
+    api<FilePage>(`/api/operaciones/clientes/${customerId}/archivos${listQuery({
+      tipo: params.tipo, favoritos: params.favoritos ? "1" : undefined, cursor: params.cursor, limit: params.limit?.toString(),
+    })}`),
+  setFavorite: (file: Pick<CustomerFile, "messageId">, on: boolean) =>
+    api<void>(`/api/operaciones/archivos/${file.messageId}/favorito`, { method: on ? "PUT" : "DELETE" }),
   /** El catálogo de países con nombres en español. Lo sirve el módulo requisitos. */
   countries: () => api<{ items: Country[] }>("/api/requisitos/paises"),
 };

@@ -3,6 +3,7 @@ import type { ModuleDef } from "../types";
 import { ViajesScreen } from "./ViajesScreen";
 import "./operaciones.css";
 import "./clientes.css";
+import "./pagos-archivos.css";
 
 /**
  * Descriptor del módulo operaciones. Su pantalla es Viajes, y suma Clientes

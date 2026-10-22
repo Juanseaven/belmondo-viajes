@@ -136,3 +136,76 @@ func TestElContactoDiceSuClienteYSoloSugiereSiNoTiene(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestRegistrarUnPagoHTTPValidaMontoMonedaYCambio(t *testing.T) {
+	repo := &fakeRepo{}
+	m := testModule(repo, &[]string{})
+	for name, body := range map[string]string{
+		"monto cero":       `{"amount":0,"currency":"USD"}`,
+		"pesos sin cambio": `{"amount":1000,"currency":"ARS"}`,
+		"otra moneda":      `{"amount":10,"currency":"EUR"}`,
+		"fecha mala":       `{"amount":10,"currency":"USD","paidAt":"ayer"}`,
+	} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/viajes/trip-1/pagos", bytes.NewBufferString(body))
+		req.SetPathValue("id", "trip-1")
+		m.addPaymentRecord(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, se esperaba 400", name, rec.Code)
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/viajes/trip-1/pagos",
+		bytes.NewBufferString(`{"amount":1513000,"currency":"ars","rate":1513,"paidAt":"2026-10-21","method":"Transferencia"}`))
+	req.SetPathValue("id", "trip-1")
+	m.addPaymentRecord(rec, req)
+	if rec.Code != http.StatusCreated || repo.paymentRecord.Currency != "ARS" || *repo.paymentRecord.Rate != 1513 ||
+		repo.paymentRecord.PaidAt.Format("2006-01-02") != "2026-10-21" {
+		t.Fatalf("status = %d, pago = %+v", rec.Code, repo.paymentRecord)
+	}
+}
+
+// La cotización ya no acepta el total en pesos ni el tilde de la seña: los dos
+// se calculan.
+func TestLaCotizacionHTTPRechazaLoQueSeCalcula(t *testing.T) {
+	m := testModule(&fakeRepo{}, &[]string{})
+	for _, body := range []string{`{"totalUsd":5000,"totalArs":100000}`, `{"depositUsd":500,"depositPaid":true}`} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPut, "/viajes/trip-1/pago", bytes.NewBufferString(body))
+		req.SetPathValue("id", "trip-1")
+		m.putPayment(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, se esperaba 400", body, rec.Code)
+		}
+	}
+}
+
+func TestArchivosHTTPTraducenTipoYFavoritos(t *testing.T) {
+	repo := &fakeRepo{}
+	var events []string
+	m := testModule(repo, &events)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/clientes/c-1/archivos?tipo=documentos&favoritos=1", nil)
+	req.SetPathValue("id", "c-1")
+	m.customerFiles(rec, req)
+	if rec.Code != http.StatusOK || repo.fileFilter.Kind != store.FilesDocuments || !repo.fileFilter.Favorites {
+		t.Fatalf("status = %d, filtro = %+v", rec.Code, repo.fileFilter)
+	}
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/clientes/c-1/archivos?tipo=audios", nil)
+	req.SetPathValue("id", "c-1")
+	m.customerFiles(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("tipo desconocido: status = %d", rec.Code)
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/archivos/m-1/favorito", nil)
+	req.SetPathValue("id", "m-1")
+	m.markFavorite(rec, req)
+	if rec.Code != http.StatusNoContent || repo.favorite == nil || !*repo.favorite || len(events) != 1 || events[0] != "file.favorite" {
+		t.Fatalf("status = %d, favorito = %v, eventos = %v", rec.Code, repo.favorite, events)
+	}
+}

@@ -192,6 +192,11 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
   useSocket(
     mirror.name,
     (ev: ServerEvent) => {
+      if (ev.type === "media.stored") {
+        const p = ev.payload as { messageId: string; conversationId: string };
+        if (p.conversationId === openId) threadApi.current?.mediaStored(p.messageId);
+        return;
+      }
       if (ev.type === "message.new") {
         const p = ev.payload as NewMessageEvent;
         if (p.waMessageId) {

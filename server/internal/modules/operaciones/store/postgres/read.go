@@ -52,18 +52,14 @@ func (s *Store) TripDetail(ctx context.Context, tripID string) (store.TripDetail
 		return store.TripDetailData{}, err
 	}
 
-	var payment store.Payment
-	err = s.pool.QueryRow(ctx,
-		`SELECT trip_id, total_usd, rate, total_ars, coalesce(method, ''), deposit_usd,
-		        deposit_due_at, deposit_paid_at, non_refundable_usd
-		   FROM payments WHERE trip_id = $1`, tripID,
-	).Scan(&payment.TripID, &payment.TotalUSD, &payment.Rate, &payment.TotalARS, &payment.Method,
-		&payment.DepositUSD, &payment.DepositDueAt, &payment.DepositPaidAt, &payment.NonRefundableUSD)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return store.TripDetailData{}, fmt.Errorf("leyendo el pago: %w", err)
+	if d.Payment, err = readPayment(ctx, s.pool, tripID); err != nil {
+		return store.TripDetailData{}, err
 	}
-	if err == nil {
-		d.Payment = &payment
+	if d.PaymentRecords, err = readPaymentRecords(ctx, s.pool, tripID); err != nil {
+		return store.TripDetailData{}, err
+	}
+	for _, r := range d.PaymentRecords {
+		d.PaidUSD += r.AmountUSD
 	}
 
 	if err := s.readControls(ctx, tripID, &d); err != nil {
