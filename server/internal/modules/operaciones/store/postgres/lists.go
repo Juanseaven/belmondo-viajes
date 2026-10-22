@@ -18,11 +18,12 @@ import (
 // Las listas de la pantalla de Viajes. La clasificación de pendientes vive en
 // domain.ClassifyPending; acá solo se junta lo que la regla necesita.
 
-// tripRowSelect lee un viaje como se ve en una lista. La conversación es la más
-// reciente de cualquiera de los contactos del cliente: conversations es tabla
-// pública del espejo.
+// tripRowSelect lee un viaje como se ve en una lista. La conversación es la
+// individual más reciente de cualquiera de los contactos del cliente:
+// conversations es tabla pública del espejo. Un grupo no cuenta: ahí no se le
+// escribe al cliente.
 const tripRowSelect = `
-	SELECT t.id, t.number, t.status, coalesce(t.destination, ''), t.depart_at, t.return_at,
+	SELECT t.id, t.number, t.customer_id, t.status, coalesce(t.destination, ''), t.depart_at, t.return_at,
 	       cu.name, (SELECT count(*)::int FROM passengers p WHERE p.trip_id = t.id),
 	       coalesce(u.full_name, ''), pa.total_usd, pa.deposit_usd, pa.deposit_due_at,
 	       pa.deposit_paid_at, coalesce(conv.id::text, '')
@@ -33,14 +34,14 @@ const tripRowSelect = `
 	  LEFT JOIN LATERAL (
 	    SELECT cv.id FROM customer_contacts cc
 	      JOIN conversations cv ON cv.contact_id = cc.contact_id
-	     WHERE cc.customer_id = t.customer_id
+	     WHERE cc.customer_id = t.customer_id AND NOT cv.is_group
 	     ORDER BY cv.last_message_at DESC NULLS LAST, cv.created_at DESC
 	     LIMIT 1
 	  ) conv ON true`
 
 func scanTripRow(row pgx.CollectableRow) (store.TripRow, error) {
 	var r store.TripRow
-	err := row.Scan(&r.ID, &r.Number, &r.Status, &r.Destination, &r.DepartAt, &r.ReturnAt,
+	err := row.Scan(&r.ID, &r.Number, &r.CustomerID, &r.Status, &r.Destination, &r.DepartAt, &r.ReturnAt,
 		&r.CustomerName, &r.PassengerCount, &r.SellerName, &r.TotalUSD, &r.DepositUSD,
 		&r.DepositDueAt, &r.DepositPaidAt, &r.ConversationID)
 	return r, err

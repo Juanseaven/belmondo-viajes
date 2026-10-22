@@ -21,7 +21,8 @@ func (s *Store) TripDetail(ctx context.Context, tripID string) (store.TripDetail
 		        coalesce(cu2.full_name, ''), t.created_at, t.origin_country,
 		        cu.id, cu.name, coalesce(cu.email, ''), coalesce(cu.phone_number, ''),
 		        coalesce(cu.document_type, ''), coalesce(cu.document_number, ''), cu.customer_since,
-		        coalesce(array_agg(cc.contact_id::text) FILTER (WHERE cc.contact_id IS NOT NULL), '{}')
+		        coalesce(array_agg(cc.contact_id::text) FILTER (WHERE cc.contact_id IS NOT NULL), '{}'),
+		        `+fmt.Sprintf(hasChatSQL, "cu.id")+`
 		   FROM trips t
 		   JOIN customers cu ON cu.id = t.customer_id
 		   LEFT JOIN customer_contacts cc ON cc.customer_id = cu.id
@@ -33,7 +34,7 @@ func (s *Store) TripDetail(ctx context.Context, tripID string) (store.TripDetail
 		&d.ReturnAt, &d.SellerUserID, &d.SellerName, &d.CreatedByName, &d.CreatedAt, &d.OriginCountry,
 		&d.Customer.ID, &d.Customer.Name, &d.Customer.Email, &d.Customer.PhoneNumber,
 		&d.Customer.DocumentType, &d.Customer.DocumentNumber, &d.Customer.CustomerSince,
-		&d.Customer.ContactIDs)
+		&d.Customer.ContactIDs, &d.Customer.HasChat)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return store.TripDetailData{}, store.ErrNotFound
 	}

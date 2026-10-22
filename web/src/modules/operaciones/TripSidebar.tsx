@@ -4,12 +4,14 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ContactDetails } from "@/modules/mirror/ContactDetails";
+import { ContactCustomer } from "./ContactCustomer";
 import type { Conversation } from "@/modules/mirror/api";
-import { operacionesApi, type NewPassenger } from "./api";
+import { operacionesApi } from "./api";
 import { NewTripPanel, type TripSeed } from "./NewTripPanel";
 import { StatusPill } from "./status";
 import { TripPanel } from "./TripPanel";
 import type { Control, Country, Seller } from "./types";
+import { useTripActions } from "./useTripActions";
 import type { useTrips } from "./useTrips";
 
 interface TripSidebarProps {
@@ -54,11 +56,7 @@ export function TripSidebar({ conversation, trips, collapsed, onClose, onRunCont
 
   useEffect(() => { setCreating(false); }, [contactId]);
 
-  const after = async <T,>(write: Promise<T>) => {
-    const result = await write;
-    await trips.reload();
-    return result;
-  };
+  const actions = useTripActions(active, trips.reload);
 
   const create = async (seed: TripSeed) => {
     const trip = await operacionesApi.createTrip({ contactId, ...seed });
@@ -80,10 +78,11 @@ export function TripSidebar({ conversation, trips, collapsed, onClose, onRunCont
     );
   }
 
-  if (!active) {
+  if (!active || !actions) {
     const previous = trips.contactTrips;
     return shell(
       <ContactDetails conversation={conversation} onClose={onClose}>
+        {!conversation.isGroup && <ContactCustomer contactId={contactId} contactName={conversation.contactName} onLinked={() => void trips.reload()} />}
         <div className="panel-empty">
           <strong>{previous.length > 0 ? "Este contacto no tiene viajes abiertos" : "Este contacto no tiene viajes"}</strong>
           <p>Cargá el recorrido y las fechas; los pasajeros y el pago se completan después.</p>
@@ -116,22 +115,8 @@ export function TripSidebar({ conversation, trips, collapsed, onClose, onRunCont
       onClose={onClose}
       onSelectTrip={trips.select}
       onNewTrip={() => setCreating(true)}
-      onUpdateTrip={async (input) => { await after(operacionesApi.updateTrip(active.id, input)); }}
       onRunControl={onRunControl}
-      onCloseControl={async (control) => { await after(operacionesApi.closeControl(control.id)); }}
-      onReopenControl={async (control) => { await after(operacionesApi.reopenControl(control.id)); }}
-      onAddPassenger={async (input: NewPassenger) => { await after(operacionesApi.addPassenger(active.id, input)); }}
-      onUpdatePassenger={async (id, input) => { await after(operacionesApi.updatePassenger(id, input)); }}
-      onDeletePassenger={async (passenger) => { await after(operacionesApi.deletePassenger(passenger.id)); }}
-      onSavePayment={async (input) => { await after(operacionesApi.putPayment(active.id, input)); }}
-      onUpdateCustomer={async (input) => { await after(operacionesApi.updateCustomer(active.customer.id, input)); }}
-      onSaveItinerary={async (input) => { await after(operacionesApi.putItinerary(active.id, input)); }}
-      onAddDocument={async (passengerId, input) => { await after(operacionesApi.addDocument(passengerId, input)); }}
-      onUpdateDocument={async (id, input) => { await after(operacionesApi.updateDocument(id, input)); }}
-      onDeleteDocument={async (document) => { await after(operacionesApi.deleteDocument(document.id)); }}
-      onAddPermit={async (passengerId, input) => { await after(operacionesApi.addPermit(passengerId, input)); }}
-      onDeletePermit={async (permit) => { await after(operacionesApi.deletePermit(permit.id)); }}
-      onConfirmRequirement={async (requirement) => { await after(operacionesApi.confirmRequirement(active.id, requirement)); }}
+      {...actions}
     />
   );
 }

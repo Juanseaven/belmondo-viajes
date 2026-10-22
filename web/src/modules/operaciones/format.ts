@@ -20,6 +20,17 @@ export const shortInstant = (value: string) => shortFormat.format(new Date(value
 
 export const money = (value: number) => new Intl.NumberFormat("es-AR").format(value);
 
+/** «08/2031»: el vencimiento de un documento, donde el día sobra. */
+export const monthYear = (value: string) => {
+  const [year, month] = dayOf(value).split("-");
+  return `${month}/${year}`;
+};
+
+const monthFormat = new Intl.DateTimeFormat("es-AR", { month: "short", year: "numeric" });
+
+/** «mar 2024»: desde cuándo es cliente. */
+export const monthName = (value: string) => monthFormat.format(calendarDay(value)).replace(".", "").replace(" de ", " ");
+
 /** El día de hoy como lo escribe un input date, para comparar plazos. */
 export const today = () => {
   const now = new Date();

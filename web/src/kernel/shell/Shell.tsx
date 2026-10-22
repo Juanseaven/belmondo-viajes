@@ -29,13 +29,32 @@ function initials(value: string): string {
 }
 
 /** Un ítem de la barra. Es un componente aparte porque el módulo puede traer su hook de atención. */
-function NavItem({ module, open, active }: { module: ModuleDef; open: boolean; active: boolean }) {
+function ModuleNavItem({ module, open, pathname }: { module: ModuleDef; open: boolean; pathname: string }) {
   const attention = module.useAttention?.() ?? false;
   const label = module.name === "mirror" ? "Bandeja de entrada" : module.label;
-  const Icon = MODULE_ICONS[module.name] ?? MessageCircleMore;
+  return (
+    <>
+      <NavItem path={module.path} label={label} Icon={MODULE_ICONS[module.name] ?? MessageCircleMore}
+        open={open} active={pathname.startsWith(module.path)} attention={attention} />
+      {module.entries?.map((entry) => (
+        <NavItem key={entry.path} path={entry.path} label={entry.label} Icon={entry.Icon}
+          open={open} active={pathname.startsWith(entry.path)} />
+      ))}
+    </>
+  );
+}
+
+function NavItem({ path, label, Icon, open, active, attention }: {
+  path: string;
+  label: string;
+  Icon: ComponentType<{ "aria-hidden"?: boolean }>;
+  open: boolean;
+  active: boolean;
+  attention?: boolean;
+}) {
   return (
     <Link
-      href={module.path}
+      href={path}
       className={cn("nav-item", active && "active", open && "is-open")}
       aria-label={!open ? label : undefined}
       title={!open ? label : undefined}
@@ -86,7 +105,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <nav aria-label="Navegación principal" className="sidebar-scroll">
           {open && <p className="sidebar-section">PRINCIPAL</p>}
           {items.map((module) => (
-            <NavItem key={module.name} module={module} open={open} active={pathname.startsWith(module.path)} />
+            <ModuleNavItem key={module.name} module={module} open={open} pathname={pathname} />
           ))}
           {items.length === 0 && open && <p className="sidebar-empty">No tenés módulos habilitados.</p>}
         </nav>

@@ -50,16 +50,17 @@ it("un viaje que sale pronto y está al día dice «Todo listo» y cuándo sale"
   expect(within(soon).getByText("En 12 días")).toBeTruthy();
 });
 
-it("abrir el chat pasa el viaje; sin conversación, el botón explica por qué no", () => {
+it("abrir el chat pasa el viaje; sin conversación, abre el viaje", () => {
   const onOpen = vi.fn();
   render(<PendingList rows={rows} today={today} onOpen={onOpen} />);
 
   fireEvent.click(within(screen.getByRole("region", { name: /^Atrasado/ })).getByRole("button", { name: "Abrir chat" }));
   expect(onOpen).toHaveBeenCalledWith(rows[0]);
 
-  const noChat = within(screen.getByRole("region", { name: /^Salen en los próximos 14 días/ })).getByRole("button", { name: "Sin chat" });
-  expect((noChat as HTMLButtonElement).disabled).toBe(true);
-  expect(noChat.getAttribute("title")).toContain("conversación");
+  const noChat = within(screen.getByRole("region", { name: /^Salen en los próximos 14 días/ })).getByRole("button", { name: "Abrir viaje" });
+  expect(noChat.getAttribute("title")).toContain("no tiene WhatsApp");
+  fireEvent.click(noChat);
+  expect(onOpen).toHaveBeenLastCalledWith(rows.find((row) => !row.conversationId));
 });
 
 it("sin pendientes, dice qué va a aparecer", () => {

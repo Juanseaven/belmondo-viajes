@@ -41,6 +41,15 @@ type repository interface {
 	Customer(context.Context, string) (store.Customer, error)
 	UpdateCustomer(context.Context, string, store.CustomerPatch) (store.Customer, error)
 	LinkContact(context.Context, string, string, string) error
+	CreateCustomer(context.Context, store.NewCustomer) (store.Customer, error)
+	CustomerDetail(context.Context, string) (store.CustomerDetail, error)
+	ListCustomers(context.Context, store.CustomerFilter) (store.CustomerPage, error)
+	SimilarCustomers(context.Context, store.SimilarQuery) ([]store.CustomerMatch, error)
+	SuggestedCustomers(context.Context, string) ([]store.CustomerMatch, error)
+	ContactCustomer(context.Context, string) (string, error)
+	FreeContacts(context.Context, string, string) ([]store.FreeContact, error)
+	TripCompanions(context.Context, string) ([]store.Companion, error)
+	CopyPassengers(context.Context, string, []string, string) ([]store.Passenger, error)
 	Inbox(context.Context, []string) ([]store.InboxItem, error)
 	Sellers(context.Context) ([]store.Seller, error)
 	Pending(context.Context, time.Time) ([]store.PendingRow, error)
@@ -105,6 +114,9 @@ func (m *Module) Mount(r modules.Router) {
 	r.Authed("PUT /viajes/{id}/pago", handler(m.putPayment))
 	r.Authed("POST /controles/{id}/cerrar", handler(m.closeControl))
 	r.Authed("POST /controles/{id}/reabrir", handler(m.reopenControl))
+	r.Authed("GET /clientes", handler(m.listCustomers))
+	r.Authed("POST /clientes", handler(m.createCustomer))
+	r.Authed("GET /clientes/parecidos", handler(m.similarCustomers))
 	r.Authed("GET /clientes/{id}", handler(m.getCustomer))
 	r.Authed("PATCH /clientes/{id}", handler(m.updateCustomer))
 	r.Authed("POST /clientes/{id}/contactos", handler(m.linkContact))
@@ -119,6 +131,10 @@ func (m *Module) Mount(r modules.Router) {
 	r.Authed("PATCH /permisos/{id}", handler(m.updatePermit))
 	r.Authed("DELETE /permisos/{id}", handler(m.deletePermit))
 	r.Authed("POST /viajes/{id}/requisitos/confirmar", handler(m.confirmRequirement))
+	r.Authed("GET /viajes/{id}/companeros", handler(m.tripCompanions))
+	r.Authed("POST /viajes/{id}/pasajeros/traer", handler(m.copyPassengers))
+	r.Authed("GET /contactos", handler(m.freeContacts))
+	r.Authed("GET /contactos/{id}/clientes", handler(m.contactCustomers))
 }
 
 // Start evalúa en segundo plano los viajes abiertos: los que existían antes de

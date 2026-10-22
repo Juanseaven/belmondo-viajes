@@ -12,7 +12,7 @@ import type { TripRow, TripSort } from "./types";
 
 const SORT_LABEL: Record<TripSort, string> = { salida: "salida", numero: "número", total: "total" };
 
-function depositNote(row: TripRow, today: string) {
+export function depositNote(row: TripRow, today: string) {
   if (row.depositPaidAt) return { text: "seña cobrada", className: "is-ok" };
   if (!row.depositDueAt) return undefined;
   const tone = urgency(row.depositDueAt, today);
@@ -91,7 +91,9 @@ export function TripsTable({ rows, total, sort, onSort, onOpen, onClear, hasMore
           {rows.map((row) => {
             const deposit = depositNote(row, today);
             const people = row.passengerCount > 0 ? `${row.passengerCount} ${row.passengerCount === 1 ? "pasajero" : "pasajeros"}` : "Sin pasajeros";
-            const open = row.conversationId ? () => onOpen(row) : undefined;
+            // Sin chat, se abre el viaje en el panel; sin cliente (un viaje leído
+            // de una versión vieja del servidor), no hay qué abrir.
+            const open = row.conversationId || row.customerId ? () => onOpen(row) : undefined;
             const tone = row.next ? urgency(row.next.dueAt, today) : undefined;
             return (
               <tr
@@ -100,7 +102,7 @@ export function TripsTable({ rows, total, sort, onSort, onOpen, onClear, hasMore
                 onClick={open}
                 onKeyDown={open ? (event) => { if (event.key === "Enter") open(); } : undefined}
                 tabIndex={open ? 0 : undefined}
-                title={open ? undefined : "El cliente no tiene ninguna conversación con las líneas de la agencia"}
+                title={row.conversationId ? undefined : "El cliente no tiene WhatsApp: el viaje se abre acá"}
               >
                 <td className="num col-num" data-label="#">{row.number}</td>
                 <td data-label="Cliente">

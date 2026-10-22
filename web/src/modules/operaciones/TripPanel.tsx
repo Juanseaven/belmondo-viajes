@@ -20,7 +20,10 @@ import { RequirementsTab, requirementCounts } from "./RequirementsTab";
 import { StatusMenu, StatusPill } from "./status";
 import { SummaryTab } from "./SummaryTab";
 import { TripEditor } from "./TripEditor";
-import type { Control, Country, CustomerUpdate, Passenger, Requirement, Seller, TripDetail, TripStatus, TripSummary, TripUpdate } from "./types";
+import type { Companion, Control, Country, CustomerUpdate, Passenger, Requirement, Seller, TripDetail, TripStatus, TripSummary, TripUpdate } from "./types";
+
+/** Lo que alcanza para cambiar de viaje desde el número. */
+type TripChoice = Pick<TripSummary, "id" | "number" | "destination" | "status">;
 
 type Tab = "resumen" | "pasajeros" | "requisitos" | "pagos" | "controles";
 
@@ -29,14 +32,15 @@ export interface TripPanelProps extends DocumentActions {
   /** El catálogo de países, para elegirlos por nombre. */
   countries?: Country[];
   /** Los viajes del contacto. Con más de uno, el número del viaje deja cambiar. */
-  trips?: TripSummary[];
+  trips?: TripChoice[];
   sellers?: Seller[];
   collapsed?: boolean;
   onClose?: () => void;
   onSelectTrip?: (tripId: string) => void;
   onNewTrip?: () => void;
   onUpdateTrip?: (input: TripUpdate) => Promise<void>;
-  onRunControl: (control: Control) => void;
+  /** Precarga el mensaje del control en el chat. Sin chat no hay: se marca a mano. */
+  onRunControl?: (control: Control) => void;
   onCloseControl: (control: Control) => void;
   onReopenControl: (control: Control) => void;
   onAddPassenger: (input: NewPassenger) => Promise<void> | void;
@@ -46,6 +50,9 @@ export interface TripPanelProps extends DocumentActions {
   onUpdateCustomer?: (input: CustomerUpdate) => Promise<void>;
   onSaveItinerary?: (input: ItineraryInput) => Promise<void>;
   onConfirmRequirement?: (requirement: Requirement) => Promise<void>;
+  /** Las personas de los otros viajes del cliente, para traerlas a este. */
+  companions?: Companion[];
+  onBringPassengers?: (passengerIds: string[]) => Promise<void>;
 }
 
 /**
@@ -56,7 +63,8 @@ export interface TripPanelProps extends DocumentActions {
 export function TripPanel({
   trip, trips, sellers, countries = [], collapsed, onClose, onSelectTrip, onNewTrip, onUpdateTrip,
   onRunControl, onCloseControl, onReopenControl, onAddPassenger, onUpdatePassenger,
-  onDeletePassenger, onSavePayment, onUpdateCustomer, onSaveItinerary, onConfirmRequirement, ...documentActions
+  onDeletePassenger, onSavePayment, onUpdateCustomer, onSaveItinerary, onConfirmRequirement, companions,
+  onBringPassengers, ...documentActions
 }: TripPanelProps) {
   const [tab, setTab] = useState<Tab>("resumen");
   const [editor, setEditor] = useState<"viaje" | "pago">();
@@ -66,7 +74,10 @@ export function TripPanel({
 
   useEffect(() => { setEditor(undefined); setError(undefined); }, [trip.id]);
 
-  const controlActions = { onRun: onRunControl, onClose: onCloseControl, onReopen: onReopenControl };
+  // Un cliente sin chat no puede recibir el mensaje que prueba el control: se
+  // marca a mano. Sin el dato (un viaje leído antes de existir), se asume chat.
+  const markByHand = trip.customer.hasChat === false;
+  const controlActions = { onRun: onRunControl ?? (() => undefined), onClose: onCloseControl, onReopen: onReopenControl, markByHand };
   const missing = requirementCounts(trip.requirements ?? []).falta;
   const openControls = trip.controls.filter((control) => control.status === "abierto").length;
 
@@ -144,7 +155,8 @@ export function TripPanel({
         {tab === "resumen" && <SummaryTab trip={trip} onTab={setTab} {...controlActions} />}
         {tab === "pasajeros" && (
           <PassengersTab trip={trip} countries={countries} focus={focus} onFocused={() => setFocus(undefined)}
-            onAddPassenger={onAddPassenger} onUpdatePassenger={onUpdatePassenger} onDeletePassenger={onDeletePassenger} {...documentActions} />
+            onAddPassenger={onAddPassenger} onUpdatePassenger={onUpdatePassenger} onDeletePassenger={onDeletePassenger}
+            companions={companions} onBringPassengers={onBringPassengers} {...documentActions} />
         )}
         {tab === "requisitos" && (
           <RequirementsTab trip={trip} countries={countries} onConfirm={onConfirmRequirement}
@@ -158,7 +170,7 @@ export function TripPanel({
 }
 
 /** El número del viaje, que abre la lista de viajes del contacto para cambiar. */
-function TripSwitcher({ trip, trips, onSelect }: { trip: TripDetail; trips: TripSummary[]; onSelect: (id: string) => void }) {
+function TripSwitcher({ trip, trips, onSelect }: { trip: TripDetail; trips: TripChoice[]; onSelect: (id: string) => void }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>

@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageCircle } from "lucide-react";
+import { MessageCircle, Plane } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { displayName } from "@/lib/phone";
 import { ContactAvatar } from "@/modules/mirror/ContactAvatar";
@@ -99,11 +99,16 @@ export function tripLine(row: TripRow, withPassengers = false) {
   ].filter(Boolean).join(" · ");
 }
 
+/**
+ * «Abrir chat», o «Abrir viaje» para un cliente sin WhatsApp: el panel del
+ * viaje se abre sobre la pantalla, porque no hay chat al lado del cual verlo.
+ */
 export function OpenChatButton({ row, onOpen, primary }: { row: TripRow; onOpen: (row: TripRow) => void; primary?: boolean }) {
   if (!row.conversationId) {
     return (
-      <Button size="sm" variant="outline" disabled title="El cliente no tiene ninguna conversación con las líneas de la agencia">
-        Sin chat
+      <Button size="sm" variant={primary ? "default" : "outline"} title="El cliente no tiene WhatsApp"
+        onClick={(event) => { event.stopPropagation(); onOpen(row); }}>
+        <Plane aria-hidden />Abrir viaje
       </Button>
     );
   }

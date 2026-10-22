@@ -350,6 +350,11 @@ en el menú. Ya no es así: tiene su pantalla, **Viajes**
 (`2026-10-20-pantalla-viajes-design.md`), además de la ficha que la pantalla del
 espejo sigue dibujando al lado del chat. La asimetría de arriba se mantiene.
 
+**Actualización (2026-10-22).** Suma una segunda entrada de menú, **Clientes**
+(`2026-10-22-modulo-clientes-design.md`). Un cliente ya no nace solo de un
+chat: se puede cargar a mano, y su viaje se trabaja en el mismo panel, abierto
+sobre la página del cliente. Sin chat, los controles por acción se marcan a mano.
+
 ## Alcance
 
 Entra en este trabajo:

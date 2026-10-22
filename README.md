@@ -11,7 +11,9 @@ Hoy hay tres:
   panel.
 - **operaciones**, los clientes y viajes de la agencia. La ficha de cada viaje
   vive al lado de la conversación del cliente, y la pantalla **Viajes** junta lo
-  que hay que hacer hoy (Pendientes) y la consulta de todos los viajes.
+  que hay que hacer hoy (Pendientes) y la consulta de todos los viajes. La
+  pantalla **Clientes** tiene a quien compra, con o sin WhatsApp, con todos sus
+  viajes; un cliente cargado a mano tiene sus viajes completos sin chat.
 - **requisitos**, las reglas de entrada de cada país para cada nacionalidad.
   Salen solas de Wikipedia y Passport Index (Claude lee Wikipedia y cada dato
   lleva su cita); nadie las carga ni las aprueba. Operaciones las cruza con los
@@ -24,6 +26,7 @@ Documentos de diseño:
 - Módulo mirror: [docs/superpowers/specs/2026-08-01-panel-espejo-whatsapp-design.md](docs/superpowers/specs/2026-08-01-panel-espejo-whatsapp-design.md)
 - Módulo operaciones: [docs/superpowers/specs/2026-08-20-modulo-operaciones-design.md](docs/superpowers/specs/2026-08-20-modulo-operaciones-design.md)
 - Pantalla de Viajes: [docs/superpowers/specs/2026-10-20-pantalla-viajes-design.md](docs/superpowers/specs/2026-10-20-pantalla-viajes-design.md)
+- Pantalla de Clientes: [docs/superpowers/specs/2026-10-22-modulo-clientes-design.md](docs/superpowers/specs/2026-10-22-modulo-clientes-design.md)
 - Requisitos de viaje: [docs/superpowers/specs/2026-10-20-requisitos-de-viaje-design.md](docs/superpowers/specs/2026-10-20-requisitos-de-viaje-design.md)
 
 ## Estado
@@ -36,9 +39,10 @@ Documentos de diseño:
 | mirror — escritura | Funciona: enviar texto y adjuntos, alta y desvinculación de línea con QR desde el panel |
 | operaciones — ficha | Funciona: viaje, pasajeros, pago, cliente, estado y vendedor junto al chat; 31 controles con cierre derivado, por acción o manual |
 | operaciones — Viajes | Funciona: Pendientes (atrasado, esta semana, salen pronto) y Todos los viajes con búsqueda, filtros y orden |
+| operaciones — Clientes | Funciona: lista con búsqueda (también por teléfono y pasajero) y chips, página del cliente con viajes, chats y con quién viaja; alta a mano con aviso de repetidos; viajes sin chat en un panel aparte, con «Marcar hecho»; traer pasajeros de viajes anteriores; vincular chats |
 | requisitos | Funciona: reglas por nacionalidad y país desde Wikipedia (con espera de 72 horas) y Passport Index; extracción con Claude citada y verificada; revisión semanal. Necesita `ANTHROPIC_API_KEY` y `REQUISITOS_CONTACTO` |
 | operaciones — requisitos | Funciona: itinerario, documentos y visas por pasajero; requisitos por pasajero y país con estado cumple, falta o verificar; confirmaciones; «Requisitos migratorios» y el aviso al cliente salen de eso |
-| Frontend | Login, shell con menú por módulos, bandeja del espejo, ficha del viaje y pantalla de Viajes |
+| Frontend | Login, shell con menú por módulos, bandeja del espejo, ficha del viaje y pantallas de Viajes y Clientes |
 
 ### API del módulo mirror
 
@@ -232,6 +236,15 @@ de test se crea la suya (`viajes_crm_test_kernel_db`, `viajes_crm_test_mirror_po
 y la borra al terminar. Eso es lo que permite que `go test ./...` corra los
 paquetes en paralelo, que es su comportamiento por defecto — compartiendo una
 sola base se pisan al limpiar el esquema y fallan de forma intermitente.
+
+Con Postgres en Docker sobre Windows, cada test tarda unos 27 segundos en
+sincronizar a disco y `operaciones` pasa los 10 minutos del límite de `go test`.
+Una base descartable sin sincronización lo baja a un minuto:
+
+```bash
+docker run -d --rm --name crm-test-pg -e POSTGRES_PASSWORD=test -p 127.0.0.1:55432:5432   postgres:16-alpine -c fsync=off -c synchronous_commit=off -c full_page_writes=off
+TEST_DATABASE_URL='postgres://postgres:test@127.0.0.1:55432/postgres?sslmode=disable' go test ./...
+```
 
 Con Docker Desktop en Windows, la base de test tiene que ir **sin fsync**. Cada
 test recrea el esquema entero, y con fsync cada DDL espera al disco virtual:

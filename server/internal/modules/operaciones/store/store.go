@@ -60,7 +60,10 @@ type CloseControl struct {
 // agencia volvería al papel. Todo lo demás —pasajeros, plata, documentos— se
 // carga después y de a poco.
 type NewTrip struct {
-	ContactID string
+	// Uno de los dos: el contacto desde cuyo chat se abre el viaje, o el cliente
+	// que ya existe (el que se cargó a mano, sin chat).
+	ContactID  string
+	CustomerID string
 	// Destination es el nombre de un viaje sin itinerario; con itinerario, el
 	// nombre se arma con sus destinos.
 	Destination string
@@ -274,6 +277,151 @@ type Customer struct {
 	DocumentNumber string    `json:"documentNumber,omitempty"`
 	CustomerSince  time.Time `json:"customerSince"`
 	ContactIDs     []string  `json:"contactIds"`
+	// HasChat: alguno de sus contactos tiene una conversación individual con
+	// alguna línea. Sin chat no hay dónde mandar el mensaje que prueba un
+	// control por acción, y esos controles se marcan a mano.
+	HasChat bool `json:"hasChat"`
+}
+
+// NewCustomer es el alta a mano de quien compra sin haber escrito por WhatsApp.
+type NewCustomer struct {
+	Name           string
+	Email          string
+	PhoneNumber    string
+	DocumentType   string
+	DocumentNumber string
+	CreatedBy      string
+}
+
+// CustomerContact es un contacto de WhatsApp vinculado al cliente, con su
+// conversación individual más reciente si tiene.
+type CustomerContact struct {
+	ContactID      string     `json:"contactId"`
+	Name           string     `json:"name"`
+	PhoneNumber    string     `json:"phoneNumber,omitempty"`
+	ConversationID string     `json:"conversationId,omitempty"`
+	InstanceLabel  string     `json:"instanceLabel,omitempty"`
+	LastMessageAt  *time.Time `json:"lastMessageAt,omitempty"`
+}
+
+// Companion es una persona que viajó en algún viaje del cliente, una sola vez
+// aunque haya viajado en varios: la versión del viaje más reciente.
+type Companion struct {
+	// PassengerID es el pasajero de esa versión, el que se copia al traerlo.
+	PassengerID string     `json:"passengerId"`
+	FirstName   string     `json:"firstName"`
+	LastName    string     `json:"lastName"`
+	Kind        string     `json:"kind"`
+	BirthDate   *time.Time `json:"birthDate,omitempty"`
+	TripCount   int        `json:"tripCount"`
+	TripID      string     `json:"tripId"`
+	TripNumber  int64      `json:"tripNumber"`
+	Destination string     `json:"destination"`
+	// Document es el documento con que viajó en esa versión.
+	Document    *Document `json:"document,omitempty"`
+	PermitCount int       `json:"permitCount"`
+	// Solo al traer pasajeros a un viaje: ya está en el viaje, o viene marcada
+	// por ser del viaje anterior más reciente.
+	InTrip   bool `json:"inTrip,omitempty"`
+	Selected bool `json:"selected,omitempty"`
+}
+
+// CustomerDetail es la página del cliente.
+type CustomerDetail struct {
+	Customer
+	Contacts   []CustomerContact `json:"contacts"`
+	Trips      []TripRow         `json:"trips"`
+	Companions []Companion       `json:"companions"`
+}
+
+// CustomerOpenTrip es el viaje abierto más reciente de un cliente en la lista.
+type CustomerOpenTrip struct {
+	ID          string            `json:"id"`
+	Number      int64             `json:"number"`
+	Status      domain.TripStatus `json:"status"`
+	Destination string            `json:"destination"`
+	DepartAt    *time.Time        `json:"departAt,omitempty"`
+}
+
+// CustomerRow es un cliente como se ve en la lista de Clientes.
+type CustomerRow struct {
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	CustomerSince time.Time `json:"customerSince"`
+	Email         string    `json:"email,omitempty"`
+	PhoneNumber   string    `json:"phoneNumber,omitempty"`
+	// ContactPhone y ConversationID son del contacto con la conversación
+	// individual más reciente. ChatCount cuenta esas conversaciones.
+	ContactPhone    string            `json:"contactPhone,omitempty"`
+	ConversationID  string            `json:"conversationId,omitempty"`
+	ChatCount       int               `json:"chatCount"`
+	TripCount       int               `json:"tripCount"`
+	LastDestination string            `json:"lastDestination,omitempty"`
+	OpenTrip        *CustomerOpenTrip `json:"openTrip,omitempty"`
+	LastActivity    time.Time         `json:"lastActivity"`
+}
+
+// Los chips de la lista de Clientes. Son excluyentes.
+type CustomerChip string
+
+const (
+	ChipTodos       CustomerChip = "todos"
+	ChipConViaje    CustomerChip = "con-viaje"
+	ChipSinViajes   CustomerChip = "sin-viajes"
+	ChipSinWhatsApp CustomerChip = "sin-whatsapp"
+)
+
+type CustomerSort string
+
+const (
+	SortMovimiento CustomerSort = "movimiento"
+	SortNombre     CustomerSort = "nombre"
+)
+
+type CustomerFilter struct {
+	Query  string
+	Chip   CustomerChip
+	Sort   CustomerSort
+	Cursor string
+	Limit  int
+}
+
+type CustomerPage struct {
+	Items []CustomerRow `json:"items"`
+	Total int           `json:"total"`
+	// ByChip cuenta los clientes de cada chip con la búsqueda aplicada.
+	ByChip     map[string]int `json:"byChip"`
+	NextCursor string         `json:"nextCursor,omitempty"`
+}
+
+// CustomerMatch es un cliente que se parece a otro que se está cargando, o
+// que podría ser el dueño de un chat.
+type CustomerMatch struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	PhoneNumber    string `json:"phoneNumber,omitempty"`
+	Email          string `json:"email,omitempty"`
+	TripCount      int    `json:"tripCount"`
+	ConversationID string `json:"conversationId,omitempty"`
+}
+
+// SimilarQuery son los datos de un cliente que se está cargando.
+type SimilarQuery struct {
+	Name           string
+	PhoneNumber    string
+	Email          string
+	DocumentNumber string
+}
+
+// FreeContact es un contacto que todavía no es de ningún cliente y tiene un
+// chat individual: lo que se puede vincular a un cliente.
+type FreeContact struct {
+	ContactID      string     `json:"contactId"`
+	Name           string     `json:"name"`
+	PhoneNumber    string     `json:"phoneNumber,omitempty"`
+	ConversationID string     `json:"conversationId"`
+	InstanceLabel  string     `json:"instanceLabel,omitempty"`
+	LastMessageAt  *time.Time `json:"lastMessageAt,omitempty"`
 }
 
 type CustomerPatch struct {
@@ -343,6 +491,7 @@ type TripDetailData struct {
 type TripRow struct {
 	ID             string            `json:"id"`
 	Number         int64             `json:"number"`
+	CustomerID     string            `json:"customerId"`
 	Status         domain.TripStatus `json:"status"`
 	Destination    string            `json:"destination"`
 	DepartAt       *time.Time        `json:"departAt,omitempty"`
@@ -356,8 +505,9 @@ type TripRow struct {
 	DepositPaidAt  *time.Time        `json:"depositPaidAt,omitempty"`
 	// Next es lo más urgente del viaje, sin importar cuándo vence. Nil: al día.
 	Next *domain.PendingItem `json:"next,omitempty"`
-	// ConversationID es la conversación más reciente de cualquiera de los
-	// contactos del cliente. Vacío si el cliente no tiene ninguna.
+	// ConversationID es la conversación individual más reciente de cualquiera
+	// de los contactos del cliente. Vacío si el cliente no tiene ninguna: es un
+	// cliente sin WhatsApp.
 	ConversationID string `json:"conversationId,omitempty"`
 }
 

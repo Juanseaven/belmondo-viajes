@@ -34,9 +34,20 @@ func (s *Store) CreateTrip(ctx context.Context, n store.NewTrip) (store.Trip, er
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	customerID, err := customerFor(ctx, tx, n.ContactID, n.CreatedBy)
-	if err != nil {
-		return store.Trip{}, err
+	customerID := n.CustomerID
+	if customerID == "" {
+		if customerID, err = customerFor(ctx, tx, n.ContactID, n.CreatedBy); err != nil {
+			return store.Trip{}, err
+		}
+	} else {
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM customers WHERE id = $1)`,
+			customerID).Scan(&exists); err != nil {
+			return store.Trip{}, writeError("buscando el cliente", err)
+		}
+		if !exists {
+			return store.Trip{}, store.ErrNotFound
+		}
 	}
 
 	var t store.Trip

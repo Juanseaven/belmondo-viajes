@@ -34,3 +34,14 @@ export const isPhoneLike = (value: string) => /^\+?[\d\s-]{8,}$/.test(value.trim
 
 /** Un nombre que puede ser un número, listo para mostrar. */
 export const displayName = (name: string) => (isPhoneLike(name) ? formatPhone(name) : name);
+
+/**
+ * Un teléfono escrito a mano («11 4788-2210») se muestra como se cargó: pasarlo
+ * a internacional inventaría la característica del país. Solo se le da formato
+ * si ya viene internacional, como los que llegan de WhatsApp.
+ */
+export function formatTypedPhone(raw: string): string {
+  const text = raw.trim();
+  const digits = text.replace(/\D/g, "");
+  return text.startsWith("+") || (digits.startsWith("54") && digits.length >= 12) ? formatPhone(text) : text;
+}

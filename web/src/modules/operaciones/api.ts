@@ -1,7 +1,7 @@
 import { api } from "@/kernel/api/client";
-import type { Country, Customer, CustomerUpdate, InboxItem, Passenger, Payment, PendingRow, Permit, Requirement, Seller, Stop, TravelDocument, TripDetail, TripListParams, TripPage, TripSummary, TripUpdate } from "./types";
+import type { Companion, Country, Customer, CustomerDetail, CustomerListParams, CustomerMatch, CustomerPage, CustomerUpdate, FreeContact, InboxItem, Passenger, Payment, PendingRow, Permit, Requirement, Seller, Stop, TravelDocument, TripDetail, TripListParams, TripPage, TripSummary, TripUpdate } from "./types";
 
-function listQuery(params: TripListParams): string {
+function listQuery(params: TripListParams | CustomerListParams | Record<string, string | undefined>): string {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value === undefined || value === "" || value === false) continue;
@@ -11,8 +11,9 @@ function listQuery(params: TripListParams): string {
   return text ? `?${text}` : "";
 }
 
+/** Un viaje es de un chat (contactId) o de un cliente cargado a mano (customerId): uno de los dos. */
 export interface NewTrip {
-  contactId: string; destination?: string; departAt?: string; returnAt?: string;
+  contactId?: string; customerId?: string; destination?: string; departAt?: string; returnAt?: string;
   /** Vacío: sale de Argentina. */
   originCountry?: string; itinerary?: Stop[];
 }
@@ -27,6 +28,9 @@ export interface NewPassenger {
 export type DocumentInput = Omit<TravelDocument, "id" | "passengerId">;
 export type PermitInput = Omit<Permit, "id" | "passengerId">;
 /** El pago se guarda entero: lo que no viaja queda vacío en la base. */
+export interface NewCustomer { name: string; email?: string; phoneNumber?: string; documentType?: string; documentNumber?: string }
+/** Los datos de un cliente que se está cargando, para avisar si ya existe. */
+export interface SimilarInput { nombre?: string; telefono?: string; mail?: string; documento?: string }
 export type PaymentInput = Omit<Payment, "tripId" | "depositPaidAt"> & { depositPaid?: boolean };
 
 export const operacionesApi = {
@@ -42,7 +46,20 @@ export const operacionesApi = {
   putPayment: (tripId: string, input: PaymentInput) => api<Payment>(`/api/operaciones/viajes/${tripId}/pago`, { method: "PUT", body: JSON.stringify(input) }),
   closeControl: (id: string, messageId?: string) => api<void>(`/api/operaciones/controles/${id}/cerrar`, { method: "POST", body: JSON.stringify({ messageId }) }),
   reopenControl: (id: string) => api<void>(`/api/operaciones/controles/${id}/reabrir`, { method: "POST", body: "{}" }),
-  customer: (id: string) => api<Customer>(`/api/operaciones/clientes/${id}`),
+  customer: (id: string) => api<CustomerDetail>(`/api/operaciones/clientes/${id}`),
+  customers: (params: CustomerListParams) => api<CustomerPage>(`/api/operaciones/clientes${listQuery(params)}`),
+  createCustomer: (input: NewCustomer) => api<Customer>("/api/operaciones/clientes", { method: "POST", body: JSON.stringify(input) }),
+  similarCustomers: (input: SimilarInput) => api<{ items: CustomerMatch[] }>(`/api/operaciones/clientes/parecidos${listQuery({ ...input })}`),
+  linkContact: (customerId: string, contactId: string) =>
+    api<void>(`/api/operaciones/clientes/${customerId}/contactos`, { method: "POST", body: JSON.stringify({ contactId }) }),
+  /** Los chats sin cliente; con cliente, primero los que coinciden con su teléfono. */
+  freeContacts: (q: string, customerId?: string) => api<{ items: FreeContact[] }>(`/api/operaciones/contactos${listQuery({ q, cliente: customerId })}`),
+  /** El cliente del contacto, si tiene; si no, los que podrían serlo por el teléfono. */
+  contactCustomers: (contactId: string) =>
+    api<{ customerId?: string; items: CustomerMatch[] }>(`/api/operaciones/contactos/${contactId}/clientes`),
+  tripCompanions: (tripId: string) => api<{ items: Companion[] }>(`/api/operaciones/viajes/${tripId}/companeros`),
+  bringPassengers: (tripId: string, passengerIds: string[]) =>
+    api<{ items: Passenger[] }>(`/api/operaciones/viajes/${tripId}/pasajeros/traer`, { method: "POST", body: JSON.stringify({ passengerIds }) }),
   updateCustomer: (id: string, input: CustomerUpdate) => api<Customer>(`/api/operaciones/clientes/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
   sellers: () => api<{ items: Seller[] }>("/api/operaciones/vendedores"),
   pending: () => api<{ items: PendingRow[] }>("/api/operaciones/pendientes"),

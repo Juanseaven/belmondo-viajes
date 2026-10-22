@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, IdCard, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, History, IdCard, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ContactAvatar } from "@/modules/mirror/ContactAvatar";
 import type { DocumentInput, NewPassenger, PermitInput } from "./api";
 import { CountrySelect, countryName } from "./countries";
+import { BringPassengersDialog } from "./BringPassengersDialog";
 import { dayOf, fullDate, today } from "./format";
 import { Field } from "./PanelEditor";
-import type { Country, Passenger, Permit, PermitKind, TravelDocument, TripDetail } from "./types";
+import type { Companion, Country, Passenger, Permit, PermitKind, TravelDocument, TripDetail } from "./types";
 
 export type PassengerPatch = Partial<NewPassenger>;
 
@@ -29,6 +30,9 @@ interface PassengersTabProps extends DocumentActions {
   onAddPassenger: (input: NewPassenger) => Promise<void> | void;
   onUpdatePassenger?: (id: string, input: PassengerPatch) => Promise<void>;
   onDeletePassenger?: (passenger: Passenger) => Promise<void>;
+  /** Las personas de los otros viajes del cliente. Con alguna, se ofrece traerlas. */
+  companions?: Companion[];
+  onBringPassengers?: (passengerIds: string[]) => Promise<void>;
 }
 
 const PERMIT_LABEL: Record<PermitKind, string> = {
@@ -51,8 +55,10 @@ type Run = (action: () => Promise<void> | void) => Promise<boolean>;
  * documentos y sus visas. Los pasajeros se cargan de a pedazos: nombre y
  * apellido alcanzan para el alta. Quitar no pregunta: se hace y queda «Deshacer».
  */
-export function PassengersTab({ trip, countries = [], focus, onFocused, onAddPassenger, onUpdatePassenger, onDeletePassenger, ...docs }: PassengersTabProps) {
+export function PassengersTab({ trip, countries = [], focus, onFocused, onAddPassenger, onUpdatePassenger, onDeletePassenger, companions = [], onBringPassengers, ...docs }: PassengersTabProps) {
   const [adding, setAdding] = useState(false);
+  const [bringing, setBringing] = useState(false);
+  const canBring = Boolean(onBringPassengers) && companions.length > 0;
   const [removed, setRemoved] = useState<Passenger>();
   const [error, setError] = useState<string>();
 
@@ -85,12 +91,21 @@ export function PassengersTab({ trip, countries = [], focus, onFocused, onAddPas
           <button type="button" onClick={() => void undo(removed)}>Deshacer</button>
         </p>
       )}
-      {trip.passengers.length === 0 && !adding && (
+      {trip.passengers.length === 0 && !adding && (canBring ? (
+        <div className="panel-empty">
+          <strong>Todavía no hay pasajeros</strong>
+          <p>{trip.customer.name} ya viajó con la agencia: podés traer a los pasajeros de sus viajes anteriores.</p>
+          <div className="panel-empty-actions">
+            <Button size="sm" onClick={() => setBringing(true)}><History aria-hidden />Traer de un viaje anterior</Button>
+            <Button size="sm" variant="outline" onClick={() => setAdding(true)}><Plus aria-hidden />Agregar pasajero</Button>
+          </div>
+        </div>
+      ) : (
         <div className="panel-empty">
           <strong>Cargá los pasajeros para empezar</strong>
           <p>Nombre y apellido alcanzan; el documento se completa después.</p>
         </div>
-      )}
+      ))}
       {trip.passengers.length > 0 && (
         <ul className="pax-list">
           {trip.passengers.map((passenger) => (
@@ -102,8 +117,15 @@ export function PassengersTab({ trip, countries = [], focus, onFocused, onAddPas
       )}
       {adding ? (
         <NewPassengerForm onCancel={() => setAdding(false)} onSave={async (input) => { if (await run(() => onAddPassenger(input))) setAdding(false); }} />
-      ) : (
-        <button type="button" className="add-button" onClick={() => setAdding(true)}><Plus aria-hidden />Agregar pasajero</button>
+      ) : (!canBring || trip.passengers.length > 0) && (
+        <div className="add-row">
+          <button type="button" className="add-button" onClick={() => setAdding(true)}><Plus aria-hidden />Agregar pasajero</button>
+          {canBring && <button type="button" className="add-button" onClick={() => setBringing(true)}><History aria-hidden />Traer de un viaje anterior</button>}
+        </div>
+      )}
+      {bringing && onBringPassengers && (
+        <BringPassengersDialog companions={companions} onClose={() => setBringing(false)}
+          onBring={async (ids) => { await onBringPassengers(ids); }} />
       )}
     </>
   );

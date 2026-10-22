@@ -14,6 +14,8 @@ interface NewTripPanelProps {
   countries?: Country[];
   onCancel: () => void;
   onCreate: (input: TripSeed) => Promise<void>;
+  /** Qué se dice del cliente. Sin esto, que se crea con el nombre del contacto. */
+  clientNote?: string;
 }
 
 /**
@@ -21,7 +23,7 @@ interface NewTripPanelProps {
  * solo botón abajo. El cliente sale del contacto: se crea con su nombre y se
  * completa después.
  */
-export function NewTripPanel({ contactName, avatarUrl, countries = [], onCancel, onCreate }: NewTripPanelProps) {
+export function NewTripPanel({ contactName, avatarUrl, countries = [], onCancel, onCreate, clientNote }: NewTripPanelProps) {
   const [origin, setOrigin] = useState(DEFAULT_ORIGIN);
   const [stops, setStops] = useState<StopDraft[]>([emptyStop("destino")]);
   const [departAt, setDepartAt] = useState("");
@@ -70,7 +72,7 @@ export function NewTripPanel({ contactName, avatarUrl, countries = [], onCancel,
         <h4>Cliente</h4>
         <div className="draft-contact">
           <ContactAvatar name={contactName} src={avatarUrl} className="avatar-36" />
-          <span><strong>{contactName}</strong><small>Se crea con el nombre del contacto; los datos se completan después.</small></span>
+          <span><strong>{contactName}</strong><small>{clientNote ?? "Se crea con el nombre del contacto; los datos se completan después."}</small></span>
         </div>
       </section>
     </PanelEditor>

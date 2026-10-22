@@ -39,8 +39,17 @@ func (s *Store) CloseControl(ctx context.Context, c store.CloseControl) error {
 	if closing == domain.ClosingDerivado {
 		return store.ErrDerivadoNoSeCierraAMano
 	}
+	// Un cliente sin chat no puede recibir el mensaje que prueba el control: se
+	// marca a mano y queda quién y cuándo, como un manual. Con chat, el mensaje
+	// sigue siendo la prueba.
 	if closing == domain.ClosingAccion && c.MessageID == "" {
-		return store.ErrEvidenciaRequerida
+		hasChat, err := customerHasChat(ctx, tx, customerID)
+		if err != nil {
+			return err
+		}
+		if hasChat {
+			return store.ErrEvidenciaRequerida
+		}
 	}
 
 	if c.MessageID != "" {
@@ -71,6 +80,22 @@ func (s *Store) CloseControl(ctx context.Context, c store.CloseControl) error {
 	}
 
 	return tx.Commit(ctx)
+}
+
+// hasChatSQL dice si el cliente tiene WhatsApp: algún contacto vinculado con
+// una conversación individual. Un contacto vinculado sin chat (el alias que deja
+// la fusión de LID, uno que llegó solo por el directorio) no alcanza.
+const hasChatSQL = `EXISTS (
+	SELECT 1 FROM customer_contacts hc
+	  JOIN conversations hv ON hv.contact_id = hc.contact_id
+	 WHERE hc.customer_id = %s AND NOT hv.is_group)`
+
+func customerHasChat(ctx context.Context, q querier, customerID string) (bool, error) {
+	var has bool
+	if err := q.QueryRow(ctx, `SELECT `+fmt.Sprintf(hasChatSQL, "$1"), customerID).Scan(&has); err != nil {
+		return false, fmt.Errorf("buscando el chat del cliente: %w", err)
+	}
+	return has, nil
 }
 
 // checkEvidence verifica que el mensaje le hable a este cliente.

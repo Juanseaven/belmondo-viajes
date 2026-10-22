@@ -149,6 +149,7 @@ func (m *Module) listTrips(w http.ResponseWriter, r *http.Request) {
 func (m *Module) createTrip(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		ContactID     string     `json:"contactId"`
+		CustomerID    string     `json:"customerId"`
 		Destination   string     `json:"destination"`
 		OriginCountry string     `json:"originCountry"`
 		Itinerary     []stopBody `json:"itinerary"`
@@ -178,12 +179,18 @@ func (m *Module) createTrip(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if strings.TrimSpace(body.ContactID) == "" {
-		httpx.BadRequest(w, "el contacto es obligatorio")
+	// El viaje es de un chat o de un cliente cargado a mano: uno de los dos.
+	contactID, customerID := strings.TrimSpace(body.ContactID), strings.TrimSpace(body.CustomerID)
+	if (contactID == "") == (customerID == "") {
+		httpx.BadRequest(w, "el viaje lleva un contacto o un cliente, uno de los dos")
 		return
 	}
+	contactIDs := []string{}
+	if contactID != "" {
+		contactIDs = append(contactIDs, contactID)
+	}
 	trip, err := m.repo.CreateTrip(r.Context(), store.NewTrip{
-		ContactID: body.ContactID, Destination: strings.TrimSpace(body.Destination),
+		ContactID: contactID, CustomerID: customerID, Destination: strings.TrimSpace(body.Destination),
 		Origin: countryCode(body.OriginCountry), Itinerary: stops,
 		DepartAt: departAt, ReturnAt: returnAt, CreatedBy: auth.UserID(r.Context()),
 	})
@@ -191,7 +198,12 @@ func (m *Module) createTrip(w http.ResponseWriter, r *http.Request) {
 		m.storeError(w, "creando el viaje", err)
 		return
 	}
-	m.emit("trip.created", map[string]any{"tripId": trip.ID, "contactIds": []string{body.ContactID}})
+	if customerID != "" {
+		if customer, err := m.repo.Customer(r.Context(), customerID); err == nil {
+			contactIDs = customer.ContactIDs
+		}
+	}
+	m.emit("trip.created", map[string]any{"tripId": trip.ID, "customerId": trip.CustomerID, "contactIds": contactIDs})
 	m.afterChange(r.Context(), trip.ID)
 	httpx.JSON(w, http.StatusCreated, trip)
 }
@@ -379,15 +391,6 @@ func (m *Module) reopenControl(w http.ResponseWriter, r *http.Request) {
 	}
 	m.emit("control.changed", map[string]any{"controlId": id})
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func (m *Module) getCustomer(w http.ResponseWriter, r *http.Request) {
-	customer, err := m.repo.Customer(r.Context(), r.PathValue("id"))
-	if err != nil {
-		m.storeError(w, "leyendo el cliente", err)
-		return
-	}
-	httpx.JSON(w, http.StatusOK, customer)
 }
 
 func (m *Module) updateCustomer(w http.ResponseWriter, r *http.Request) {

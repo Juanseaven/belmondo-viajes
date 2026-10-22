@@ -34,6 +34,11 @@ type fakeRepo struct {
 	documentPatch  store.DocumentPatch
 	newPermit      store.NewPermit
 	passengerPatch store.PassengerPatch
+
+	newCustomer     store.NewCustomer
+	customerFilter  store.CustomerFilter
+	copied          []string
+	contactCustomer string
 }
 
 func (f *fakeRepo) CreateTrip(_ context.Context, n store.NewTrip) (store.Trip, error) {
@@ -78,6 +83,36 @@ func (f *fakeRepo) UpdateCustomer(context.Context, string, store.CustomerPatch) 
 	return store.Customer{}, nil
 }
 func (f *fakeRepo) LinkContact(context.Context, string, string, string) error { return nil }
+func (f *fakeRepo) CreateCustomer(_ context.Context, n store.NewCustomer) (store.Customer, error) {
+	f.newCustomer = n
+	return store.Customer{ID: "cliente-1", Name: n.Name}, f.err
+}
+func (f *fakeRepo) CustomerDetail(context.Context, string) (store.CustomerDetail, error) {
+	return store.CustomerDetail{}, f.err
+}
+func (f *fakeRepo) ListCustomers(_ context.Context, filter store.CustomerFilter) (store.CustomerPage, error) {
+	f.customerFilter = filter
+	return store.CustomerPage{Items: []store.CustomerRow{}}, nil
+}
+func (f *fakeRepo) SimilarCustomers(context.Context, store.SimilarQuery) ([]store.CustomerMatch, error) {
+	return []store.CustomerMatch{}, nil
+}
+func (f *fakeRepo) SuggestedCustomers(context.Context, string) ([]store.CustomerMatch, error) {
+	return []store.CustomerMatch{}, nil
+}
+func (f *fakeRepo) ContactCustomer(context.Context, string) (string, error) {
+	return f.contactCustomer, nil
+}
+func (f *fakeRepo) FreeContacts(context.Context, string, string) ([]store.FreeContact, error) {
+	return []store.FreeContact{}, nil
+}
+func (f *fakeRepo) TripCompanions(context.Context, string) ([]store.Companion, error) {
+	return []store.Companion{}, nil
+}
+func (f *fakeRepo) CopyPassengers(_ context.Context, _ string, ids []string, _ string) ([]store.Passenger, error) {
+	f.copied = ids
+	return []store.Passenger{}, f.err
+}
 func (f *fakeRepo) Inbox(context.Context, []string) ([]store.InboxItem, error) {
 	return f.inbox, nil
 }
@@ -117,12 +152,15 @@ func TestModuloMontaTodoElContratoAutenticado(t *testing.T) {
 		"GET /viajes", "POST /viajes", "GET /viajes/{id}", "PATCH /viajes/{id}",
 		"POST /viajes/{id}/pasajeros", "PATCH /pasajeros/{id}", "DELETE /pasajeros/{id}",
 		"PUT /viajes/{id}/pago", "POST /controles/{id}/cerrar", "POST /controles/{id}/reabrir",
+		"GET /clientes", "POST /clientes", "GET /clientes/parecidos",
 		"GET /clientes/{id}", "PATCH /clientes/{id}", "POST /clientes/{id}/contactos", "GET /bandeja",
 		"GET /vendedores", "GET /pendientes",
 		"PUT /viajes/{id}/itinerario",
 		"POST /pasajeros/{id}/documentos", "PATCH /documentos/{id}", "DELETE /documentos/{id}",
 		"POST /pasajeros/{id}/permisos", "PATCH /permisos/{id}", "DELETE /permisos/{id}",
 		"POST /viajes/{id}/requisitos/confirmar",
+		"GET /viajes/{id}/companeros", "POST /viajes/{id}/pasajeros/traer",
+		"GET /contactos", "GET /contactos/{id}/clientes",
 	}
 	if len(routes.patterns) != len(want) {
 		t.Fatalf("rutas = %v", routes.patterns)

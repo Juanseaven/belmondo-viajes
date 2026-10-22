@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
-import { formatPhone } from "@/lib/phone";
+import Link from "next/link";
+import { ChevronDown, Info } from "lucide-react";
+import { formatTypedPhone } from "@/lib/phone";
 import { ControlRow, type ControlActions } from "./ControlsTab";
 import { dayOf, fullDate, money, shortDay, today } from "./format";
 import { requirementCounts } from "./RequirementsTab";
@@ -32,6 +33,11 @@ export function SummaryTab({ trip, onTab, ...actions }: ControlActions & { trip:
             {showRest && rest.map((control) => <ControlRow key={control.id} control={control} {...actions} />)}
           </ul>
         ) : <p className="panel-card-text">No hay nada pendiente en este viaje.</p>}
+        {next && actions.markByHand && next.closing === "accion" && (
+          <p className="panel-hint"><Info aria-hidden />
+            <span>{customer.name} no tiene WhatsApp: lo que en otros viajes se cierra al mandar el mensaje, acá se marca a mano y queda quién y cuándo.</span>
+          </p>
+        )}
         {rest.length > 0 && (
           <button type="button" className="panel-more" aria-expanded={showRest} onClick={() => setShowRest((value) => !value)}>
             <ChevronDown aria-hidden />{showRest ? "Ocultar" : `${rest.length} ${rest.length === 1 ? "control más" : "controles más"}`}
@@ -70,10 +76,10 @@ export function SummaryTab({ trip, onTab, ...actions }: ControlActions & { trip:
       </section>
 
       <section className="panel-card">
-        <h3>Cliente</h3>
+        <h3>Cliente<Link className="link-button" href={`/clientes/${customer.id}`}>Ver ficha</Link></h3>
         <dl className="panel-kv">
           <dt>Teléfono</dt>
-          <dd>{customer.phoneNumber ? formatPhone(customer.phoneNumber) : <span className="muted">Sin cargar</span>}</dd>
+          <dd>{customer.phoneNumber ? formatTypedPhone(customer.phoneNumber) : <span className="muted">Sin cargar</span>}</dd>
           <dt>Mail</dt>
           <dd>{customer.email || <span className="muted">Sin cargar</span>}</dd>
           <dt>Documento</dt>

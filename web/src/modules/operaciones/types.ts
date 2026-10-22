@@ -35,6 +35,11 @@ export interface Customer {
   documentNumber?: string;
   customerSince: string;
   contactIds: string[];
+  /**
+   * Alguno de sus contactos tiene un chat individual. Sin chat, los controles
+   * que se cierran mandando un mensaje se marcan a mano.
+   */
+  hasChat?: boolean;
 }
 
 export interface Passenger {
@@ -202,7 +207,7 @@ export interface Seller { id: string; name: string }
 /** Lo que la ficha puede cambiar del viaje. Un vendedor vacío lo desasigna. */
 export type TripUpdate = Partial<Pick<TripSummary, "destination" | "departAt" | "returnAt" | "status" | "sellerUserId">>;
 
-export type CustomerUpdate = Partial<Pick<Customer, "name" | "email" | "phoneNumber" | "documentType" | "documentNumber">>;
+export type CustomerUpdate = Partial<Pick<Customer, "name" | "email" | "phoneNumber" | "documentType" | "documentNumber" | "customerSince">>;
 
 export const nextControl = (controls: Control[]): Control | undefined =>
   [...controls]
@@ -230,6 +235,7 @@ export interface PendingItem {
 export interface TripRow {
   id: string;
   number: number;
+  customerId?: string;
   status: TripStatus;
   destination: string;
   departAt?: string;
@@ -276,4 +282,96 @@ export interface TripListParams {
   atrasados?: boolean;
   orden?: TripSort;
   cursor?: string;
+}
+
+/** Un contacto de WhatsApp del cliente, con su chat individual más reciente. */
+export interface CustomerContact {
+  contactId: string;
+  name: string;
+  phoneNumber?: string;
+  conversationId?: string;
+  instanceLabel?: string;
+  lastMessageAt?: string;
+}
+
+/**
+ * Una persona que viajó en algún viaje del cliente, una vez aunque haya viajado
+ * en varios: la versión del viaje más reciente.
+ */
+export interface Companion {
+  /** El pasajero de esa versión: es el que se copia al traerlo. */
+  passengerId: string;
+  firstName: string;
+  lastName: string;
+  kind: "adulto" | "menor";
+  birthDate?: string;
+  tripCount: number;
+  tripId: string;
+  tripNumber: number;
+  destination: string;
+  /** El documento con que viajó en esa versión. */
+  document?: TravelDocument;
+  permitCount: number;
+  /** Al traer pasajeros: ya está en este viaje. */
+  inTrip?: boolean;
+  /** Al traer pasajeros: viene marcada, por ser del viaje anterior más reciente. */
+  selected?: boolean;
+}
+
+/** La página del cliente. */
+export interface CustomerDetail extends Customer {
+  contacts: CustomerContact[];
+  trips: TripRow[];
+  companions: Companion[];
+}
+
+/** Un cliente en la lista de Clientes. */
+export interface CustomerRow {
+  id: string;
+  name: string;
+  customerSince: string;
+  email?: string;
+  phoneNumber?: string;
+  /** El teléfono y el chat del contacto con la conversación individual más reciente. */
+  contactPhone?: string;
+  conversationId?: string;
+  chatCount: number;
+  tripCount: number;
+  lastDestination?: string;
+  /** El viaje abierto más reciente. */
+  openTrip?: { id: string; number: number; status: TripStatus; destination: string; departAt?: string };
+  lastActivity: string;
+}
+
+export type CustomerChip = "todos" | "con-viaje" | "sin-viajes" | "sin-whatsapp";
+export type CustomerSort = "movimiento" | "nombre";
+
+export interface CustomerPage {
+  items: CustomerRow[];
+  total: number;
+  /** Cuántos clientes hay en cada chip con la búsqueda aplicada. */
+  byChip?: Partial<Record<CustomerChip, number>>;
+  nextCursor?: string;
+}
+
+export interface CustomerListParams { q?: string; filtro?: CustomerChip; orden?: CustomerSort; cursor?: string }
+
+/** Un cliente que se parece al que se está cargando, o que podría ser el dueño de un chat. */
+export interface CustomerMatch {
+  id: string;
+  name: string;
+  phoneNumber?: string;
+  email?: string;
+  tripCount: number;
+  conversationId?: string;
+}
+
+/** Un chat que todavía no es de ningún cliente. */
+export interface FreeContact {
+  contactId: string;
+  name: string;
+  phoneNumber?: string;
+  conversationId: string;
+  instanceLabel?: string;
+  lastMessageAt?: string;
 }

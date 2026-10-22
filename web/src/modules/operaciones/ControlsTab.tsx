@@ -10,6 +10,11 @@ export interface ControlActions {
   onRun: (control: Control) => void;
   onClose: (control: Control) => void;
   onReopen: (control: Control) => void;
+  /**
+   * El cliente no tiene chat: lo que se cierra mandando un mensaje se marca a
+   * mano, y queda quién y cuándo.
+   */
+  markByHand?: boolean;
 }
 
 const weekday = new Intl.DateTimeFormat("es-AR", { weekday: "long" });
@@ -28,7 +33,7 @@ export function controlDue(dueAt: string, from = today()) {
  * si es crítico, el plazo en palabras y el botón de la acción. Hecho: tilde
  * gris, título en gris, quién y cuándo.
  */
-export function ControlRow({ control, onRun, onClose, onReopen }: { control: Control } & ControlActions) {
+export function ControlRow({ control, onRun, onClose, onReopen, markByHand }: { control: Control } & ControlActions) {
   const done = control.status === "cerrado";
   const tone = !done && control.dueAt ? urgency(control.dueAt) : "later";
   return (
@@ -42,7 +47,9 @@ export function ControlRow({ control, onRun, onClose, onReopen }: { control: Con
           ? <small>{closedBy(control)}</small>
           : control.dueAt && <small className={`is-${tone}`}>{controlDue(control.dueAt)}</small>}
       </span>
-      {!done && control.closing === "accion" && <Button size="sm" variant="outline" onClick={() => onRun(control)}>{control.actionLabel || "Hacer ahora"}</Button>}
+      {!done && control.closing === "accion" && (markByHand
+        ? <Button size="sm" variant="outline" onClick={() => onClose(control)}>Marcar hecho</Button>
+        : <Button size="sm" variant="outline" onClick={() => onRun(control)}>{control.actionLabel || "Hacer ahora"}</Button>)}
       {!done && control.closing === "manual" && <Button size="sm" variant="outline" onClick={() => onClose(control)}>Confirmar</Button>}
       {/* Sin prueba, el cierre fue del dato: lo gobierna el dato, no una persona. */}
       {done && control.closing !== "derivado" && control.evidence.length > 0 && <Button size="sm" variant="ghost" onClick={() => onReopen(control)}>Reabrir</Button>}

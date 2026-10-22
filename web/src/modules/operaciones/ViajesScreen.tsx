@@ -9,6 +9,7 @@
  *
  * La pestaña y los filtros viven en la URL, como en el espejo. Toda acción lleva
  * al chat, que es donde se resuelve: la ficha está al lado de la conversación.
+ * Un viaje de un cliente sin WhatsApp se abre en el panel, sobre esta pantalla.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -17,6 +18,7 @@ import { useSocket } from "@/kernel/api/useSocket";
 import { operacionesApi } from "./api";
 import { today } from "./format";
 import { PendingList } from "./PendingList";
+import { TripDrawer } from "./TripDrawer";
 import { defaultFilters, filtersFromParams, filtersToParams, hasActiveFilters, toListParams, type TripFilters } from "./tripFilters";
 import { TripFiltersBar } from "./TripFiltersBar";
 import { TripsTable } from "./TripsTable";
@@ -32,6 +34,7 @@ export function ViajesScreen() {
   const tab: Tab = params.get("tab") === "todos" ? "todos" : "pendientes";
   const filters = useMemo(() => filtersFromParams(params), [params]);
   const pending = usePending();
+  const [drawer, setDrawer] = useState<{ customerId: string; tripId: string }>();
 
   const go = useCallback((nextTab: Tab, nextFilters: TripFilters) => {
     const query = nextTab === "todos" ? filtersToParams(nextFilters) : new URLSearchParams();
@@ -44,8 +47,11 @@ export function ViajesScreen() {
   }, [router]);
 
   const openChat = (row: TripRow) => {
-    if (!row.conversationId) return;
-    router.push(`/mirror?c=${encodeURIComponent(row.conversationId)}&viaje=${encodeURIComponent(row.id)}`);
+    if (row.conversationId) {
+      router.push(`/mirror?c=${encodeURIComponent(row.conversationId)}&viaje=${encodeURIComponent(row.id)}`);
+    } else if (row.customerId) {
+      setDrawer({ customerId: row.customerId, tripId: row.id });
+    }
   };
 
   const asking = pending.rows.filter((row) => row.group !== "salen").length;
@@ -68,6 +74,10 @@ export function ViajesScreen() {
           ? <PendingView state={pending} onOpen={openChat} />
           : <AllTripsView filters={filters} onFilters={(next) => go("todos", next)} onOpen={openChat} />}
       </div>
+      {drawer && (
+        <TripDrawer customerId={drawer.customerId} tripId={drawer.tripId} onClose={() => setDrawer(undefined)}
+          onSelectTrip={(tripId) => setDrawer({ ...drawer, tripId })} />
+      )}
     </section>
   );
 }

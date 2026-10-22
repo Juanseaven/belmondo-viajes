@@ -1,0 +1,116 @@
+/* --- Pantalla Clientes -----------------------------------------------------
+   El mismo esquema que «Todos los viajes»: la lista a todo el ancho, y la
+   página de cada cliente con solo su información. */
+
+.avatar-56 { width: 56px; height: 56px; }
+.avatar-56 [data-slot="avatar-fallback"] { font-size: 20px; }
+
+.clientes-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 28px 16px; border-bottom: 1px solid var(--hairline); background: var(--paper); }
+.clientes-head h1 { margin: 0; color: var(--ink); font-size: 22px; font-weight: 600; }
+
+.customer-contact { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.customer-contact svg { width: 14px; height: 14px; flex: 0 0 auto; color: var(--ink-4); }
+.customer-contact svg.is-wa { color: var(--green); }
+
+/* La página del cliente */
+.cliente-head { display: flex; align-items: center; gap: 14px; padding: 16px 28px; border-bottom: 1px solid var(--hairline); background: var(--paper); }
+.cliente-title { min-width: 0; flex: 1; }
+.cliente-title h1 { margin: 0; overflow: hidden; color: var(--ink); font-size: 22px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.cliente-back { display: inline-flex; align-items: center; gap: 2px; margin-bottom: 2px; color: var(--ink-3); font-size: var(--fs-13); }
+.cliente-back:hover { color: var(--ink); }
+.cliente-back svg { width: 15px; height: 15px; }
+.viajes-body > .cliente-back { margin-bottom: 12px; }
+.cliente-actions { display: flex; flex: 0 0 auto; gap: 8px; }
+
+.cliente-body { display: flex; flex-direction: column; gap: 16px; }
+.cliente-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin: 0; overflow: hidden; border: 1px solid var(--hairline); border-radius: 8px; background: var(--hairline); }
+.cliente-fact { display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 10px; padding: 12px 16px; background: var(--paper); }
+.cliente-fact svg { width: 16px; height: 16px; margin-top: 2px; grid-row: span 2; color: var(--ink-4); }
+.cliente-fact dt { color: var(--ink-3); font-size: var(--fs-12); }
+.cliente-fact dd { min-width: 0; margin: 0; overflow: hidden; color: var(--ink); font-weight: 600; text-overflow: ellipsis; }
+.cliente-fact dd .muted { font-weight: 400; }
+
+.cliente-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; align-items: start; gap: 16px; }
+.cliente-side { display: flex; min-width: 0; flex-direction: column; gap: 16px; }
+.cliente-card { overflow: hidden; }
+.cliente-card > h3 { padding: 12px 16px; border-bottom: 1px solid var(--hairline); color: var(--ink); font-size: var(--fs-14); }
+.cliente-card > h3 small { color: var(--ink-3); font-weight: 400; }
+.cliente-card .trips-table { border: 0; border-radius: 0; }
+.cliente-trips tr.is-selected td { background: var(--green-tint); }
+.cliente-trips tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(--green); }
+.cliente-empty { padding: 24px 16px; color: var(--ink-3); font-size: var(--fs-13); text-align: center; }
+.cliente-empty strong { display: block; color: var(--ink); font-size: var(--fs-14); font-weight: 600; }
+.cliente-empty p { margin: 4px 0 12px; }
+.cliente-list { margin: 0; padding: 0; list-style: none; }
+.cliente-chat { display: flex; align-items: center; gap: 12px; padding: 10px 16px; }
+.cliente-list .cliente-chat + .cliente-chat { border-top: 1px solid var(--hairline); }
+.cliente-chat > span { min-width: 0; flex: 1; }
+.cliente-chat strong { display: block; color: var(--ink); font-size: var(--fs-14); font-weight: 600; }
+.cliente-chat small { display: block; margin-top: 2px; color: var(--ink-3); font-size: 12.5px; line-height: 1.4; }
+.cliente-chat.is-empty > svg { width: 18px; height: 18px; flex: 0 0 auto; color: var(--ink-4); }
+.cliente-card-foot { padding: 0 16px 12px; }
+
+/* El panel del viaje sobre la pantalla */
+.trip-sheet .trip-panel { width: 100%; height: 100%; border-left: 0; }
+.trip-sheet-loading { padding: 20px 16px; }
+
+/* Nuevo cliente y Editar */
+.customer-form { display: flex; flex-direction: column; gap: 12px; }
+.customer-doc { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px; }
+.customer-similar { padding: 10px 12px; border: 1px solid var(--warn-line); border-radius: 8px; background: var(--warn-tint); }
+.customer-similar > b { display: block; color: var(--warn); font-size: var(--fs-13); font-weight: 600; }
+.customer-similar-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 6px; background: var(--paper); }
+.customer-similar-row > span { min-width: 0; flex: 1; }
+.customer-similar-row strong { display: block; font-size: var(--fs-14); font-weight: 600; }
+.customer-similar-row small { display: block; color: var(--ink-3); font-size: 12.5px; }
+.customer-dialog-foot { align-items: center; }
+.customer-dialog-foot > small { margin-right: auto; color: var(--ink-3); font-size: var(--fs-13); }
+
+/* Vincular un chat */
+.link-search { max-width: none; }
+.link-list { display: flex; max-height: 360px; flex-direction: column; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.link-row { display: flex; align-items: center; gap: 12px; padding: 10px 2px; }
+.link-row + .link-row { border-top: 1px solid var(--hairline); }
+.link-row > span { min-width: 0; flex: 1; }
+.link-row strong { display: block; font-size: var(--fs-14); font-weight: 600; }
+.link-row small { display: block; color: var(--ink-3); font-size: 12.5px; }
+.link-empty { padding: 16px 2px; color: var(--ink-3); font-size: var(--fs-13); }
+
+/* Traer pasajeros */
+.bring-list { max-height: 380px; margin: 0 -24px; padding: 0; overflow-y: auto; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); list-style: none; }
+.bring-list li + li { border-top: 1px solid var(--hairline); }
+.bring-row { display: flex; align-items: center; gap: 12px; padding: 10px 24px; cursor: pointer; }
+.bring-row:hover { background: var(--canvas); }
+.bring-row.is-disabled { cursor: default; opacity: .6; }
+.bring-row.is-disabled:hover { background: transparent; }
+.bring-row input { width: 16px; height: 16px; flex: 0 0 auto; accent-color: var(--green); }
+.bring-copy { min-width: 0; flex: 1; }
+.bring-copy strong { display: block; font-size: var(--fs-14); font-weight: 600; }
+.bring-copy small { display: block; color: var(--ink-3); font-size: 12.5px; }
+.bring-from { flex: 0 0 auto; color: var(--ink-4); font-size: var(--fs-12); text-align: right; }
+
+/* En el panel del viaje */
+.panel-hint { display: flex; align-items: flex-start; gap: 8px; margin: 0 12px 12px; padding: 8px 10px; border-radius: 6px; color: var(--ink-3); background: var(--canvas); font-size: 12.5px; line-height: 1.4; }
+.panel-hint svg { width: 14px; height: 14px; flex: 0 0 auto; margin-top: 1px; }
+.panel-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.add-row { display: flex; flex-direction: column; gap: 8px; }
+.contact-match { border-color: var(--warn-line); }
+.contact-match-actions { padding: 0 12px 12px; }
+
+@media (max-width: 980px) {
+  .cliente-grid { grid-template-columns: minmax(0, 1fr); }
+  .cliente-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 700px) {
+  .clientes-head, .cliente-head { padding: 14px 16px; }
+  .cliente-head { flex-wrap: wrap; }
+  .cliente-actions { width: 100%; }
+  .cliente-facts { grid-template-columns: minmax(0, 1fr); }
+  .customer-doc { grid-template-columns: minmax(0, 1fr); }
+  .cliente-card .trips-table { padding: 8px; }
+  .customers-table td[data-label="Cliente"] { order: -2; flex-basis: 100%; color: var(--ink); font-size: var(--fs-14); }
+  .customers-table td[data-label="Viaje abierto"] { order: -1; flex-basis: 100%; }
+  .bring-list { margin: 0 -16px; }
+  .bring-row { padding: 10px 16px; }
+}
