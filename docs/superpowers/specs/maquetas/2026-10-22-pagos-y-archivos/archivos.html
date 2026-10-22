@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Archivos</title>
+<style>
+:root{--font:"Segoe UI","Helvetica Neue",Arial,sans-serif;--paper:#fff;--canvas:#f4f4f3;--sunken:#ebebe9;--hair:#e4e4e2;--hair2:#d4d4d1;--ink:#17191c;--ink2:#45484c;--ink3:#6a6e73;--ink4:#9a9da0;--green:#1d7a5f;--green2:#155c47;--gtint:#e8f4ef;--gline:#c6e2d7;--star:#d79a1e}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font);color:var(--ink);background:#d9dbd9;font-size:14px}
+.page{padding:24px;display:flex;flex-direction:column;gap:18px}
+.intro h1{font-size:20px;font-weight:600;margin:0 0 6px}
+.intro p{margin:0;color:var(--ink2);line-height:1.5;max-width:980px}
+.row{display:flex;gap:24px;align-items:flex-start}
+svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.cap{font-size:13px;color:var(--ink3);margin:0 0 8px;font-weight:600}
+.panel{width:400px;height:780px;background:var(--paper);border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08),0 12px 32px rgba(0,0,0,.08);display:flex;flex-direction:column;position:relative}
+.ph{padding:14px 16px 0}.ph .t{display:flex;align-items:center;gap:8px}.ph .t b{font-size:18px}
+.st{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:12px;font-size:12px;font-weight:600;border:1px solid var(--hair2);background:var(--canvas);color:var(--ink2)}
+.ph p{margin:3px 0 10px;color:var(--ink3);font-size:13px}
+.tabs{display:flex;justify-content:space-between;border-bottom:1px solid var(--hair);padding:0 12px;font-size:12.5px;color:var(--ink3)}
+.tabs span{padding:10px 0;border-bottom:2px solid transparent}.tabs span.on{color:var(--ink);font-weight:600;border-color:var(--green)}
+.tc{display:inline-grid;min-width:17px;height:17px;place-items:center;border-radius:9px;background:var(--sunken);font-size:11px;font-weight:600;padding:0 4px;color:var(--ink2)}
+.body{flex:1;background:var(--canvas);padding:12px 14px;display:flex;flex-direction:column;gap:12px;overflow:hidden}
+.chips{display:flex;gap:6px}
+.chip{height:28px;padding:0 11px;border-radius:14px;border:1px solid var(--hair2);background:var(--paper);display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--ink2)}
+.chip.on{background:var(--gtint);border-color:var(--gline);color:var(--green2);font-weight:600}
+.chip em{font-style:normal;color:var(--ink4)}
+.grp{font-size:12.5px;color:var(--ink3);font-weight:600;margin:2px 0 -4px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.th{position:relative;aspect-ratio:1;border-radius:6px;overflow:hidden;background:linear-gradient(135deg,#b8c4cc,#8ea0ab)}
+.th.b{background:linear-gradient(135deg,#d6c7a8,#b39b70)}.th.c{background:linear-gradient(135deg,#c4d1c0,#93ab8c)}.th.d{background:linear-gradient(135deg,#d3bcc8,#a9869a)}.th.e{background:linear-gradient(135deg,#c9cbd8,#9599b4)}
+.th .lbl{position:absolute;left:6px;bottom:5px;font-size:11px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+.th .star{position:absolute;top:5px;right:5px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.35);display:grid;place-items:center;color:#fff}
+.th .star.on{background:#fff;color:var(--star)}
+.th .star.on svg{fill:var(--star)}
+.th .star svg{width:13px;height:13px}
+.th .vid{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,.45);display:grid;place-items:center;color:#fff}
+.th .vid svg{fill:#fff;width:12px;height:12px}
+.th .who{position:absolute;left:5px;top:5px;font-size:10.5px;font-weight:600;background:rgba(255,255,255,.85);color:var(--ink2);border-radius:4px;padding:1px 5px}
+.card{background:var(--paper);border:1px solid var(--hair);border-radius:8px}
+.doc{display:grid;grid-template-columns:32px 1fr auto;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid var(--hair)}
+.doc:first-child{border-top:0}
+.doc .ic{width:32px;height:32px;border-radius:6px;background:#fbe9e7;color:#b3261e;display:grid;place-items:center;font-size:10px;font-weight:700}
+.doc strong{display:block;font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.doc small{display:block;color:var(--ink3);font-size:12px}
+.doc .s{color:var(--ink4)}.doc .s.on{color:var(--star)}.doc .s.on svg{fill:var(--star)}
+/* visor */
+.viewer{position:absolute;inset:0;background:rgba(15,17,19,.92);display:flex;flex-direction:column;color:#fff}
+.vh{display:flex;align-items:center;gap:10px;padding:12px 14px}
+.vh span{flex:1;font-size:13px}.vh small{display:block;color:#b9bdc1;font-size:12px}
+.vimg{flex:1;margin:0 14px;border-radius:6px;background:linear-gradient(135deg,#d6c7a8,#b39b70);display:grid;place-items:center;color:rgba(255,255,255,.8);font-size:13px}
+.vf{display:flex;gap:8px;padding:12px 14px}
+.vbtn{height:32px;padding:0 12px;border-radius:6px;border:1px solid rgba(255,255,255,.3);display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600}
+.vbtn.on{background:#fff;color:var(--ink)}
+.vbtn.on svg{fill:var(--star);color:var(--star)}
+/* página del cliente */
+.page2{width:760px;background:var(--canvas);border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.page2 h3{margin:0;padding:12px 16px;border-bottom:1px solid var(--hair);font-size:14px;display:flex;align-items:center;gap:8px}
+.page2 h3 small{color:var(--ink3);font-weight:400}
+.page2 h3 .r{margin-left:auto;color:var(--green);font-size:13px;font-weight:600}
+.page2 .inner{padding:12px 16px;display:flex;flex-direction:column;gap:10px}
+.page2 .grid{grid-template-columns:repeat(6,1fr)}
+.notes{background:var(--paper);border-radius:10px;padding:16px 20px;font-size:13.5px;line-height:1.5;color:var(--ink2);max-width:1250px}
+.notes h2{font-size:15px;margin:0 0 8px;color:var(--ink)}
+.notes ol{margin:0;padding-left:20px;columns:2;column-gap:36px}.notes li{break-inside:avoid;margin-bottom:8px}.notes b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="intro">
+    <h1>Archivos</h1>
+    <p>Las fotos, videos y documentos de los chats del cliente, juntos, en una pestaña del panel del viaje y en la página del cliente. Cualquiera se marca con estrella; «Favoritos» los junta arriba.</p>
+  </div>
+  <div class="row">
+    <div>
+      <p class="cap">Panel del viaje: pestaña Archivos</p>
+      <div class="panel">
+        <div class="ph"><div class="t"><b>Viaje #2</b><span class="st">Consulta ▾</span></div><p>España · vende Administrador</p></div>
+        <div class="tabs"><span>Resumen</span><span>Pasajeros <span class="tc">1</span></span><span>Requisitos</span><span>Pagos</span><span class="on">Archivos</span><span>Controles <span class="tc">19</span></span></div>
+        <div class="body">
+          <div class="chips"><span class="chip on">Todos <em>14</em></span><span class="chip"><svg viewBox="0 0 24 24"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>Favoritos <em>3</em></span><span class="chip">Documentos <em>3</em></span></div>
+          <p class="grp">Esta semana</p>
+          <div class="grid">
+            <div class="th b"><span class="star on"><svg viewBox="0 0 24 24"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg></span><span class="lbl">mié 21/10</span></div>
+            <div class="th"><span class="star"><svg viewBox="0 0 24 24"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg></span><span class="lbl">mié 21/10</span></div>
+            <div class="th c"><span class="who">Agencia</span><span class="star"><svg viewBox="0 0 24 24"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg></span><span class="lbl">mar 20/10</span></div>
+            <div class="th d"><span class="vid"><svg viewBox="0 0 24 24"><path d="M6 4l14 8-14 8z"/></svg></span><span class="star"><svg viewBox="0 0 24 24"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg></span><span class="lbl">0:42</span></div>
+          </div>
+          <p class="grp">Octubre</p>
+          <div class="grid">
+            <div class="th e"><span class="star on"><svg viewBox="0 0 24 24"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg></span><span class="lbl">lun 12/10</span></div>
+            <div class="th"><span class="star"><svg viewBox="0 0 24 24"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg></span><span class="lbl">lun 12/10</span></div>
+            <div class="th c"><span class="star"><svg viewBox="0 0 24 24"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg></span><span class="lbl">vie 9/10</span></div>
+          </div>
+          <p class="grp">Documentos</p>
+          <div class="card">
+            <div class="doc"><span class="ic">PDF</span><span><strong>Comprobante transferencia.pdf</strong><small>mié 21/10 · 182 KB · del cliente</small></span><span class="s on"><svg viewBox="0 0 24 24"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg></span></div>
+            <div class="doc"><span class="ic">PDF</span><span><strong>Vouchers Madrid.pdf</strong><small>lun 19/10 · 1,2 MB · de la agencia</small></span><span class="s"><svg viewBox="0 0 24 24"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="cap">Al tocar una foto</p>
+      <div class="panel">
+        <div class="viewer">
+          <div class="vh"><span>Foto del cliente<small>mié 21/10 a las 14:32 · Línea Juanse</small></span><svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+          <div class="vimg">foto del pasaporte</div>
+          <div class="vf"><span class="vbtn on"><svg viewBox="0 0 24 24"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>Favorito</span><span class="vbtn">Ver en el chat</span><span class="vbtn">Descargar</span></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="cap">Página del cliente: sección Archivos</p>
+      <div class="page2">
+        <div class="card">
+          <h3>Archivos <small>14</small><span class="r">Ver todos</span></h3>
+          <div class="inner">
+            <div class="chips"><span class="chip on"><svg viewBox="0 0 24 24"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>Favoritos <em>3</em></span><span class="chip">Todos <em>14</em></span><span class="chip">Documentos <em>3</em></span></div>
+            <div class="grid">
+              <div class="th b"><span class="star on"><svg viewBox="0 0 24 24"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg></span></div>
+              <div class="th e"><span class="star on"><svg viewBox="0 0 24 24"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg></span></div>
+            </div>
+            <div class="card"><div class="doc"><span class="ic">PDF</span><span><strong>Comprobante transferencia.pdf</strong><small>mié 21/10 · 182 KB · del cliente</small></span><span class="s on"><svg viewBox="0 0 24 24"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg></span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="notes">
+    <h2>Qué hay</h2>
+    <ol>
+      <li><b>Pestaña Archivos</b> en el panel del viaje (al lado del chat y sobre Clientes), con la cantidad. Muestra los archivos de <b>todos los chats individuales del cliente</b>, no solo del chat abierto. Los grupos no entran.</li>
+      <li><b>Fotos y videos en grilla</b>, agrupados por semana y mes, del más nuevo al más viejo. Lo que mandó la agencia lleva la etiqueta «Agencia»; lo del cliente no lleva nada, porque es la mayoría.</li>
+      <li><b>Documentos en lista</b> abajo: nombre, fecha, tamaño y quién lo mandó. Los audios no entran: se escuchan en el chat.</li>
+      <li><b>Estrella</b> en cada archivo: un toque la marca o la saca. Es de la agencia, no de cada persona: lo que marca uno lo ve el resto.</li>
+      <li><b>Chips</b>: Todos, Favoritos y Documentos, con cuántos hay.</li>
+      <li><b>Al tocar una foto</b> se abre en grande, con «Favorito», «Ver en el chat» (abre el chat en ese mensaje) y «Descargar». Un video se reproduce ahí; un documento se abre en otra pestaña.</li>
+      <li><b>En la página del cliente</b>, una sección Archivos que abre en Favoritos si hay alguno, con «Ver todos».</li>
+      <li>Un archivo que todavía se está bajando de WhatsApp aparece en gris con «Cargando…».</li>
+    </ol>
+  </div>
+</div>
+</body>
+</html>

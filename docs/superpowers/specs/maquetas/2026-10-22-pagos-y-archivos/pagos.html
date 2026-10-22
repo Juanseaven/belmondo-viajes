@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Pagos</title>
+<style>
+:root{--font:"Segoe UI","Helvetica Neue",Arial,sans-serif;--paper:#fff;--canvas:#f4f4f3;--sunken:#ebebe9;--hair:#e4e4e2;--hair2:#d4d4d1;--ink:#17191c;--ink2:#45484c;--ink3:#6a6e73;--ink4:#9a9da0;--green:#1d7a5f;--green2:#155c47;--gtint:#e8f4ef;--gline:#c6e2d7;--warn:#b0521c;--wtint:#faefe6;--wline:#eed3bf;--late:#b3261e}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font);color:var(--ink);background:#d9dbd9;font-size:14px}
+.page{padding:24px;display:flex;flex-direction:column;gap:18px}
+.intro h1{font-size:20px;font-weight:600;margin:0 0 6px}
+.intro p{margin:0;color:var(--ink2);line-height:1.5;max-width:980px}
+.row{display:flex;gap:24px;align-items:flex-start}
+svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.panel{width:400px;height:780px;background:var(--paper);border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08),0 12px 32px rgba(0,0,0,.08);display:flex;flex-direction:column}
+.cap{font-size:13px;color:var(--ink3);margin:0 0 8px;font-weight:600}
+.ph{padding:14px 16px 0}
+.ph .t{display:flex;align-items:center;gap:8px}.ph .t b{font-size:18px}
+.st{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:12px;font-size:12px;font-weight:600;border:1px solid var(--hair2);background:var(--canvas);color:var(--ink2)}
+.ph p{margin:3px 0 10px;color:var(--ink3);font-size:13px}
+.tabs{display:flex;justify-content:space-between;border-bottom:1px solid var(--hair);padding:0 16px;font-size:13px;color:var(--ink3)}
+.tabs span{padding:10px 0;border-bottom:2px solid transparent}.tabs span.on{color:var(--ink);font-weight:600;border-color:var(--green)}
+.body{flex:1;background:var(--canvas);padding:14px 16px;display:flex;flex-direction:column;gap:12px;overflow:hidden}
+.card{background:var(--paper);border:1px solid var(--hair);border-radius:8px}
+.money{padding:14px}
+.money small{color:var(--ink3);font-size:13px}
+.money strong{display:block;font-size:28px;font-weight:600;margin:2px 0}
+.money .ars{color:var(--ink3);font-size:13px}
+.track{height:8px;border-radius:4px;background:var(--sunken);margin:14px 0 8px;overflow:hidden}.track i{display:block;height:100%;background:var(--green);border-radius:4px}
+.split{display:flex;justify-content:space-between;font-size:13px;color:var(--ink2)}.split b{font-weight:600}
+.card h3{margin:0;padding:10px 12px;font-size:13px;color:var(--ink2);font-weight:600;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--hair)}
+.link{color:var(--green);font-weight:600;font-size:13px;display:inline-flex;gap:4px;align-items:center}
+.pay{display:grid;grid-template-columns:24px 1fr auto;gap:10px;align-items:center;padding:10px 12px;border-top:1px solid var(--hair)}
+.pay:first-of-type{border-top:0}
+.pay .ic{width:22px;height:22px;border-radius:50%;background:var(--gtint);color:var(--green);display:grid;place-items:center}
+.pay .ic svg{width:12px;height:12px;stroke-width:3}
+.pay strong{font-size:14px;font-weight:600;display:block}
+.pay small{display:block;color:var(--ink3);font-size:12.5px}
+.pay .amt{font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+.pay .amt small{font-weight:400}
+.dep{display:flex;gap:10px;align-items:center;padding:10px 12px;font-size:13.5px}
+.dep .mk{width:22px;height:22px;border-radius:50%;background:var(--green);color:#fff;display:grid;place-items:center}
+.dep .mk svg{width:12px;height:12px;stroke-width:3}
+.dep small{display:block;color:var(--ink3);font-size:12.5px}
+.kv{display:grid;grid-template-columns:1fr auto;gap:8px;padding:12px 14px;font-size:13.5px}.kv dt{color:var(--ink3)}.kv dd{margin:0;text-align:right}
+.btn{height:32px;padding:0 12px;border-radius:6px;border:1px solid var(--hair2);background:var(--paper);font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+.btn.pri{background:var(--green);border-color:var(--green);color:#fff}
+.btns{display:flex;gap:8px}
+.ed{flex:1;display:flex;flex-direction:column}
+.edh{display:flex;align-items:center;gap:8px;padding:12px;border-bottom:1px solid var(--hair)}.edh b{font-size:16px}
+.edb{padding:14px 16px;display:flex;flex-direction:column;gap:12px;flex:1}
+.f label{display:block;font-size:12.5px;font-weight:600;color:var(--ink2);margin-bottom:5px}
+.inp{height:36px;border:1px solid var(--hair2);border-radius:6px;padding:0 10px;display:flex;align-items:center}
+.inp.ph{color:var(--ink4)}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.seg{display:flex;border:1px solid var(--hair2);border-radius:6px;overflow:hidden;height:36px}.seg span{flex:1;display:grid;place-items:center;font-size:13px}.seg span.on{background:var(--gtint);color:var(--green2);font-weight:600}
+.hint{font-size:12.5px;color:var(--ink3);background:var(--canvas);border-radius:6px;padding:8px 10px}
+.edf{display:flex;gap:8px;align-items:center;padding:12px 16px;border-top:1px solid var(--hair)}
+.edf small{margin-left:auto;color:var(--ink3);font-size:12px}
+.notes{background:var(--paper);border-radius:10px;padding:16px 20px;font-size:13.5px;line-height:1.5;color:var(--ink2);max-width:1250px}
+.notes h2{font-size:15px;margin:0 0 8px;color:var(--ink)}
+.notes ol{margin:0;padding-left:20px;columns:2;column-gap:36px}.notes li{break-inside:avoid;margin-bottom:8px}.notes b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="intro">
+    <h1>Pagos</h1>
+    <p>La pestaña Pagos gana una lista de pagos. Cada pago suma a la barra hasta completar el total. La seña sigue siendo un objetivo con fecha, y se da por cobrada sola cuando lo pagado la alcanza: no hay más tilde de «seña cobrada».</p>
+  </div>
+  <div class="row">
+    <div>
+      <p class="cap">Pagos con dos pagos registrados</p>
+      <div class="panel">
+        <div class="ph"><div class="t"><b>Viaje #2</b><span class="st">Consulta ▾</span></div><p>España · vende Administrador</p></div>
+        <div class="tabs"><span>Resumen</span><span>Pasajeros 1</span><span>Requisitos</span><span class="on">Pagos</span><span>Controles 19</span></div>
+        <div class="body">
+          <section class="card money">
+            <small>Total del viaje</small>
+            <strong>USD 5.000</strong>
+            <span class="ars">$ 7.565.000 al cambio de $ 1.513</span>
+            <div class="track"><i style="width:56%"></i></div>
+            <div class="split"><span>Pagado <b>USD 2.800</b></span><span>Falta <b>USD 2.200</b></span></div>
+          </section>
+          <section class="card">
+            <h3>Pagos <span class="link"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Registrar pago</span></h3>
+            <div class="pay"><span class="ic"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span><span><strong>Transferencia</strong><small>mié 21/10 · cargó Juanse</small></span><span class="amt">USD 1.000<small>$ 1.513.000</small></span></div>
+            <div class="pay"><span class="ic"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span><span><strong>Efectivo · seña</strong><small>lun 12/10 · cargó Juanse</small></span><span class="amt">USD 1.800</span></div>
+          </section>
+          <section class="card">
+            <div class="dep"><span class="mk"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span><span>Seña de USD 1.500 cobrada<small>Se completó el lun 12/10</small></span></div>
+          </section>
+          <section class="card"><dl class="kv"><dt>Forma de pago</dt><dd>Transferencia</dd><dt>No reembolsable</dt><dd style="color:var(--ink4)">Sin cargar</dd></dl></section>
+          <div class="btns"><span class="btn"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Editar cotización</span></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="cap">Registrar pago</p>
+      <div class="panel">
+        <div class="ed">
+          <div class="edh"><span>←</span><b>Registrar pago</b></div>
+          <div class="edb">
+            <div class="f"><label>Moneda</label><div class="seg"><span>USD</span><span class="on">Pesos</span></div></div>
+            <div class="pair">
+              <div class="f"><label>Monto en pesos</label><div class="inp">1.513.000</div></div>
+              <div class="f"><label>Cambio</label><div class="inp">1.513</div></div>
+            </div>
+            <div class="hint">Equivale a <b>USD 1.000</b>. Con este pago faltan USD 2.200.</div>
+            <div class="pair">
+              <div class="f"><label>Fecha</label><div class="inp">21/10/2026</div></div>
+              <div class="f"><label>Forma de pago</label><div class="inp">Transferencia ▾</div></div>
+            </div>
+            <div class="f"><label>Nota (opcional)</label><div class="inp ph">Ej.: comprobante 4421</div></div>
+          </div>
+          <div class="edf"><span class="btn pri">Registrar pago</span><span class="btn" style="border-color:transparent">Cancelar</span><small>USD 1.000</small></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="cap">Editar cotización</p>
+      <div class="panel">
+        <div class="ed">
+          <div class="edh"><span>←</span><b>Cotización del viaje #2</b></div>
+          <div class="edb">
+            <div class="pair">
+              <div class="f"><label>Total USD</label><div class="inp">5.000</div></div>
+              <div class="f"><label>Cambio del día</label><div class="inp">1.513</div></div>
+            </div>
+            <div class="hint">Total en pesos: <b>$ 7.565.000</b> (se calcula solo)</div>
+            <div class="pair">
+              <div class="f"><label>Seña USD</label><div class="inp">1.500</div></div>
+              <div class="f"><label>Cobrarla antes del</label><div class="inp">15/10/2026</div></div>
+            </div>
+            <div class="pair">
+              <div class="f"><label>Forma de pago</label><div class="inp">Transferencia ▾</div></div>
+              <div class="f"><label>No reembolsable USD</label><div class="inp ph">—</div></div>
+            </div>
+          </div>
+          <div class="edf"><span class="btn pri">Guardar cambios</span><span class="btn" style="border-color:transparent">Cancelar</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="notes">
+    <h2>Qué cambia</h2>
+    <ol>
+      <li><b>Pagos:</b> una lista debajo del total, del más nuevo al más viejo, con «Registrar pago». Cada uno: monto, moneda, fecha, forma de pago y una nota opcional. Queda quién lo cargó.</li>
+      <li><b>En pesos o en dólares.</b> Si es en pesos, pide el cambio de ese día (viene puesto el del viaje) y muestra a cuántos dólares equivale. La barra siempre suma en dólares.</li>
+      <li><b>La barra</b> sube con cada pago. Si se paga todo, dice «Pago completo» en verde.</li>
+      <li><b>La seña</b> sigue siendo monto y fecha límite, y sigue avisando en Pendientes. Se da por cobrada sola cuando lo pagado llega a la seña. El primer pago que la alcanza dice «seña».</li>
+      <li><b>Total en pesos automático:</b> total en USD × cambio del día. Ya no se escribe a mano.</li>
+      <li><b>Borrar un pago</b> mal cargado, con «Deshacer», como al quitar un pasajero.</li>
+      <li><b>Las señas ya marcadas como cobradas</b> pasan a ser un pago de ese monto, en esa fecha.</li>
+    </ol>
+  </div>
+</div>
+</body>
+</html>
