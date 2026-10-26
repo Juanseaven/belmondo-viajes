@@ -7,7 +7,7 @@ import { SessionProvider } from "../kernel/auth/session";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "viajes_crm",
+  title: "Belmondo Viajes",
   description: "Panel de administración de la agencia",
 };
 

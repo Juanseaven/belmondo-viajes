@@ -1,4 +1,4 @@
-# viajes_crm
+# Belmondo Viajes
 
 Panel de administración de una agencia de viajes, organizado en módulos. Se
 construye de a poco: cada herramienta que la agencia necesita entra como un

@@ -21,6 +21,18 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+it("uses the generic sales example for a new line", () => {
+  render(
+    <LineDialog
+      qrEvents={null}
+      onClose={() => undefined}
+      onConnected={() => undefined}
+    />,
+  );
+
+  expect(screen.getByLabelText("Nombre de la línea").getAttribute("placeholder")).toBe("Ej. Ventas");
+});
+
 it("shows the QR for an existing revoked line without creating another line", async () => {
   const line: Line = {
     id: "existing-id",

@@ -97,7 +97,7 @@ export function LineDialog({
               id="line-owner"
               value={ownerLabel}
               onChange={(event) => setOwnerLabel(event.target.value)}
-              placeholder="Ej. Ventas Juan"
+              placeholder="Ej. Ventas"
               autoFocus
             />
             <p className="field-hint">
