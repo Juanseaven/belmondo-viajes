@@ -107,7 +107,9 @@ func (f *fakeRepo) AddPaymentRecord(_ context.Context, n store.NewPaymentRecord)
 	f.paymentRecord = n
 	return store.PaymentRecord{TripID: n.TripID}, f.err
 }
-func (f *fakeRepo) DeletePaymentRecord(context.Context, string) (string, error) { return "trip-1", f.err }
+func (f *fakeRepo) DeletePaymentRecord(context.Context, string) (string, error) {
+	return "trip-1", f.err
+}
 func (f *fakeRepo) CustomerFiles(_ context.Context, _ string, filter store.FileFilter) (store.FilePage, error) {
 	f.fileFilter = filter
 	return store.FilePage{Items: []store.CustomerFile{}}, f.err
@@ -292,11 +294,12 @@ func TestNombreYMigracionesDelModuloSonEstables(t *testing.T) {
 		t.Fatalf("nombre = %q", m.Name())
 	}
 	entries, err := fs.ReadDir(m.Migrations(), ".")
-	if err != nil || len(entries) != 10 || entries[0].Name() != "0001_init.sql" || entries[1].Name() != "0002_trip_drafts.sql" ||
+	if err != nil || len(entries) != 11 || entries[0].Name() != "0001_init.sql" || entries[1].Name() != "0002_trip_drafts.sql" ||
 		entries[2].Name() != "0003_documentos_vigentes.sql" || entries[3].Name() != "0004_estado_consulta.sql" ||
 		entries[4].Name() != "0005_viajeros.sql" || entries[5].Name() != "0006_requisitos.sql" ||
 		entries[6].Name() != "0007_origen.sql" || entries[7].Name() != "0008_documento_automatico.sql" ||
-		entries[8].Name() != "0009_detalle_requisitos.sql" || entries[9].Name() != "0010_pagos_y_archivos.sql" {
+		entries[8].Name() != "0009_detalle_requisitos.sql" || entries[9].Name() != "0010_pagos_y_archivos.sql" ||
+		entries[10].Name() != "0011_remove_assumed_control_deadlines.sql" {
 		t.Fatalf("migraciones = %v, err = %v", entries, err)
 	}
 }

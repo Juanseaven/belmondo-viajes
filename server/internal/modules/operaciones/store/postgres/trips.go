@@ -113,6 +113,11 @@ func (s *Store) UpdateTrip(ctx context.Context, tripID string, patch store.TripP
 	if err != nil {
 		return store.Trip{}, fmt.Errorf("actualizando el viaje: %w", err)
 	}
+	// Los vencimientos relativos anteriores eran supuestos no confirmados. Se
+	// limpian también al editar para que ningún viaje viejo conserve uno.
+	if _, err := tx.Exec(ctx, `UPDATE controls SET due_at = NULL WHERE trip_id = $1`, tripID); err != nil {
+		return store.Trip{}, fmt.Errorf("limpiando vencimientos de controles: %w", err)
+	}
 
 	ids := make([]string, 0)
 	dues := make([]time.Time, 0)

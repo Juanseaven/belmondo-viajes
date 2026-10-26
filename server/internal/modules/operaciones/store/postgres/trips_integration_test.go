@@ -149,9 +149,7 @@ func TestAltaParcialConservaCamposNulosYNoInventaVencimientos(t *testing.T) {
 	}
 }
 
-// El plazo vive en la plantilla; la fecha se calcula al materializar. Si esto se
-// rompe, el chip de la bandeja ordena mal y lo urgente deja de aparecer primero.
-func TestAltaCalculaLosVencimientosYDejaSinFechaALosDerivados(t *testing.T) {
+func TestAltaNoAsignaVencimientosInventadosALosControles(t *testing.T) {
 	ctx, pool := testDB(t)
 	s := New(pool)
 
@@ -169,25 +167,15 @@ func TestAltaCalculaLosVencimientosYDejaSinFechaALosDerivados(t *testing.T) {
 		t.Fatalf("alta del viaje: %v", err)
 	}
 
-	var visa time.Time
-	if err := pool.QueryRow(ctx,
-		`SELECT due_at FROM controls WHERE trip_id = $1 AND item_id = 'control-visa'`,
-		viaje.ID).Scan(&visa); err != nil {
-		t.Fatalf("leyendo el control de visa: %v", err)
-	}
-	if got := visa.Format("2006-01-02"); got != "2026-10-26" {
-		t.Errorf("el aviso de visa vence %s, se esperaba 2026-10-26 (salida - 45)", got)
-	}
-
-	var derivadosConFecha int
+	var controlesConFecha int
 	if err := pool.QueryRow(ctx,
 		`SELECT count(*) FROM controls
-		  WHERE trip_id = $1 AND closing = 'derivado' AND due_at IS NOT NULL`,
-		viaje.ID).Scan(&derivadosConFecha); err != nil {
-		t.Fatalf("contando derivados con fecha: %v", err)
+		  WHERE trip_id = $1 AND due_at IS NOT NULL`,
+		viaje.ID).Scan(&controlesConFecha); err != nil {
+		t.Fatalf("contando controles con fecha: %v", err)
 	}
-	if derivadosConFecha != 0 {
-		t.Errorf("%d controles derivados tienen vencimiento; no deberían tener ninguno", derivadosConFecha)
+	if controlesConFecha != 0 {
+		t.Errorf("%d controles recibieron vencimientos inventados", controlesConFecha)
 	}
 }
 

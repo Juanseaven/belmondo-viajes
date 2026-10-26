@@ -224,7 +224,7 @@ it("si el servidor rechaza el origen, lo dice", async () => {
 
 // --- Controles ----------------------------------------------------------------
 
-it("los controles van en dos grupos y los plazos se leen en castellano", () => {
+it("los controles van en dos grupos sin mostrar plazos automáticos", () => {
   const conHecho: TripDetail = { ...trip, controls: [...trip.controls, {
     ...trip.controls[0], id: "done", title: "Cliente cargado", status: "cerrado",
     evidence: [{ id: "e-1", closedByName: "Juan", closedAt: "2026-10-03T15:00:00Z" }],
@@ -234,7 +234,7 @@ it("los controles van en dos grupos y los plazos se leen en castellano", () => {
 
   expect(screen.getByText("Por hacer · 2")).toBeTruthy();
   expect(screen.getByText("Hechos · 1")).toBeTruthy();
-  expect(screen.getByText("Atrasado desde el 19/08")).toBeTruthy();
+  expect(screen.queryByText("Atrasado desde el 19/08")).toBeNull();
   expect(screen.getByText("Importante")).toBeTruthy();
   expect(screen.getByText(/^Cerró Juan · 03\/10 a las/)).toBeTruthy();
   expect(screen.queryByText(/2026-08-19/)).toBeNull();

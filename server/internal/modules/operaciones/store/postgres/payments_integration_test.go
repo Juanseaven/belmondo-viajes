@@ -52,9 +52,7 @@ func TestPagoHaceUpsertYLosDerivadosSiguenSusCampos(t *testing.T) {
 	}
 }
 
-// Protege la fecha relativa del checklist: mover la salida debe mover los
-// controles de auditoría y conservar los plazos de carga basados en el alta.
-func TestEditarLaSalidaRecalculaSoloLosPlazosDeControl(t *testing.T) {
+func TestEditarLaSalidaNoInventaPlazosDeControl(t *testing.T) {
 	ctx, pool := testDB(t)
 	s := New(pool)
 	user := seedUser(t, ctx, pool, "fechas@agencia.test")
@@ -75,13 +73,13 @@ func TestEditarLaSalidaRecalculaSoloLosPlazosDeControl(t *testing.T) {
 		t.Fatalf("edición del viaje: %v", err)
 	}
 
-	var due string
+	var due *string
 	if err := pool.QueryRow(ctx,
 		`SELECT due_at::text FROM controls WHERE trip_id = $1 AND item_id = 'control-visa'`,
 		trip.ID).Scan(&due); err != nil {
 		t.Fatalf("leyendo plazo: %v", err)
 	}
-	if due != "2026-11-26" {
-		t.Errorf("visa vence %s, se esperaba 2026-11-26", due)
+	if due != nil {
+		t.Errorf("editar la salida inventó el plazo de visa %s", *due)
 	}
 }

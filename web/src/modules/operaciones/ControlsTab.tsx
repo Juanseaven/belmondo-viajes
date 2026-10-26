@@ -2,7 +2,6 @@
 
 import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { dayMonth, dayOf, today, urgency } from "./format";
 import type { Control } from "./types";
 import { nextControl } from "./types";
 
@@ -17,35 +16,23 @@ export interface ControlActions {
   markByHand?: boolean;
 }
 
-const weekday = new Intl.DateTimeFormat("es-AR", { weekday: "long" });
-
-/** «Atrasado desde el 20/10», «Para mañana», «Para el domingo 25/10», «Para el 27/10». */
-export function controlDue(dueAt: string, from = today()) {
-  const tone = urgency(dueAt, from);
-  if (tone === "late") return `Atrasado desde el ${dayMonth(dueAt)}`;
-  if (dayOf(dueAt) === from) return "Para hoy";
-  if (tone === "soon") return `Para el ${weekday.format(new Date(`${dayOf(dueAt)}T12:00:00`))} ${dayMonth(dueAt)}`;
-  return `Para el ${dayMonth(dueAt)}`;
-}
-
 /**
- * Un control. Abierto: un círculo del color del plazo, el título, «Importante»
- * si es crítico, el plazo en palabras y el botón de la acción. Hecho: tilde
+ * Un control. Abierto: un círculo, el título, «Importante» si es crítico y
+ * el botón de la acción. Hecho: tilde
  * gris, título en gris, quién y cuándo.
  */
 export function ControlRow({ control, onRun, onClose, onReopen, markByHand }: { control: Control } & ControlActions) {
   const done = control.status === "cerrado";
-  const tone = !done && control.dueAt ? urgency(control.dueAt) : "later";
   return (
     <li className={`control-row${done ? " is-done" : ""}`}>
       {done
         ? <span className="control-check" aria-hidden><Check /></span>
-        : <span className={`control-ring is-${tone}`} aria-hidden />}
+        : <span className="control-ring is-later" aria-hidden />}
       <span className="control-copy">
         <strong>{control.title}{!done && control.critical && <span className="control-critical">Importante</span>}</strong>
         {done
           ? <small>{closedBy(control)}</small>
-          : control.dueAt && <small className={`is-${tone}`}>{controlDue(control.dueAt)}</small>}
+          : null}
       </span>
       {!done && control.closing === "accion" && (markByHand
         ? <Button size="sm" variant="outline" onClick={() => onClose(control)}>Marcar hecho</Button>
