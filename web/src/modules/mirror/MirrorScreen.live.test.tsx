@@ -9,11 +9,12 @@ import { operacionesApi } from "../operaciones/api";
 const replace = vi.fn();
 let socketHandler: ((event: { type: string; payload: unknown }) => void) | undefined;
 let userRole = "admin";
+let searchParamsValue = "c=real-conversation";
 const tripHookState = vi.hoisted(() => ({ active: undefined as unknown, reload: vi.fn() }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace }),
-  useSearchParams: () => new URLSearchParams("c=real-conversation"),
+  useSearchParams: () => new URLSearchParams(searchParamsValue),
 }));
 
 vi.mock("../../kernel/auth/session", () => ({
@@ -92,6 +93,7 @@ const conversation: Conversation = {
 
 beforeEach(() => {
   userRole = "admin";
+  searchParamsValue = "c=real-conversation";
   tripHookState.active = activeTrip;
   vi.mocked(mirrorApi.lines).mockResolvedValue({ lines: [line] });
   vi.mocked(mirrorApi.conversations).mockResolvedValue({ items: [conversation] });
@@ -113,6 +115,53 @@ afterEach(() => {
 });
 
 describe("MirrorScreen real", () => {
+  it("shows history progress and refreshes the selected line by its Evolution name", async () => {
+    searchParamsValue = "instance=real-line";
+    vi.mocked(mirrorApi.conversations)
+      .mockResolvedValueOnce({ items: [] })
+      .mockResolvedValue({ items: [conversation] });
+
+    render(<TooltipProvider><MirrorScreen /></TooltipProvider>);
+    await waitFor(() => expect(mirrorApi.lines).toHaveBeenCalled());
+    await waitFor(() => expect(mirrorApi.conversations).toHaveBeenCalledTimes(1));
+
+    act(() => socketHandler?.({
+      type: "history.sync",
+      payload: { instance: line.name, progress: 42, imported: 23 },
+    }));
+
+    expect(await screen.findByRole("status")).toHaveProperty(
+      "textContent",
+      expect.stringContaining("Sincronizando WhatsApp… 42%"),
+    );
+    expect(screen.getByRole("status")).toHaveProperty(
+      "textContent",
+      expect.stringContaining("23 mensajes importados"),
+    );
+    expect(screen.getByText("Las conversaciones van a aparecer acá mientras se importa el historial.")).toBeTruthy();
+    await waitFor(() => expect(mirrorApi.conversations).toHaveBeenCalledTimes(2));
+  });
+
+  it("shows the synced contacts before the imported messages", async () => {
+    searchParamsValue = "instance=real-line";
+    render(<TooltipProvider><MirrorScreen /></TooltipProvider>);
+    await waitFor(() => expect(mirrorApi.lines).toHaveBeenCalled());
+
+    act(() => socketHandler?.({
+      type: "history.sync",
+      payload: { instance: line.name, progress: 10, imported: 0, contacts: 319 },
+    }));
+    act(() => socketHandler?.({
+      type: "history.sync",
+      payload: { instance: line.name, progress: 10, imported: 200, contacts: 319 },
+    }));
+
+    expect(await screen.findByRole("status")).toHaveProperty(
+      "textContent",
+      expect.stringContaining("319 contactos · 200 mensajes importados"),
+    );
+  });
+
   it("sin viaje ofrece crear uno y lo crea con lo cargado", async () => {
     tripHookState.active = undefined;
     vi.mocked(operacionesApi.createTrip).mockResolvedValue({
@@ -156,7 +205,9 @@ describe("MirrorScreen real", () => {
     expect(screen.queryByText("Ana Pérez")).toBeNull();
     expect(screen.getByText("Viaje #10482")).toBeTruthy();
     expect(screen.getByText("Viaje #10482 · Iguazú")).toBeTruthy();
-    expect(screen.getByText("#10482 Iguazú")).toBeTruthy();
+    // La etiqueta está en la lista de chats, que carga aparte de la cabecera
+    // del chat abierto: hay que esperarla.
+    expect(await screen.findByText("#10482 Iguazú")).toBeTruthy();
     expect(screen.getByText("Iguazú · sin vendedor")).toBeTruthy();
     expect(screen.getAllByText("Avisar por visa").length).toBeGreaterThan(0);
     expect(screen.queryByText("Nota de demostración")).toBeNull();

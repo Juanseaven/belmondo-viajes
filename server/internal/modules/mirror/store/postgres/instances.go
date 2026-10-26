@@ -63,6 +63,28 @@ func (i *Instances) Create(ctx context.Context, evolutionName, ownerLabel, displ
 	return id, err
 }
 
+// PendingByLabel usa el mismo criterio que wasConnected en la lectura de líneas:
+// sin connected_at ni phone_jid, la línea nunca se vinculó.
+func (i *Instances) PendingByLabel(ctx context.Context, ownerLabel string) (store.PendingLine, bool, error) {
+	var line store.PendingLine
+	err := i.db.QueryRow(ctx, `
+		SELECT id::text, evolution_name
+		  FROM instances
+		 WHERE owner_label = $1
+		   AND status <> 'open'
+		   AND connected_at IS NULL
+		   AND coalesce(phone_jid, '') = ''
+		 ORDER BY created_at DESC
+		 LIMIT 1`, ownerLabel).Scan(&line.ID, &line.Name)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return store.PendingLine{}, false, nil
+	}
+	if err != nil {
+		return store.PendingLine{}, false, err
+	}
+	return line, true, nil
+}
+
 func (i *Instances) NameByID(ctx context.Context, id string) (string, error) {
 	if !isUUID(id) {
 		return "", store.ErrNotFound
@@ -78,7 +100,7 @@ func (i *Instances) NameByID(ctx context.Context, id string) (string, error) {
 
 // Delete borra la línea y todos sus datos dependientes dentro de una sola
 // transacción. Los contactos son globales: solo se eliminan si ninguna otra
-// línea conserva una conversación con ellos.
+// línea conserva una conversación o una entrada de agenda con ellos.
 func (i *Instances) Delete(ctx context.Context, id string) error {
 	if !isUUID(id) {
 		return store.ErrNotFound
@@ -98,8 +120,22 @@ func (i *Instances) Delete(ctx context.Context, id string) error {
 		return err
 	}
 
-	rows, err := tx.Query(ctx,
-		`SELECT DISTINCT contact_id::text FROM conversations WHERE instance_id = $1`, id)
+	rows, err := tx.Query(ctx, `
+		SELECT DISTINCT candidate.contact_id::text
+		  FROM (
+		        SELECT contact_id
+		          FROM conversations
+		         WHERE instance_id = $1
+		        UNION
+		        SELECT contact.id
+		          FROM contact_directory directory
+		          JOIN contacts contact
+		            ON contact.wa_jid = directory.wa_jid
+		            OR contact.wa_jid = directory.lid_jid
+		            OR contact.lid_jid = directory.wa_jid
+		            OR contact.lid_jid = directory.lid_jid
+		         WHERE directory.instance_id = $1
+		       ) candidate`, id)
 	if err != nil {
 		return err
 	}
@@ -130,6 +166,14 @@ func (i *Instances) Delete(ctx context.Context, id string) error {
 			 WHERE c.id = ANY($1::uuid[])
 			   AND NOT EXISTS (
 			       SELECT 1 FROM conversations remaining WHERE remaining.contact_id = c.id
+			   )
+			   AND NOT EXISTS (
+			       SELECT 1
+			         FROM contact_directory remaining
+			        WHERE remaining.wa_jid = c.wa_jid
+			           OR remaining.lid_jid = c.wa_jid
+			           OR remaining.wa_jid = c.lid_jid
+			           OR remaining.lid_jid = c.lid_jid
 			   )`, contactIDs); err != nil {
 			return err
 		}

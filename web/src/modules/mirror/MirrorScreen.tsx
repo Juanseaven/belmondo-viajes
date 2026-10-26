@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Info, Plus, Search } from "lucide-react";
+import { ArrowLeft, Info, LoaderCircle, Plus, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,6 +62,13 @@ interface NewMessageEvent {
   senderPhone?: string;
 }
 
+interface HistorySyncState {
+  progress: number;
+  imported: number;
+  /** Tamaño de la agenda de la línea; el servidor manda el total, no un delta. */
+  contacts: number;
+}
+
 export function MirrorScreen() {
   const params = useSearchParams();
   return <LiveMirrorScreen params={params} />;
@@ -86,6 +93,7 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
   const [ultimoQR, setUltimoQR] = useState<{ instance: string; qr: string } | null>(null);
   const [tab, setTab] = useState<InboxTab>("all");
   const [detailsOpen, setDetailsOpen] = useState(true);
+  const [historySync, setHistorySync] = useState<Record<string, HistorySyncState>>({});
   const [actionDraft, setActionDraft] = useState<{ controlId: string; body: string; waMessageId?: string }>();
   const searchInput = useRef<HTMLInputElement>(null);
 
@@ -270,13 +278,30 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
           const connected = ev.payload as { instance?: string };
           setAltaAbierta(false);
           setLineaParaVincular(null);
-          if (connected.instance) qrPrompted.current.delete(connected.instance);
+          if (connected.instance) {
+            qrPrompted.current.delete(connected.instance);
+            setHistorySync((current) => ({
+              ...current,
+              [connected.instance!]: { progress: 0, imported: 0, contacts: 0 },
+            }));
+          }
           loadLines();
         }
       }
       if (ev.type === "history.sync") {
-        const p = ev.payload as { instance?: string };
-        if (!instance || p.instance === instance) inbox.scheduleReload();
+        const p = ev.payload as { instance?: string; progress?: number; imported?: number; contacts?: number };
+        if (p.instance) {
+          setHistorySync((current) => ({
+            ...current,
+            [p.instance!]: {
+              progress: typeof p.progress === "number" ? p.progress : (current[p.instance!]?.progress ?? 0),
+              imported: (current[p.instance!]?.imported ?? 0) + (p.imported ?? 0),
+              contacts: typeof p.contacts === "number" ? p.contacts : (current[p.instance!]?.contacts ?? 0),
+            },
+          }));
+        }
+        const selectedLineName = lines.find((line) => line.id === instance)?.name;
+        if (!instance || p.instance === selectedLineName) inbox.scheduleReload();
         linesDirty.current = true;
       }
     },
@@ -293,6 +318,12 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
     }, 5000);
     return () => clearInterval(timer);
   }, [loadLines]);
+
+  const visibleHistorySync = useMemo(() => {
+    const selectedLineName = instance ? lines.find((line) => line.id === instance)?.name : undefined;
+    if (selectedLineName) return historySync[selectedLineName];
+    return Object.values(historySync).find((sync) => sync.progress < 100);
+  }, [historySync, instance, lines]);
 
   return (
     <section className="mirror-workspace">
@@ -353,6 +384,20 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
             </button>
           </div>
 
+          {visibleHistorySync && visibleHistorySync.progress < 100 && (
+            <div className="history-sync-status" role="status" aria-live="polite">
+              <LoaderCircle aria-hidden />
+              <div>
+                <strong>Sincronizando WhatsApp… {visibleHistorySync.progress}%</strong>
+                <span>
+                  {visibleHistorySync.contacts > 0 && <>{visibleHistorySync.contacts} contactos · </>}
+                  {visibleHistorySync.imported} mensajes importados
+                </span>
+                <progress value={visibleHistorySync.progress} max={100} aria-label="Progreso de sincronización" />
+              </div>
+            </div>
+          )}
+
           {query ? (
             <SearchResults
               query={query}
@@ -368,6 +413,11 @@ function LiveMirrorScreen({ params }: { params: ReturnType<typeof useSearchParam
               inbox={inbox}
               selectedId={openId}
               onSelect={(id) => setParams({ c: id, m: undefined, viaje: undefined })}
+              emptyDescription={visibleHistorySync && visibleHistorySync.progress < 100
+                ? "Las conversaciones van a aparecer acá mientras se importa el historial."
+                : instance
+                  ? "Esta línea todavía no tiene conversaciones."
+                  : undefined}
               renderTags={(conversation) => {
                 const trip = trips.byContact[conversation.contactId];
                 return trip ? <TripChip trip={trip} /> : null;

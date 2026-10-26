@@ -3,8 +3,10 @@ package ingest
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,7 +17,7 @@ import (
 	"github.com/juanseaven/viajes-crm/server/internal/modules/mirror/worker"
 )
 
-func TestProcessorPersistsHistorySyncAndBroadcastsOneRefresh(t *testing.T) {
+func TestProcessorPersistsHistorySyncAndBroadcastsStartAndCompletion(t *testing.T) {
 	t.Parallel()
 
 	events := &processorEvents{}
@@ -46,7 +48,7 @@ func TestProcessorPersistsHistorySyncAndBroadcastsOneRefresh(t *testing.T) {
 	if events.processed != 9 {
 		t.Fatalf("processed event = %d", events.processed)
 	}
-	if len(hub.events) != 1 || hub.events[0].Type != "history.sync" {
+	if len(hub.events) != 2 || hub.events[0].Type != "history.sync" || hub.events[1].Type != "history.sync" {
 		t.Fatalf("broadcasts = %+v", hub.events)
 	}
 	var body struct {
@@ -57,8 +59,123 @@ func TestProcessorPersistsHistorySyncAndBroadcastsOneRefresh(t *testing.T) {
 	if err := json.Unmarshal(hub.events[0].Payload, &body); err != nil {
 		t.Fatalf("decode broadcast: %v", err)
 	}
+	if body.Instance != "linea-abc" || body.Progress != 75 || body.Imported != 0 {
+		t.Fatalf("start broadcast payload = %+v", body)
+	}
+	if err := json.Unmarshal(hub.events[1].Payload, &body); err != nil {
+		t.Fatalf("decode completion broadcast: %v", err)
+	}
 	if body.Instance != "linea-abc" || body.Progress != 75 || body.Imported != 2 {
 		t.Fatalf("broadcast payload = %+v", body)
+	}
+}
+
+// Un lote de historial trae miles de mensajes. Guardarlos de a uno paga un
+// commit por mensaje y el lote no entra en su timeout; por tandas, cada tanda es
+// una transacción y el panel ve avanzar la cuenta de importados.
+func TestProcessorImportsHistoryInTransactionalChunks(t *testing.T) {
+	t.Parallel()
+
+	const total = historyChunkSize*2 + 50
+	var conversation strings.Builder
+	conversation.WriteString(`{"Data":{"progress":10,"conversations":[{"ID":"5491112345678@s.whatsapp.net","messages":[`)
+	for i := 0; i < total; i++ {
+		if i > 0 {
+			conversation.WriteString(",")
+		}
+		fmt.Fprintf(&conversation, `{"message":{"key":{"remoteJID":"5491112345678@s.whatsapp.net","fromMe":false,"ID":"HIST-%d"},"message":{"conversation":"m%d"},"messageTimestamp":%d}}`,
+			i, i, 1722877200+i)
+	}
+	conversation.WriteString(`]}]}}`)
+
+	messages := &processorMessages{}
+	hub := &processorHub{}
+	processor := NewProcessor(&processorEvents{}, messages, &processorContacts{}, nil, nil, nil, nil, nil, nil, hub,
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	err := processor.Handle(context.Background(), worker.Job{
+		EventID: 19, Event: webhook.EventHistorySync, Instance: "linea-abc",
+		Payload: json.RawMessage(conversation.String()),
+	})
+	if err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if len(messages.historyBatches) != 3 {
+		t.Fatalf("history batches = %d, want 3", len(messages.historyBatches))
+	}
+	if messages.singleSaves != 0 {
+		t.Fatalf("history used %d single-message transactions", messages.singleSaves)
+	}
+	imported := 0
+	for _, event := range hub.events[1:] {
+		var body struct {
+			Progress int `json:"progress"`
+			Imported int `json:"imported"`
+		}
+		if err := json.Unmarshal(event.Payload, &body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Progress != 10 {
+			t.Fatalf("chunk progress = %d, want 10", body.Progress)
+		}
+		imported += body.Imported
+	}
+	if len(hub.events) != 4 || imported != total {
+		t.Fatalf("broadcasts = %d imported = %d, want 4 broadcasts and %d messages", len(hub.events), imported, total)
+	}
+}
+
+// La agenda del teléfono llega por app state y Evolution no avisa cuándo
+// termina. Pedirla al arrancar cada lote —antes de los mensajes— hace que las
+// conversaciones aparezcan con su nombre agendado y no con el número.
+func TestProcessorSyncsTheAddressBookBeforeEachHistoryBatch(t *testing.T) {
+	t.Parallel()
+
+	var order []string
+	directory := &processorDirectory{
+		contacts: []domain.ContactIdentity{
+			{PhoneJID: "5491126437432@s.whatsapp.net", FullName: "Beto"},
+			{PhoneJID: "5491111111111@s.whatsapp.net", FullName: "Sofía"},
+		},
+		order: &order,
+	}
+	messages := &processorMessages{order: &order}
+	hub := &processorHub{}
+	processor := NewProcessor(&processorEvents{}, messages, &processorContacts{}, directory,
+		nil, nil, nil, nil, nil, hub, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	now := time.Date(2026, 10, 23, 14, 0, 0, 0, time.UTC)
+	processor.now = func() time.Time { return now }
+
+	batch := func(id int64, waID string) worker.Job {
+		return worker.Job{
+			EventID: id, Event: webhook.EventHistorySync, Instance: "linea-abc",
+			Payload: json.RawMessage(fmt.Sprintf(`{"Data":{"progress":10,"conversations":[{"ID":"5491112345678@s.whatsapp.net","messages":[{"message":{"key":{"remoteJID":"5491112345678@s.whatsapp.net","fromMe":false,"ID":%q},"message":{"conversation":"hola"},"messageTimestamp":1722877200}}]}]}}`, waID)),
+		}
+	}
+	if err := processor.Handle(context.Background(), batch(20, "HIST-A")); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(5 * time.Second)
+	if err := processor.Handle(context.Background(), batch(21, "HIST-B")); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(directoryRefreshInterval)
+	if err := processor.Handle(context.Background(), batch(22, "HIST-C")); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{"directory", "messages", "messages", "directory", "messages"}
+	if fmt.Sprint(order) != fmt.Sprint(want) {
+		t.Fatalf("order = %v, want %v", order, want)
+	}
+	var first struct {
+		Contacts int `json:"contacts"`
+	}
+	if err := json.Unmarshal(hub.events[0].Payload, &first); err != nil {
+		t.Fatal(err)
+	}
+	if first.Contacts != 2 {
+		t.Fatalf("first broadcast contacts = %d, want 2", first.Contacts)
 	}
 }
 
@@ -293,7 +410,32 @@ func TestProcessorStoresEvolutionGoQRCode(t *testing.T) {
 	}
 }
 
-type processorEvents struct{ processed int64 }
+func TestProcessorMarksFailedAfterJobContextExpires(t *testing.T) {
+	events := &processorEvents{}
+	processor := NewProcessor(events, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := processor.Handle(ctx, worker.Job{
+		EventID: 42, Event: webhook.EventHistorySync, Instance: "linea-abc", Payload: []byte(`{`),
+	})
+	if err == nil {
+		t.Fatal("Handle debía fallar con JSON inválido")
+	}
+	if events.failed != 42 {
+		t.Fatalf("evento fallido = %d, se esperaba 42", events.failed)
+	}
+	if events.failedContextErr != nil {
+		t.Fatalf("MarkFailed recibió el contexto vencido: %v", events.failedContextErr)
+	}
+}
+
+type processorEvents struct {
+	processed        int64
+	failed           int64
+	failedContextErr error
+}
 
 func (*processorEvents) Insert(context.Context, string, string, string, []byte) (int64, error) {
 	return 0, nil
@@ -302,7 +444,11 @@ func (p *processorEvents) MarkProcessed(_ context.Context, id int64) error {
 	p.processed = id
 	return nil
 }
-func (*processorEvents) MarkFailed(context.Context, int64, string) error { return nil }
+func (p *processorEvents) MarkFailed(ctx context.Context, id int64, _ string) error {
+	p.failed = id
+	p.failedContextErr = ctx.Err()
+	return nil
+}
 
 type processorMessages struct {
 	saved               []*domain.Message
@@ -311,11 +457,23 @@ type processorMessages struct {
 	readInstance        string
 	readChat            string
 	readConversationIDs []string
+	historyBatches      [][]*domain.Message
+	singleSaves         int
+	order               *[]string
 }
 
 func (p *processorMessages) Save(_ context.Context, msg *domain.Message, _ string) (*store.PersistedMessage, error) {
 	p.saved = append(p.saved, msg)
+	p.singleSaves++
 	return &store.PersistedMessage{MessageID: msg.WAMessageID, ConversationID: "conv", InstanceID: "instance", IsNew: true}, nil
+}
+func (p *processorMessages) SaveHistory(_ context.Context, msgs []*domain.Message) error {
+	p.saved = append(p.saved, msgs...)
+	p.historyBatches = append(p.historyBatches, msgs)
+	if p.order != nil {
+		*p.order = append(*p.order, "messages")
+	}
+	return nil
 }
 func (p *processorMessages) UpdateStatus(_ context.Context, _, id string, status domain.MessageStatus) error {
 	p.statusID, p.status = id, status
@@ -345,9 +503,15 @@ func (p *processorContacts) SetGroupName(_ context.Context, _, jid, name string)
 	return nil
 }
 
-type processorDirectory struct{ contacts []domain.ContactIdentity }
+type processorDirectory struct {
+	contacts []domain.ContactIdentity
+	order    *[]string
+}
 
 func (p *processorDirectory) Contacts(context.Context, string) ([]domain.ContactIdentity, error) {
+	if p.order != nil {
+		*p.order = append(*p.order, "directory")
+	}
 	return p.contacts, nil
 }
 

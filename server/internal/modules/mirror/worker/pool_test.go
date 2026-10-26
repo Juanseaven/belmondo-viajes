@@ -129,3 +129,40 @@ func TestPanicoNoMataElShard(t *testing.T) {
 		t.Fatalf("el shard murió por el pánico: %v", err)
 	}
 }
+
+type deadlineRecorder struct{ remaining chan time.Duration }
+
+func (r deadlineRecorder) Handle(ctx context.Context, _ Job) error {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		r.remaining <- 0
+		return nil
+	}
+	r.remaining <- time.Until(deadline)
+	return nil
+}
+
+func TestHistorySyncHasExtendedDeadline(t *testing.T) {
+	recorder := deadlineRecorder{remaining: make(chan time.Duration, 1)}
+	p := New(1, 1, recorder, quietLogger())
+	p.Start(context.Background())
+
+	if err := p.Submit(Job{Event: "HistorySync", PartitionKey: "linea|"}); err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+
+	select {
+	case remaining := <-recorder.remaining:
+		if remaining < 4*time.Minute {
+			t.Fatalf("HistorySync deadline = %v; debe admitir historiales grandes", remaining)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("el job no se procesó")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := p.Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+}

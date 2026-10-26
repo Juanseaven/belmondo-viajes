@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/juanseaven/viajes-crm/server/internal/kernel/ws"
@@ -22,7 +23,14 @@ import (
 	"github.com/juanseaven/viajes-crm/server/internal/modules/mirror/worker"
 )
 
-const offlineReplayGrace = 5 * time.Minute
+const (
+	offlineReplayGrace = 5 * time.Minute
+	historyChunkSize   = 200
+	// La agenda se vuelve a pedir durante la sincronización con este intervalo
+	// como mínimo: los lotes llegan cada pocos segundos y la agenda entera no
+	// cambia tan rápido.
+	directoryRefreshInterval = 15 * time.Second
+)
 
 // MediaEnqueuer recibe los adjuntos pendientes de bajar de Evolution y subir a R2.
 type MediaEnqueuer interface {
@@ -66,6 +74,17 @@ type Processor struct {
 	media     MediaEnqueuer
 	hub       Broadcaster
 	log       *slog.Logger
+	now       func() time.Time
+
+	// Último refresco de agenda y su tamaño, por línea. Los lotes de una misma
+	// línea caen en un solo shard, pero líneas distintas corren en paralelo.
+	directoryMu   sync.Mutex
+	directorySync map[string]directorySnapshot
+}
+
+type directorySnapshot struct {
+	at       time.Time
+	contacts int
 }
 
 func NewProcessor(
@@ -84,7 +103,8 @@ func NewProcessor(
 	return &Processor{
 		events: events, messages: messages, contacts: contacts, directory: directory, instances: instances,
 		panel: panel, outbound: outbound, qr: qr,
-		media: media, hub: hub, log: log,
+		media: media, hub: hub, log: log, now: time.Now,
+		directorySync: map[string]directorySnapshot{},
 	}
 }
 
@@ -118,12 +138,16 @@ func (p *Processor) Handle(ctx context.Context, job worker.Job) error {
 	}
 
 	if err != nil {
-		if markErr := p.events.MarkFailed(ctx, job.EventID, err.Error()); markErr != nil {
+		markCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if markErr := p.events.MarkFailed(markCtx, job.EventID, err.Error()); markErr != nil {
 			p.log.Error("no se pudo marcar el evento como fallido", "error", markErr)
 		}
 		return err
 	}
-	return p.events.MarkProcessed(ctx, job.EventID)
+	markCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	return p.events.MarkProcessed(markCtx, job.EventID)
 }
 
 func (p *Processor) handleMessage(ctx context.Context, job worker.Job) error {
@@ -231,28 +255,81 @@ func (p *Processor) handleHistorySync(ctx context.Context, job worker.Job) error
 	if err != nil {
 		return err
 	}
-	imported := 0
+	// Los contactos van antes que los mensajes: así cada conversación nueva ya
+	// aparece con el nombre agendado y no con el número. El lote final la pide
+	// siempre, y ahí un fallo sí cuenta: es la última oportunidad.
+	var directorySize int
+	if progress == 100 {
+		if err := p.refreshDirectory(ctx, job.Instance); err != nil {
+			return err
+		}
+		directorySize = p.directoryContacts(job.Instance)
+	} else {
+		directorySize = p.syncDirectoryDuringHistory(ctx, job.Instance)
+	}
+	// El lote puede contener miles de mensajes. Avisar antes de recorrerlo evita
+	// que la pantalla parezca vacía o congelada durante varios minutos.
+	p.broadcast("history.sync", "", map[string]any{
+		"instance": job.Instance,
+		"progress": progress,
+		"imported": 0,
+		"contacts": directorySize,
+	})
 	for _, msg := range messages {
 		msg.Historical = true
 		if msg.Type.HasMedia() {
 			msg.Media = nil
 		}
-		if err := p.persistMessage(ctx, job, msg, false); err != nil {
-			return fmt.Errorf("importando mensaje histórico %s: %w", msg.WAMessageID, err)
-		}
-		imported++
 	}
-	if progress == 100 {
-		if err := p.refreshDirectory(ctx, job.Instance); err != nil {
-			return err
+	// Una transacción por tanda: un commit por mensaje no entra en el timeout del
+	// lote. Cada tanda avisa lo importado para que la barra no parezca trabada.
+	for start := 0; start < len(messages); start += historyChunkSize {
+		chunk := messages[start:min(start+historyChunkSize, len(messages))]
+		if err := p.messages.SaveHistory(ctx, chunk); err != nil {
+			return fmt.Errorf("importando historial: %w", err)
 		}
+		p.broadcast("history.sync", "", map[string]any{
+			"instance": job.Instance,
+			"progress": progress,
+			"imported": len(chunk),
+			"contacts": directorySize,
+		})
 	}
-	p.broadcast("history.sync", "", map[string]any{
-		"instance": job.Instance,
-		"progress": progress,
-		"imported": imported,
-	})
+	// Al completar, un último aviso después de importar todo para que la bandeja
+	// recargue con el lote entero.
+	if len(messages) == 0 || progress == 100 {
+		p.broadcast("history.sync", "", map[string]any{
+			"instance": job.Instance,
+			"progress": progress,
+			"imported": 0,
+			"contacts": directorySize,
+		})
+	}
 	return nil
+}
+
+// syncDirectoryDuringHistory pide la agenda a Evolution si no se pidió hace
+// poco y devuelve cuántos contactos tiene la línea. La agenda llega por app
+// state y Evolution no avisa cuándo termina, así que se vuelve a pedir mientras
+// dure la sincronización. Un fallo no corta el lote: los mensajes valen más que
+// los nombres, y el próximo lote lo reintenta.
+func (p *Processor) syncDirectoryDuringHistory(ctx context.Context, instance string) int {
+	p.directoryMu.Lock()
+	last, ok := p.directorySync[instance]
+	p.directoryMu.Unlock()
+	if ok && p.now().Sub(last.at) < directoryRefreshInterval {
+		return last.contacts
+	}
+	if err := p.refreshDirectory(ctx, instance); err != nil {
+		p.log.Warn("no se pudo refrescar la agenda durante la sincronización", "instance", instance, "error", err)
+	}
+	return p.directoryContacts(instance)
+}
+
+func (p *Processor) directoryContacts(instance string) int {
+	p.directoryMu.Lock()
+	defer p.directoryMu.Unlock()
+	return p.directorySync[instance].contacts
 }
 
 // outboundAuthor consulta la base cuando la marca de Redis no está.
@@ -454,12 +531,14 @@ func (p *Processor) refreshDirectory(ctx context.Context, instance string) error
 	if err != nil {
 		return fmt.Errorf("leyendo agenda de Evolution: %w", err)
 	}
-	if len(contacts) == 0 {
-		return nil
+	if len(contacts) > 0 {
+		if err := p.contacts.UpsertDirectory(ctx, instance, contacts); err != nil {
+			return fmt.Errorf("guardando agenda de la línea: %w", err)
+		}
 	}
-	if err := p.contacts.UpsertDirectory(ctx, instance, contacts); err != nil {
-		return fmt.Errorf("guardando agenda de la línea: %w", err)
-	}
+	p.directoryMu.Lock()
+	p.directorySync[instance] = directorySnapshot{at: p.now(), contacts: len(contacts)}
+	p.directoryMu.Unlock()
 	return nil
 }
 

@@ -52,6 +52,9 @@ type MessageStore interface {
 	// una conversación con `last_message_at` que no corresponde a ningún mensaje
 	// deja la bandeja mintiendo.
 	Save(ctx context.Context, msg *domain.Message, sentByUserID string) (*PersistedMessage, error)
+	// SaveHistory guarda una tanda de mensajes históricos en una transacción.
+	// Los ya existentes se ignoran, así que reintentar una tanda es seguro.
+	SaveHistory(ctx context.Context, msgs []*domain.Message) error
 	UpdateStatus(ctx context.Context, instanceName, waMessageID string, status domain.MessageStatus) error
 	// MarkReadFromDevice applies a read receipt emitted by this WhatsApp account
 	// and returns the conversations whose unread badge changed.
@@ -67,6 +70,12 @@ type ContactStore interface {
 	SetGroupName(ctx context.Context, instanceName, groupJID, name string) error
 }
 
+// PendingLine es una línea dada de alta cuyo QR todavía no se escaneó.
+type PendingLine struct {
+	ID   string
+	Name string
+}
+
 // InstanceStore gestiona las líneas conectadas.
 type InstanceStore interface {
 	IDByName(ctx context.Context, evolutionName string) (string, error)
@@ -75,6 +84,10 @@ type InstanceStore interface {
 
 	// Create registra una línea nueva, antes de existir en Evolution.
 	Create(ctx context.Context, evolutionName, ownerLabel, displayName string) (string, error)
+
+	// PendingByLabel busca una línea con ese nombre que nunca llegó a
+	// vincularse, para retomarla en vez de crear otra.
+	PendingByLabel(ctx context.Context, ownerLabel string) (PendingLine, bool, error)
 
 	// NameByID devuelve el evolution_name, que es la clave hacia Evolution.
 	NameByID(ctx context.Context, id string) (string, error)

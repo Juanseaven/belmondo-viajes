@@ -30,6 +30,7 @@ export function ConversationList({
   onSelect,
   showAvatars = true,
   renderTags,
+  emptyDescription,
 }: {
   inbox: ReturnType<typeof useInbox>;
   selectedId: string;
@@ -37,6 +38,7 @@ export function ConversationList({
   showAvatars?: boolean;
   /** Un tercer renglón por fila: lo usa la pantalla para el viaje del contacto. */
   renderTags?: (conversation: Conversation) => ReactNode;
+  emptyDescription?: string;
 }) {
   const sentinel = useRef<HTMLDivElement>(null);
 
@@ -87,7 +89,7 @@ export function ConversationList({
       <div className="inbox-empty">
         <Radio aria-hidden />
         <strong>No hay conversaciones todavía.</strong>
-        <p>Conectá una línea para empezar a recibir mensajes en esta bandeja.</p>
+        <p>{emptyDescription ?? "Conectá una línea para empezar a recibir mensajes en esta bandeja."}</p>
       </div>
     );
   }

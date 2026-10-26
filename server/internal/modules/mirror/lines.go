@@ -12,6 +12,9 @@ import (
 // Provisioner da de alta y desvincula líneas de WhatsApp.
 type Provisioner interface {
 	CreateInstance(ctx context.Context, instanceID, name string) (string, error)
+	// ConfigureWebhook llama a /instance/connect: si el cliente no está
+	// corriendo lo arranca y vuelve a emitir QRs.
+	ConfigureWebhook(ctx context.Context, instance string) error
 	Logout(ctx context.Context, instance string) error
 	DeleteInstance(ctx context.Context, instance string) error
 }
@@ -36,6 +39,20 @@ func (m *Module) createLine(ctx context.Context, ownerLabel, displayName string)
 	ownerLabel = strings.TrimSpace(ownerLabel)
 	if ownerLabel == "" {
 		return "", "", fmt.Errorf("el nombre del dueño de la línea es obligatorio")
+	}
+
+	// Cerrar el modal antes de escanear y volver a abrirlo creaba una línea por
+	// intento. La que nunca se vinculó se retoma con su misma instancia.
+	pending, ok, err := m.lines.PendingByLabel(ctx, ownerLabel)
+	if err != nil {
+		return "", "", fmt.Errorf("buscando una línea pendiente: %w", err)
+	}
+	if ok {
+		if err := m.provisioner.ConfigureWebhook(ctx, pending.Name); err != nil {
+			return pending.ID, pending.Name, fmt.Errorf("reconectando la línea pendiente en Evolution: %w", err)
+		}
+		m.log.Info("línea pendiente retomada", "instance", pending.Name, "owner", ownerLabel)
+		return pending.ID, pending.Name, nil
 	}
 
 	name := instanceName(ownerLabel)

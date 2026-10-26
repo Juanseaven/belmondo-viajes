@@ -37,6 +37,36 @@ func TestCreateLineWaitsForAsyncQRCodeWithoutCachingAnEmptyValue(t *testing.T) {
 	}
 }
 
+// Cerrar el modal mientras se espera el QR y volver a abrirlo no puede dejar una
+// línea fantasma por intento: la que nunca llegó a vincularse se retoma.
+func TestCreateLineResumesAPendingLineWithTheSameName(t *testing.T) {
+	t.Parallel()
+
+	lines := &lineStoreFake{
+		id:      "249aad2e-68f9-464f-bc84-aca560c38f0e",
+		pending: &store.PendingLine{ID: "6e4c0a43-55d1-4c1e-9d7c-2a6b0f5e1a11", Name: "ventas-25d818"},
+	}
+	provider := &provisionerFake{}
+	module := &Module{
+		lines: lines, provisioner: provider, qr: &qrCacheFake{},
+		log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	id, name, err := module.createLine(context.Background(), "Ventas", "")
+	if err != nil {
+		t.Fatalf("createLine: %v", err)
+	}
+	if id != lines.pending.ID || name != "ventas-25d818" {
+		t.Fatalf("createLine = %q/%q, want the pending line", id, name)
+	}
+	if lines.created || provider.name != "" {
+		t.Fatalf("a second line was created: store=%v evolution=%q", lines.created, provider.name)
+	}
+	if provider.reconnected != "ventas-25d818" || lines.pendingLabel != "Ventas" {
+		t.Fatalf("pending line not reconnected: reconnected=%q label=%q", provider.reconnected, lines.pendingLabel)
+	}
+}
+
 // Si alguien vuelve a vincular el mismo teléfono, el producto lo considera una
 // línea nueva. Esta prueba evita que "Desvincular" vuelva a convertirse en una
 // baja lógica que deja atrás conversaciones, mensajes o adjuntos.
@@ -84,13 +114,18 @@ type provisionerFake struct {
 	instanceID string
 	name       string
 	qr         string
-	logoutName string
-	deleteName string
+	logoutName  string
+	deleteName  string
+	reconnected string
 }
 
 func (p *provisionerFake) CreateInstance(_ context.Context, instanceID, name string) (string, error) {
 	p.instanceID, p.name = instanceID, name
 	return p.qr, nil
+}
+func (p *provisionerFake) ConfigureWebhook(_ context.Context, name string) error {
+	p.reconnected = name
+	return nil
 }
 func (p *provisionerFake) Logout(_ context.Context, name string) error {
 	p.logoutName = name
@@ -132,6 +167,17 @@ type lineStoreFake struct {
 	states        []string
 	deletedID     string
 	deactivatedID string
+	pending       *store.PendingLine
+	pendingLabel  string
+	created       bool
+}
+
+func (l *lineStoreFake) PendingByLabel(_ context.Context, label string) (store.PendingLine, bool, error) {
+	l.pendingLabel = label
+	if l.pending == nil {
+		return store.PendingLine{}, false, nil
+	}
+	return *l.pending, true, nil
 }
 
 func (l *lineStoreFake) IDByName(context.Context, string) (string, error) { return l.id, nil }
@@ -143,6 +189,7 @@ func (l *lineStoreFake) UpdateConnection(_ context.Context, name, state, _ strin
 func (*lineStoreFake) Touch(context.Context, string, time.Time) error { return nil }
 func (l *lineStoreFake) Create(_ context.Context, name, _, _ string) (string, error) {
 	l.name = name
+	l.created = true
 	return l.id, nil
 }
 func (l *lineStoreFake) NameByID(context.Context, string) (string, error) { return l.name, nil }

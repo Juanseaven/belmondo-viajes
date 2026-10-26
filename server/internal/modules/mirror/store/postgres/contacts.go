@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -25,9 +26,11 @@ func (c *Contacts) UpsertDirectory(ctx context.Context, instanceName string, con
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// Primero la línea, como en saveMessage: el borrado en cascada sigue ese
+	// mismo orden y así no puede cruzarse con la agenda.
 	var instanceID string
 	if err := tx.QueryRow(ctx,
-		`SELECT id FROM instances WHERE evolution_name = $1`, instanceName,
+		`SELECT id FROM instances WHERE evolution_name = $1 FOR KEY SHARE`, instanceName,
 	).Scan(&instanceID); err != nil {
 		return fmt.Errorf("resolviendo línea %q: %w", instanceName, err)
 	}
@@ -52,6 +55,14 @@ func (c *Contacts) UpsertDirectory(ctx context.Context, instanceName string, con
 			business_name = coalesce(excluded.business_name, contact_directory.business_name),
 			updated_at = now()`
 
+	// La agenda llega de varias fuentes a la vez (recuperación de la línea, cada
+	// lote de historial), cada una en su orden. Recorrerla siempre por JID hace
+	// que dos transacciones bloqueen los contactos en el mismo orden y no se
+	// crucen en un deadlock.
+	contacts = slices.Clone(contacts)
+	slices.SortFunc(contacts, func(a, b domain.ContactIdentity) int {
+		return strings.Compare(a.PhoneJID, b.PhoneJID)
+	})
 	for _, contact := range contacts {
 		if contact.PhoneJID == "" {
 			continue

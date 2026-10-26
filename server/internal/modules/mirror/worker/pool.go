@@ -26,6 +26,11 @@ import (
 // integridad. Descartar aquí sería perder un mensaje de un cliente.
 var ErrQueueFull = errors.New("cola del worker llena")
 
+const (
+	defaultJobTimeout     = 30 * time.Second
+	historySyncJobTimeout = 5 * time.Minute
+)
+
 // Job es una unidad de trabajo ya persistida en webhook_events.
 type Job struct {
 	EventID      int64  // fila en webhook_events, para marcarla procesada
@@ -113,8 +118,13 @@ func (p *Pool) run(ctx context.Context, id int, queue <-chan Job) {
 
 	for job := range queue {
 		// Timeout por job: una consulta colgada no puede paralizar todas las
-		// conversaciones que comparten este shard.
-		jobCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		// conversaciones que comparten este shard. Un HistorySync es un lote
+		// completo y necesita más margen que un mensaje individual.
+		timeout := defaultJobTimeout
+		if job.Event == "HistorySync" {
+			timeout = historySyncJobTimeout
+		}
+		jobCtx, cancel := context.WithTimeout(ctx, timeout)
 		err := p.safeHandle(jobCtx, job)
 		cancel()
 

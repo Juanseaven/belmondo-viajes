@@ -5,6 +5,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/juanseaven/viajes-crm/server/internal/modules/mirror/store"
+	"github.com/juanseaven/viajes-crm/server/internal/modules/mirror/worker"
 )
 
 type Events struct{ db *pgxpool.Pool }
@@ -51,4 +52,33 @@ func (e *Events) MarkFailed(ctx context.Context, id int64, cause string) error {
 		 WHERE id = $1`
 	_, err := e.db.Exec(ctx, q, id, cause)
 	return err
+}
+
+// PendingHistorySync recupera lotes de historial que un reinicio o timeout dejó
+// sin terminar. Persistir mensajes es idempotente, por lo que repetir la parte
+// ya importada es seguro.
+func (e *Events) PendingHistorySync(ctx context.Context, limit int) ([]worker.Job, error) {
+	const q = `
+		SELECT id, event, instance_name, payload, received_at
+		  FROM webhook_events
+		 WHERE event = 'HistorySync'
+		   AND status IN ('pending', 'failed')
+		 ORDER BY received_at, id
+		 LIMIT $1`
+	rows, err := e.db.Query(ctx, q, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	jobs := make([]worker.Job, 0)
+	for rows.Next() {
+		var job worker.Job
+		if err := rows.Scan(&job.EventID, &job.Event, &job.Instance, &job.Payload, &job.ReceivedAt); err != nil {
+			return nil, err
+		}
+		job.PartitionKey = job.Instance + "|"
+		jobs = append(jobs, job)
+	}
+	return jobs, rows.Err()
 }

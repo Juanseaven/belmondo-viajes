@@ -44,6 +44,7 @@ type Module struct {
 	k *kernel.Kernel
 
 	pool      *worker.Pool
+	events    pendingHistorySource
 	mediaSvc  *media.Service
 	webhook   http.Handler
 	mediaDB   store.MediaStore
@@ -98,6 +99,7 @@ func New(k *kernel.Kernel) *Module {
 	m := &Module{
 		k:         k,
 		pool:      pool,
+		events:    events,
 		mediaSvc:  mediaSvc,
 		webhook:   webhook.NewHandler(events, pool, instances, cfg.EvolutionAPIKey, log),
 		mediaDB:   mediaDB,
@@ -196,6 +198,11 @@ func (m *Module) serveAvatar(w http.ResponseWriter, r *http.Request) {
 func (m *Module) Start(ctx context.Context) error {
 	m.mediaSvc.Start(ctx, m.k.Cfg.MediaWorkers)
 	m.pool.Start(ctx)
+	if count, err := requeuePendingHistorySync(ctx, m.events, m.pool, 200); err != nil {
+		m.log.Warn("no se pudo reencolar el historial pendiente", "requeued", count, "error", err)
+	} else if count > 0 {
+		m.log.Info("historial pendiente reencolado", "events", count)
+	}
 	m.refreshLineDirectories(ctx)
 
 	// Recupera los adjuntos que quedaron a medias en el reinicio anterior.

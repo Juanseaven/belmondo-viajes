@@ -29,9 +29,41 @@ func (m *Messages) Save(ctx context.Context, msg *domain.Message, sentByUserID s
 	}
 	defer func() { _ = tx.Rollback(ctx) }() // no-op si ya se hizo Commit
 
+	saved, err := saveMessage(ctx, tx, msg, sentByUserID)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return saved, nil
+}
+
+// SaveHistory persiste una tanda de mensajes históricos en una sola
+// transacción. Cada commit espera el fsync del WAL; pagarlo por mensaje hacía
+// que un lote de miles de mensajes superara su timeout y no terminara nunca.
+func (m *Messages) SaveHistory(ctx context.Context, msgs []*domain.Message) error {
+	tx, err := m.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }() // no-op si ya se hizo Commit
+
+	for _, msg := range msgs {
+		if _, err := saveMessage(ctx, tx, msg, ""); err != nil {
+			return fmt.Errorf("mensaje %s: %w", msg.WAMessageID, err)
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+func saveMessage(ctx context.Context, tx pgx.Tx, msg *domain.Message, sentByUserID string) (*store.PersistedMessage, error) {
+	// FOR KEY SHARE fija el orden de locks: primero la línea y después sus
+	// conversaciones, el mismo que sigue el borrado en cascada. Sin esto,
+	// desvincular una línea durante la importación terminaba en deadlock.
 	var instanceID string
-	err = tx.QueryRow(ctx,
-		`SELECT id FROM instances WHERE evolution_name = $1`, msg.InstanceName,
+	err := tx.QueryRow(ctx,
+		`SELECT id FROM instances WHERE evolution_name = $1 FOR KEY SHARE`, msg.InstanceName,
 	).Scan(&instanceID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Una línea que Evolution conoce pero nosotros no. Es un error de
@@ -76,9 +108,6 @@ func (m *Messages) Save(ctx context.Context, msg *domain.Message, sentByUserID s
 	).Scan(&messageID)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		if err := tx.Commit(ctx); err != nil {
-			return nil, err
-		}
 		return &store.PersistedMessage{
 			ConversationID: conversationID,
 			InstanceID:     instanceID,
@@ -130,10 +159,6 @@ func (m *Messages) Save(ctx context.Context, msg *domain.Message, sentByUserID s
 	senderName, senderPhone, err := resolvedSender(ctx, tx, instanceID, msg.SenderJID, msg.SenderName)
 	if err != nil {
 		return nil, fmt.Errorf("resolviendo autor del grupo: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return nil, err
 	}
 
 	return &store.PersistedMessage{
