@@ -105,7 +105,7 @@
 
 .trip-panel {
   display: flex;
-  width: 400px;
+  width: 440px;
   min-width: 0;
   min-height: 0;
   flex-direction: column;
@@ -147,10 +147,11 @@
 .trip-route-line svg { width: 14px; height: 14px; margin: 0; color: var(--ink-4); }
 .panel-edit-link { display: flex; flex: 0 0 auto; justify-content: flex-end; padding: 6px 16px 0; }
 
-.panel-tabs { display: flex; flex: 0 0 auto; justify-content: space-between; gap: 8px; margin-top: 8px; padding: 0 16px; border-bottom: 1px solid var(--hairline); }
-.panel-tabs button { display: flex; align-items: center; gap: 5px; margin-bottom: -1px; padding: 10px 0; border: 0; border-bottom: 2px solid transparent; color: var(--ink-3); background: transparent; font-size: var(--fs-13); }
-.panel-tabs button:hover { color: var(--ink); }
-.panel-tabs button[aria-selected="true"] { border-color: var(--green); color: var(--ink); font-weight: 600; }
+.panel-tabs { display: flex; flex: 0 0 auto; flex-direction: column; gap: 6px; margin-top: 10px; padding: 8px 12px 10px; border-bottom: 1px solid var(--hairline); }
+.panel-tabs-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.panel-tabs button { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: center; gap: 5px; padding: 8px 6px; border: 1px solid transparent; border-radius: 6px; color: var(--ink-3); background: transparent; font-size: var(--fs-13); white-space: nowrap; }
+.panel-tabs button:hover { color: var(--ink); background: var(--canvas); }
+.panel-tabs button[aria-selected="true"] { border-color: var(--green-line); color: var(--green-strong); background: var(--green-tint); font-weight: 600; }
 .tab-count { display: grid; min-width: 18px; height: 18px; place-items: center; padding: 0 5px; border-radius: 9px; color: var(--ink-2); background: var(--sunken); font-size: var(--fs-11); font-weight: 600; font-variant-numeric: tabular-nums; }
 .tab-count.is-bad { color: var(--late); background: var(--late-tint); }
 
@@ -345,6 +346,7 @@
   font-size: var(--fs-14);
 }
 .field input::placeholder { color: var(--ink-4); }
+.field input.calculated-field { color: var(--ink-2); background: var(--sunken); font-variant-numeric: tabular-nums; }
 .field input:focus-visible,
 .field select:focus-visible,
 .trip-route select:focus-visible { border-color: var(--green); outline: 0; box-shadow: 0 0 0 3px rgba(29, 122, 95, .12); }

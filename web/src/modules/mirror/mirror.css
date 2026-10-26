@@ -26,7 +26,7 @@
   transition: grid-template-columns 200ms cubic-bezier(.4, 0, .2, 1);
 }
 
-.mirror-body.has-details { grid-template-columns: 360px minmax(420px, 1fr) 400px; }
+.mirror-body.has-details { grid-template-columns: 360px minmax(420px, 1fr) 440px; }
 .mirror-body.has-details.operation-collapsed { grid-template-columns: 360px minmax(420px, 1fr) 0; }
 
 .inbox-pane,
@@ -422,7 +422,7 @@
 
 /* Pantallas angostas: el viaje pasa a una hoja que se abre con un botón. */
 
-.details-sheet { width: min(400px, 92vw); padding: 0; }
+.details-sheet { width: min(440px, 92vw); padding: 0; }
 .mobile-details-trigger,
 .mobile-back-trigger { display: none; position: absolute; z-index: 5; top: 14px; }
 .mobile-details-trigger { right: 12px; }

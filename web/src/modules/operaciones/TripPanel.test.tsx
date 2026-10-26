@@ -365,6 +365,33 @@ it("la fecha de nacimiento y la residencia se cargan con «Editar datos»", asyn
   await waitFor(() => expect(onUpdatePassenger).toHaveBeenCalledWith("p-1", { birthDate: "2010-04-02", residenceCountry: "ES" }));
 });
 
+it("separa las secciones en dos filas y da más ancho al panel", () => {
+  render(<TripPanel trip={trip} {...noop} />);
+
+  const tabs = screen.getByRole("tablist", { name: "Secciones del viaje" });
+  const rows = within(tabs).getAllByRole("group");
+
+  expect(rows).toHaveLength(2);
+  expect(within(rows[0]).getAllByRole("tab").map((item) => item.textContent)).toEqual(["Resumen", "Pasajeros", "Requisitos"]);
+  expect(within(rows[1]).getAllByRole("tab").map((item) => item.textContent)).toEqual(["Pagos", "Archivos", "Controles 2"]);
+});
+
+it("calcula la edad del pasajero a la fecha de salida mientras se edita", () => {
+  const passengerWithBirthDate: TripDetail = {
+    ...withPassenger,
+    passengers: [{ ...withPassenger.passengers[0], birthDate: "2003-06-10" }],
+  };
+  render(<TripPanel trip={passengerWithBirthDate} countries={countries} onUpdatePassenger={vi.fn()} {...noop} />);
+  openPassenger();
+  fireEvent.click(screen.getByRole("button", { name: "Editar datos" }));
+
+  expect((screen.getByLabelText("Edad al viajar") as HTMLInputElement).value).toBe("23 años");
+
+  fireEvent.change(screen.getByLabelText("Nacimiento"), { target: { value: "2010-09-13" } });
+
+  expect((screen.getByLabelText("Edad al viajar") as HTMLInputElement).value).toBe("15 años");
+});
+
 it("quitar un pasajero no pregunta: ofrece deshacer", async () => {
   const onDeletePassenger = vi.fn().mockResolvedValue(undefined);
   const onAddPassenger = vi.fn().mockResolvedValue(undefined);

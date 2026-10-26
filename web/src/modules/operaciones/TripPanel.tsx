@@ -158,10 +158,14 @@ export function TripPanel({
       </>}
 
       <div className="panel-tabs" role="tablist" aria-label="Secciones del viaje">
-        {tabs.map(({ value, label, count, bad }) => (
-          <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>
-            {label}{count !== undefined && <> <span className={bad ? "tab-count is-bad" : "tab-count"}>{count}</span></>}
-          </button>
+        {[tabs.slice(0, 3), tabs.slice(3)].map((row, index) => (
+          <div className="panel-tabs-row" role="group" aria-label={index === 0 ? "Información del viaje" : "Seguimiento del viaje"} key={index}>
+            {row.map(({ value, label, count, bad }) => (
+              <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>
+                {label}{count !== undefined && <> <span className={bad ? "tab-count is-bad" : "tab-count"}>{count}</span></>}
+              </button>
+            ))}
+          </div>
         ))}
       </div>
 

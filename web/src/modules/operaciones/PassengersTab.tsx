@@ -133,12 +133,19 @@ export function PassengersTab({ trip, countries = [], focus, onFocused, onAddPas
 
 /** «Menor · 9 años»: la edad a la salida, o a hoy si el viaje no tiene fecha. */
 function ageTag(passenger: Passenger, departAt?: string) {
-  if (passenger.kind !== "menor") return "Adulto";
-  if (!passenger.birthDate) return "Menor";
-  const [by, bm, bd] = dayOf(passenger.birthDate).split("-").map(Number);
+  const kind = passenger.kind === "menor" ? "Menor" : "Adulto";
+  const age = passengerAge(passenger.birthDate, departAt);
+  return age === undefined ? kind : `${kind} · ${age} ${age === 1 ? "año" : "años"}`;
+}
+
+/** Edad al salir; si todavía no hay salida, edad de hoy. */
+function passengerAge(birthDate?: string, departAt?: string) {
+  if (!birthDate) return undefined;
+  const [by, bm, bd] = dayOf(birthDate).split("-").map(Number);
   const [y, m, d] = dayOf(departAt || today()).split("-").map(Number);
+  if (![by, bm, bd, y, m, d].every(Number.isFinite)) return undefined;
   const age = y - by - (m < bm || (m === bm && d < bd) ? 1 : 0);
-  return `Menor · ${age} ${age === 1 ? "año" : "años"}`;
+  return age >= 0 ? age : undefined;
 }
 
 function PassengerCard({ passenger, trip, countries, run, focus, onFocused, onUpdatePassenger, onRemove, ...docs }: DocumentActions & {
@@ -172,7 +179,7 @@ function PassengerCard({ passenger, trip, countries, run, focus, onFocused, onUp
   if (editing) {
     return (
       <li className="panel-card pax-card">
-        <PassengerForm passenger={passenger} countries={countries} onCancel={() => setEditing(false)} onSave={async (patch) => {
+        <PassengerForm passenger={passenger} countries={countries} departAt={trip.departAt} onCancel={() => setEditing(false)} onSave={async (patch) => {
           if (!onUpdatePassenger || Object.keys(patch).length === 0) return setEditing(false);
           if (await run(() => onUpdatePassenger(passenger.id, patch))) setEditing(false);
         }} />
@@ -241,9 +248,10 @@ function filled<T extends Record<string, unknown>>(values: T): Partial<T> {
   return out;
 }
 
-function PassengerForm({ passenger, countries, onSave, onCancel }: {
+function PassengerForm({ passenger, countries, departAt, onSave, onCancel }: {
   passenger: Passenger;
   countries: Country[];
+  departAt?: string;
   onSave: (patch: PassengerPatch) => Promise<void> | void;
   onCancel: () => void;
 }) {
@@ -254,6 +262,7 @@ function PassengerForm({ passenger, countries, onSave, onCancel }: {
   const [values, setValues] = useState(initial);
   const [saving, setSaving] = useState(false);
   const set = <K extends keyof typeof values>(key: K, value: (typeof values)[K]) => setValues((current) => ({ ...current, [key]: value }));
+  const age = passengerAge(values.birthDate, departAt);
 
   return (
     <form className="inline-form" aria-label={`Datos de ${passenger.lastName}, ${passenger.firstName}`} onSubmit={async (event) => {
@@ -272,13 +281,18 @@ function PassengerForm({ passenger, countries, onSave, onCancel }: {
         </Field>
       </div>
       <div className="field-pair">
-        {/* Con fecha de nacimiento, si es menor lo dice la fecha a la salida. */}
-        <Field label="Edad">
-          <select value={values.kind} disabled={Boolean(values.birthDate)} onChange={(e) => set("kind", e.target.value as Passenger["kind"])}>
-            <option value="adulto">Adulto</option>
-            <option value="menor">Menor</option>
-          </select>
-        </Field>
+        {values.birthDate ? (
+          <Field label={departAt ? "Edad al viajar" : "Edad actual"}>
+            <input className="calculated-field" value={age === undefined ? "—" : `${age} ${age === 1 ? "año" : "años"}`} readOnly />
+          </Field>
+        ) : (
+          <Field label="Edad">
+            <select value={values.kind} onChange={(e) => set("kind", e.target.value as Passenger["kind"])}>
+              <option value="adulto">Adulto</option>
+              <option value="menor">Menor</option>
+            </select>
+          </Field>
+        )}
         <label className="check-field"><input type="checkbox" checked={values.isHolder} onChange={(e) => set("isHolder", e.target.checked)} />Titular</label>
       </div>
       <div className="inline-form-actions">
