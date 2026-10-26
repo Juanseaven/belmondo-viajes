@@ -180,7 +180,7 @@ func (s *Service) EnsureSeedAdmin(ctx context.Context, email, password string) e
 	return nil
 }
 
-const minPasswordLen = 10
+const minPasswordLen = 8
 
 func HashPassword(password string) (string, error) {
 	if len(password) < minPasswordLen {

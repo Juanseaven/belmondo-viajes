@@ -2,8 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import { token } from "./client";
+import { resolveWebSocketBaseUrl } from "./urls";
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8080";
 const FIRST_RETRY_MS = 1_000;
 const MAX_RETRY_MS = 30_000;
 
@@ -46,7 +46,8 @@ export function useSocket(
       const jwt = token.get();
       if (stopped || !jwt) return;
 
-      socket = new WebSocket(`${WS_URL}/api/ws?token=${encodeURIComponent(jwt)}`);
+      const wsURL = resolveWebSocketBaseUrl(process.env.NEXT_PUBLIC_WS_URL, window.location);
+      socket = new WebSocket(`${wsURL}/api/ws?token=${encodeURIComponent(jwt)}`);
 
       socket.onopen = () => {
         retryMs = FIRST_RETRY_MS;

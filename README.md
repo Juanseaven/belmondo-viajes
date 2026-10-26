@@ -149,6 +149,29 @@ docker compose up -d evolution-go
 docker compose up -d backend web
 ```
 
+### Compartir una demo temporal por Cloudflare
+
+La demo usa una URL aleatoria `https://*.trycloudflare.com` y no requiere
+cuenta de Cloudflare, dominio ni abrir puertos del router. Todo el stack sigue
+corriendo en esta computadora; PostgreSQL, Redis y Evolution no se publican.
+
+Con Docker Desktop activo:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/start-demo.ps1
+```
+
+El comando imprime la URL que hay que compartir. El visitante entra con un
+usuario del CRM; la URL deja de funcionar si se apaga la computadora, Docker o
+el contenedor del túnel. Para cerrarla y restaurar la configuración local:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/stop-demo.ps1
+```
+
+La URL cambia en cada inicio. Es una configuración para demostraciones, no un
+despliegue de producción.
+
 **El esquema se aplica solo**, al arrancar el backend. No hay que correr `psql` a
 mano: el runner compara el `embed.FS` de cada módulo contra `schema_migrations` y
 aplica lo que falte, cada archivo en su propia transacción.

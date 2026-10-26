@@ -2,8 +2,9 @@
  * Cliente HTTP del panel. Único punto por el que sale una petición al backend:
  * el token y la forma de los errores se manejan aquí y en ningún otro sitio.
  */
+import { resolveApiBaseUrl } from "./urls";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+const API_URL = resolveApiBaseUrl();
 
 /** Forma de error del backend: `{ error: { code, message } }` (ver kernel/httpx). */
 export class ApiError extends Error {
