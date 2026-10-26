@@ -4,10 +4,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Shell } from "./Shell";
 
-const navigation = vi.hoisted(() => ({ query: "" }));
+const navigation = vi.hoisted(() => ({ query: "", path: "/mirror" }));
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/mirror",
+  usePathname: () => navigation.path,
   useRouter: () => ({ replace: vi.fn() }),
   useSearchParams: () => new URLSearchParams(navigation.query),
 }));
@@ -30,6 +30,7 @@ vi.mock("../auth/session", () => ({
 afterEach(() => {
   cleanup();
   navigation.query = "";
+  navigation.path = "/mirror";
 });
 
 describe("Shell sidebar", () => {
@@ -53,6 +54,27 @@ describe("Shell sidebar", () => {
 
     fireEvent.mouseLeave(sidebar);
     expect(sidebar.style.width).toBe("56px");
+  });
+
+  it("closes when another screen opens, even if the clicked link keeps the focus", () => {
+    const view = render(
+      <TooltipProvider>
+        <Shell><div>Contenido</div></Shell>
+      </TooltipProvider>,
+    );
+    const sidebar = screen.getByRole("complementary");
+    fireEvent.mouseEnter(sidebar);
+    screen.getByRole("link", { name: "Bandeja de entrada" }).focus();
+    expect(sidebar.style.width).toBe("208px");
+
+    navigation.path = "/viajes";
+    view.rerender(
+      <TooltipProvider>
+        <Shell><div>Otra pantalla</div></Shell>
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByRole("complementary").style.width).toBe("56px");
   });
 
   it("carries no branding of its own", () => {

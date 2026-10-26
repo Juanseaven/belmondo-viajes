@@ -69,6 +69,18 @@ function NavItem({ path, label, Icon, open, active, attention }: {
   );
 }
 
+/**
+ * El foco abre la barra solo si llega por teclado: un clic también le da el
+ * foco al enlace, y la barra quedaría abierta después de sacar el mouse.
+ */
+function isKeyboardFocus(target: EventTarget) {
+  try {
+    return target instanceof Element && target.matches(":focus-visible");
+  } catch {
+    return true;
+  }
+}
+
 export function Shell({ children }: { children: ReactNode }) {
   const { user, modules, loading, logout } = useSession();
   const router = useRouter();
@@ -79,6 +91,13 @@ export function Shell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
   }, [loading, user, router]);
+
+  // Al entrar a otra pantalla la barra se cierra. Si no, el enlace recién
+  // tocado se queda con el foco y la deja abierta tapando la pantalla.
+  useEffect(() => {
+    setHovered(false);
+    setFocusWithin(false);
+  }, [pathname]);
 
   if (loading) return <div className="centered">Cargando…</div>;
   if (!user) return null;
@@ -99,7 +118,7 @@ export function Shell({ children }: { children: ReactNode }) {
         style={{ width: open ? SIDEBAR_OPEN_WIDTH : SIDEBAR_WIDTH }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        onFocusCapture={() => setFocusWithin(true)}
+        onFocusCapture={(event) => { if (isKeyboardFocus(event.target)) setFocusWithin(true); }}
         onBlurCapture={handleBlur}
       >
         <nav aria-label="Navegación principal" className="sidebar-scroll">
